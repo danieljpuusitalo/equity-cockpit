@@ -108,11 +108,23 @@ PRICE_HISTORY_PERIOD = "2y"
 NOTION_PROPS = ["Ticker", "Company", "Verdict", "Tier", "Held", "Currency",
                 "Price at eval", "Target", "Last evaluated", "Next check",
                 "Trigger", "Market", "Moat", "P/E", "Fwd P/E",
-                "Net debt/EBITDA", "Previous verdict", "Evaluations"]
+                "Net debt/EBITDA", "Previous verdict", "Evaluations",
+                # Added 2026-09-13, empty on every legacy row. Trigger used to
+                # carry all three of these plus the falsifying condition in one
+                # paragraph, which is why only 6 of 13 rows parsed as a price
+                # level and why the inflection dates written in that prose
+                # ("late Oct 2026") were unreadable. They fill in as each name
+                # is next checked; the ledger is Equity Checks.
+                "Thesis", "Inflection date", "Inflection event"]
 
 # Properties that are allowed to be empty on every row without that counting as
 # a schema break (they are genuinely optional on the board).
-NOTION_PROPS_OPTIONAL = {"Previous verdict", "Net debt/EBITDA", "P/E", "Moat"}
+#
+# The three new ones are here because they are empty on all 13 rows TODAY. That
+# is a migration state, not a permanent one: once a handful of names have been
+# re-checked, move them out so the selftest starts guarding them again.
+NOTION_PROPS_OPTIONAL = {"Previous verdict", "Net debt/EBITDA", "P/E", "Moat",
+                         "Thesis", "Inflection date", "Inflection event"}
 
 # --- Telegram (reuses the existing bot; no new credential) ---
 TELEGRAM_ENV = HOME / ".claude" / "channels" / "telegram" / ".env"
