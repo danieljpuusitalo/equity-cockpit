@@ -21,10 +21,17 @@ returned. None of them stores the three things that actually decay:
 - the **thesis** behind it,
 - the **condition that would falsify it**.
 
-Daniel's Notion Equity Log already holds all three. The gap is not storage, it
-is that nothing holds the Log against reality. So the cockpit is a **join**, not
-a tracker: Nordnet says what is owned, Yahoo says what it is worth, Notion says
-what was decided, and the only output is *where the three disagree*.
+Daniel's Notion Equity Log holds the target and the verdict as real fields. The
+other two live inside one prose property, `Trigger` — there is **no thesis
+field**. This was assumed when the cockpit was built and only checked
+afterwards, which is how 88% of the book sat with nothing to falsify while three
+layers were built on top of the Log. The correction is recorded here rather than
+edited away: *check the board, do not describe it from memory*.
+
+Still, storage was never the real gap — the gap is that nothing holds the Log
+against reality. So the cockpit is a **join**, not a tracker: Nordnet says what
+is owned, Yahoo says what it is worth, Notion says what was decided, and the
+only output is *where the three disagree*.
 
 Nordnet support was the second filter — none of the above imports it, and the
 CSV export is the only interface to the broker that we control.

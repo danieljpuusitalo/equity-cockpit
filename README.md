@@ -5,11 +5,19 @@ disagree:
 
 - **Nordnet** knows what you actually own (the `ostoerittain` CSV export).
 - **Yahoo** knows what it is worth today.
-- **The Notion Equity Log** knows what you decided and why — the target, the
-  thesis, and the condition that would change your mind.
+- **The Notion Equity Log** knows what you decided — the verdict, the target,
+  and a `Trigger` paragraph carrying the reasoning and the condition that would
+  change your mind.
 
 Every portfolio tracker on the market does the first two. None of them stores
 the third, which is the only part that decays silently. This exists for the gap.
+
+One caveat, measured rather than assumed: the Log has **no separate thesis
+field**. `Trigger` is doing four jobs at once — falsifying condition, metric,
+date and reasoning, in one block of prose averaging 186 characters. That is why
+only 6 of 13 rows parse into a price level, and why the inflection dates already
+written there ("late Oct 2026", "December pre-close update") are invisible to
+the machine. Splitting it is on the list, not done.
 
 It runs itself on a schedule, at no token cost, and messages you only when
 something changed.
