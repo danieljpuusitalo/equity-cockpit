@@ -149,6 +149,9 @@ def run(quiet=False, verbose=True):
         f"({pulled} pulled from Yahoo, {len(history)-pulled} from cache)")
 
     holdings = analyse.value_holdings(positions, quotes, fx)
+    # Money-weighted return off the live price, not the export-date figure
+    # Nordnet ships in columns the parser asserts and then ignores.
+    book_return = analyse.attach_returns(holdings, lots)
     mapping = analyse.price_sanity(holdings)
     watchlist = analyse.join_watchlist(log_rows, quotes, holdings)
     mismatches = analyse.reconcile(watchlist)
@@ -182,7 +185,7 @@ def run(quiet=False, verbose=True):
         # it is counted here rather than raised into health.
         "history_symbols": len(history),
         "history_problems": len(history_problems),
-    }, history=history, coverage=cover)
+    }, history=history, coverage=cover, book_return=book_return)
 
     html_path, json_path = render.write(data)
     say(f"  Rendered: {html_path}")

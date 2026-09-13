@@ -6,6 +6,7 @@ live run. A test that isn't about something that actually broke is decoration.
 """
 import sys
 import pathlib
+import datetime as dt
 
 import pytest
 
@@ -209,3 +210,86 @@ def test_reconcile_flags_a_blank_held_field():
     [issue] = analyse.reconcile(
         [{"ticker": "GOOGL", "held_notion": None, "held_actual": "Not held"}])
     assert issue["kind"] == "blank"
+
+
+# ------------------------------------------------------- annualised return
+
+def _lot(isin, account, bought, cost, units=1.0):
+    return {"isin": isin, "account_no": account, "name": "x", "tunnus": isin,
+            "ccy": "EUR", "units": units, "cost_eur": cost,
+            "nordnet_mv_eur": cost, "bought": bought, "exported": "2026-09-10",
+            "source_file": "t.csv"}
+
+
+def test_xirr_doubling_over_one_year():
+    """100 out, 200 back exactly a year later is +100%/yr. If this drifts the
+    bisection bracket or the day-count has been changed."""
+    rate = analyse.xirr([(dt.date(2025, 1, 1), -100.0),
+                         (dt.date(2026, 1, 1), 200.0)])
+    assert rate is not None and abs(rate - 1.0) < 0.01
+
+
+def test_xirr_flat_is_zero():
+    rate = analyse.xirr([(dt.date(2024, 1, 1), -1000.0),
+                         (dt.date(2026, 1, 1), 1000.0)])
+    assert rate is not None and abs(rate) < 0.001
+
+
+def test_xirr_needs_a_sign_change():
+    """Two outflows and no return value has no root - None, never a number."""
+    assert analyse.xirr([(dt.date(2025, 1, 1), -100.0),
+                         (dt.date(2026, 1, 1), -100.0)]) is None
+
+
+def test_short_hold_is_suppressed_not_annualised():
+    """The live-book bug: a 3.4% gain held a weighted 25 days annualised to
+    55%/yr and was displayed. It must report a reason instead of a number."""
+    today = dt.date(2026, 9, 13)
+    holdings = [{"isin": "A", "account_no": "1", "yahoo": "FUND",
+                 "tunnus": "FUND", "value_eur": 148.0}]
+    lots = [_lot("A", "1", "2026-08-30", 143.0)]
+    book = analyse.attach_returns(holdings, lots, today=today)
+    assert holdings[0]["irr_pct"] is None
+    assert "too short to annualise" in holdings[0]["irr_note"]
+    assert book["by_symbol"]["FUND"]["irr_pct"] is None
+
+
+def test_weighted_guard_beats_first_date_guard():
+    """First lot is 2 years old, but 97% of the money went in last week. A
+    guard on the first purchase date would let this through; the cost-weighted
+    one must not."""
+    today = dt.date(2026, 9, 13)
+    holdings = [{"isin": "B", "account_no": "1", "yahoo": "SAVE",
+                 "tunnus": "SAVE", "value_eur": 5200.0}]
+    lots = [_lot("B", "1", "2024-09-01", 100.0),
+            _lot("B", "1", "2026-09-06", 5000.0)]
+    analyse.attach_returns(holdings, lots, today=today)
+    assert holdings[0]["irr_pct"] is None
+    assert holdings[0]["holding_days"] < 90
+
+
+def test_long_hold_reports_a_number():
+    today = dt.date(2026, 9, 13)
+    holdings = [{"isin": "C", "account_no": "1", "yahoo": "MSFT",
+                 "tunnus": "MSFT", "value_eur": 2000.0}]
+    lots = [_lot("C", "1", "2024-09-13", 1000.0)]
+    analyse.attach_returns(holdings, lots, today=today)
+    assert holdings[0]["irr_pct"] is not None
+    assert 38 < holdings[0]["irr_pct"] < 44        # doubled over two years
+
+
+def test_symbol_folds_both_custody_accounts():
+    """Same symbol in two accounts is ONE line on the page, so its return is
+    computed over the combined flows - not averaged from two IRRs."""
+    today = dt.date(2026, 9, 13)
+    holdings = [{"isin": "D", "account_no": "1", "yahoo": "DUP",
+                 "tunnus": "DUP", "value_eur": 1000.0},
+                {"isin": "D", "account_no": "2", "yahoo": "DUP",
+                 "tunnus": "DUP", "value_eur": 1000.0}]
+    lots = [_lot("D", "1", "2024-09-13", 500.0),
+            _lot("D", "2", "2024-09-13", 500.0)]
+    book = analyse.attach_returns(holdings, lots, today=today)
+    assert len(book["by_symbol"]) == 1
+    combined = book["by_symbol"]["DUP"]
+    assert combined["irr_pct"] is not None
+    assert 38 < combined["irr_pct"] < 44

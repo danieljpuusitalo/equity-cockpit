@@ -354,7 +354,13 @@ function paintTape() {
   const t = D.totals || {}, s = D.sources || {}, hs = D.health || {};
   $('#t-value').textContent = eur(t.value_eur);
   $('#t-pl').innerHTML = `<b class="${cls(t.pl_pct)}">${pct(t.pl_pct)}</b>` +
-    `<span style="color:var(--muted)">${eur(t.pl_eur)}</span>`;
+    `<span style="color:var(--muted)">${eur(t.pl_eur)}</span>` +
+    // How fast, next to how much. Absent rather than zero when the book is too
+    // young to annualise honestly.
+    (t.irr_pct == null ? '' :
+      `<span style="color:var(--muted)"> · </span><b class="${cls(t.irr_pct)}"
+        title="Money-weighted annual return over every lot since ${esc(t.irr_since || '')}"
+        >${pct(t.irr_pct, 1)}/yr</b>`);
 
   const live = s.equity_log_mode === 'live';
   const flags = (D.alerts || []).filter((a) => !a.health).length;
@@ -448,6 +454,25 @@ function paintThesis(r) {
 
   if (w) {
     const decay = w.upside_decay_pts;
+
+    /* The thesis leads, because it is the thing the rest of this pane is
+       evidence for or against. Empty says so out loud rather than collapsing
+       the section - a name whose reason to be held was never written down is
+       the finding, not a rendering gap. */
+    const infl = w.inflection_date
+      ? `<dl class="kv" style="margin-top:9px">
+         <dt>Settles on</dt><dd>${esc(w.inflection_date)}${w.days_to_inflection == null
+           ? '' : ` <span style="color:var(--muted)">${w.days_to_inflection}d</span>`}</dd>
+         ${w.inflection_event ? `<dt>Event</dt><dd>${esc(w.inflection_event)}</dd>` : ''}
+         </dl>` : '';
+    out.push(`<div class="tsec"><div class="tlabel">THE THESIS</div>
+      <div class="prose"${w.thesis ? '' : ' style="color:var(--muted)"'}>${
+        w.thesis ? esc(w.thesis)
+                 : 'No thesis written. The board carries a target and a trigger '
+                   + 'for this name but never recorded why it is owned — so there '
+                   + 'is nothing here for the price to agree or disagree with.'
+      }</div>${infl}</div>`);
+
     out.push(`<div class="tsec"><div class="tlabel">THE CALL</div><dl class="kv">
       <dt>Verdict</dt><dd>${verdictBadge(w.verdict || '—')}</dd>
       <dt>Tier</dt><dd>${esc(w.tier || '—')}</dd>
@@ -496,6 +521,13 @@ function paintThesis(r) {
     <dt>Value</dt><dd>${eur(h.value_eur)}</dd>
     <dt>Cost</dt><dd>${eur(h.cost_eur)}</dd>
     <dt>P/L</dt><dd class="${cls(h.pl_pct)}">${pct(h.pl_pct, 1)} · ${eur(h.pl_eur)}</dd>
+    ${(() => { const rr = (D.returns || {})[h.sym] || {};
+       return rr.irr_pct != null
+         ? `<dt>Annualised</dt><dd class="${cls(rr.irr_pct)}">${pct(rr.irr_pct, 1)}/yr
+            <span style="color:var(--muted)">since ${esc(rr.since || '')}</span></dd>`
+         : rr.note
+           ? `<dt>Annualised</dt><dd style="color:var(--muted)">${esc(rr.note)}</dd>`
+           : ''; })()}
     <dt>Weight</dt><dd>${h.weight.toFixed(1)}%</dd>
     <dt>Off 52w high</dt><dd>${pct(h.off_high, 1)}</dd>
     <dt>Bucket</dt><dd>${esc(h.bucket || '—')}</dd></dl></div>`);

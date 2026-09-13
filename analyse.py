@@ -124,6 +124,149 @@ def value_holdings(positions, quotes, fx):
     return rows
 
 
+# ------------------------------------------------------- annualised return
+
+# Below this a money-weighted return is arithmetically real and practically a
+# lie: annualising three weeks of noise produces 400%. Reported as None with a
+# reason rather than a number nobody should act on.
+#
+# Measured on the COST-WEIGHTED holding period, not on the first purchase date.
+# The difference is not academic - it was found by cross-checking the live book.
+# The Nordnet index funds are monthly savings: their first lot is over a year
+# old, so a first-date guard passed them, but almost all the money went in
+# recently, and a 3.4% gain over a weighted 25 days was being annualised into
+# 55%/yr. Weighting by cost asks "how long was the money actually at risk",
+# which is the horizon the return was earned over.
+_MIN_IRR_DAYS = 90
+
+
+def xirr(flows, today=None):
+    """Money-weighted annual return from dated cash flows, by bisection.
+
+    `flows` is [(date, amount)] with money out negative and money in positive.
+    Bisection rather than Newton because it cannot diverge: the NPV of a normal
+    buy-then-hold flow is monotonic over the bracket, so halving always
+    converges or honestly reports that it cannot.
+
+    Returns a decimal rate (0.12 == 12%/yr) or None.
+    """
+    flows = [(d, a) for d, a in flows if a]
+    if len(flows) < 2:
+        return None
+    if not (any(a < 0 for _, a in flows) and any(a > 0 for _, a in flows)):
+        return None                      # no sign change - no root to find
+
+    base = min(d for d, _ in flows)
+    span = [(d - base).days / 365.0 for d, _ in flows]
+    amounts = [a for _, a in flows]
+
+    def npv(rate):
+        total = 0.0
+        for years, amount in zip(span, amounts):
+            try:
+                total += amount / ((1.0 + rate) ** years)
+            except (OverflowError, ZeroDivisionError):
+                return float("inf")
+        return total
+
+    lo, hi = -0.9999, 10.0
+    npv_lo, npv_hi = npv(lo), npv(hi)
+    if npv_lo != npv_lo or npv_hi != npv_hi:          # NaN
+        return None
+    if npv_lo * npv_hi > 0:
+        return None                      # root outside -99.99%..+1000%/yr
+    for _ in range(200):
+        mid = (lo + hi) / 2
+        value = npv(mid)
+        if abs(value) < 1e-7:
+            return mid
+        if value * npv_lo > 0:
+            lo, npv_lo = mid, value
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def attach_returns(holdings, lots, today=None):
+    """Per-position money-weighted return, plus the portfolio as a whole.
+
+    The Nordnet export already carries `Tuotto-%` and `Tuotto-% (p.a)` per lot,
+    and the header check asserts both columns exist - but they were never
+    parsed, and they would be stale anyway: they are computed on the export
+    date, which is routinely days old. These are computed off the LIVE price
+    instead, so they move with the book rather than with the last export.
+
+    Simple P/L already on the row answers "how much". This answers "how fast",
+    which is the question that tells a three-year hold apart from a three-week
+    one at the same +18%.
+    """
+    today = today or dt.date.today()
+
+    def _group_irr(group_lots, value):
+        """One IRR over a set of lots against a single current value."""
+        flows, first, weighted, cost = [], None, 0.0, 0.0
+        for lot in group_lots:
+            try:
+                bought = dt.date.fromisoformat(lot["bought"][:10])
+            except (ValueError, TypeError):
+                continue
+            if not lot["cost_eur"]:
+                continue
+            flows.append((bought, -lot["cost_eur"]))
+            first = bought if first is None else min(first, bought)
+            weighted += (today - bought).days * lot["cost_eur"]
+            cost += lot["cost_eur"]
+        if not flows or not value or first is None or not cost:
+            return {"irr_pct": None, "since": None, "held_days": None,
+                    "note": "no dated cost basis"}
+        held = int(weighted / cost)          # cost-weighted days at risk
+        if held < _MIN_IRR_DAYS:
+            return {"irr_pct": None, "since": str(first), "held_days": held,
+                    "note": f"money at risk a weighted {held}d - "
+                            "too short to annualise"}
+        rate = xirr(flows + [(today, value)], today)
+        return {"irr_pct": round(rate * 100, 1) if rate is not None else None,
+                "since": str(first), "held_days": held,
+                "note": None if rate is not None else "did not converge"}
+
+    # Per custody row, so the data sheet can show it per account.
+    by_key = {}
+    for lot in lots:
+        by_key.setdefault((lot["isin"], lot["account_no"]), []).append(lot)
+    for row in holdings:
+        result = _group_irr(by_key.get((row["isin"], row["account_no"]), []),
+                            row.get("value_eur"))
+        row["irr_pct"] = result["irr_pct"]
+        row["holding_days"] = result["held_days"]
+        row["irr_note"] = result["note"]
+
+    # Per symbol, because the page folds the two custody accounts together and
+    # DESIGN forbids the browser deciding anything it could have been told. A
+    # blended IRR is not the average of two IRRs, so it has to be computed over
+    # the combined flows rather than averaged afterwards.
+    by_symbol, value_by_symbol, lots_by_symbol = {}, {}, {}
+    symbol_of = {}
+    for row in holdings:
+        symbol = row.get("yahoo") or row.get("tunnus")
+        if not symbol or symbol == "MISSING":
+            continue
+        symbol_of[(row["isin"], row["account_no"])] = symbol
+        value_by_symbol[symbol] = (value_by_symbol.get(symbol, 0.0)
+                                   + (row.get("value_eur") or 0))
+    for lot in lots:
+        symbol = symbol_of.get((lot["isin"], lot["account_no"]))
+        if symbol:
+            lots_by_symbol.setdefault(symbol, []).append(lot)
+    for symbol, group in lots_by_symbol.items():
+        by_symbol[symbol] = _group_irr(group, value_by_symbol.get(symbol))
+
+    # Portfolio level: every lot as its own outflow, the whole book as one
+    # inflow today. This is the number Nordnet's per-lot column cannot give you.
+    book = _group_irr(lots, sum(h.get("value_eur") or 0 for h in holdings))
+    book["by_symbol"] = by_symbol
+    return book
+
+
 def price_sanity(holdings):
     """Cross-check live prices against Nordnet's own market value.
 
@@ -184,6 +327,13 @@ def join_watchlist(log_rows, quotes, holdings, today=None):
             "last_eval": row.get("Last evaluated"),
             "next_check": row.get("Next check"),
             "trigger": row.get("Trigger"),
+            # The three fields the 2026-09-13 Notion split created. Read since
+            # then, but until now dropped here - so the board held a thesis and
+            # the page never showed one. If these stop arriving, check
+            # NOTION_PROPS before suspecting the renderer.
+            "thesis": row.get("Thesis"),
+            "inflection_date": row.get("Inflection date"),
+            "inflection_event": row.get("Inflection event"),
             "page_id": row.get("page_id"),
             "stale_price": price_now is None,
             "market": row.get("Market"),
@@ -218,6 +368,9 @@ def join_watchlist(log_rows, quotes, holdings, today=None):
             item["trigger_hit"] = None
 
         item["days_to_check"] = days_until(row.get("Next check"), today)
+        # A real date property, unlike the "late Oct 2026" that used to sit
+        # inside the Trigger prose where no machine could read it.
+        item["days_to_inflection"] = days_until(row.get("Inflection date"), today)
         item["days_since_eval"] = (
             -days_until(row.get("Last evaluated"), today)
             if days_until(row.get("Last evaluated"), today) is not None else None)
@@ -391,6 +544,22 @@ def alerts(watchlist, holdings, health, cover=None):
                 "level": "warning", "key": f"check-due:{item['ticker']}:{item['next_check']}",
                 "title": f"{item['ticker']} catalyst in {days} days ({item['next_check']})",
                 "detail": item["trigger"] or ""})
+
+    # The inflection date is the event that will actually settle the thesis -
+    # the print, the trading update, the decision. It is a separate alert from
+    # "next check" because one is a date you chose to look again and the other
+    # is a date the world acts on you. Silent until a date is actually set.
+    for item in watchlist:
+        days = item.get("days_to_inflection")
+        if days is not None and 0 <= days <= C.CHECK_SOON_DAYS:
+            event = (item.get("inflection_event") or "").strip()
+            found.append({
+                "level": "warning",
+                "key": f"inflection:{item['ticker']}:{item['inflection_date']}",
+                "title": f"{item['ticker']}: {event or 'inflection event'} in "
+                         f"{days} days ({item['inflection_date']})",
+                "detail": (item.get("thesis") or item.get("trigger") or
+                           "No thesis written for this name.")})
 
     for item in watchlist:
         gap = item.get("trigger_gap_pct")

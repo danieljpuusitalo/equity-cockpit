@@ -20,7 +20,7 @@ CHARTLIB = C.ROOT / "assets" / "lightweight-charts.standalone.production.js"
 
 
 def payload(positions_valued, watchlist, alerts, health, fx, sources,
-            history=None, coverage=None):
+            history=None, coverage=None, book_return=None):
     """The single object the page renders. Nothing is computed in the browser
     that could have been computed here - the page displays, it does not decide."""
     total_value = round(sum(h["value_eur"] or 0 for h in positions_valued), 2)
@@ -51,7 +51,17 @@ def payload(positions_valued, watchlist, alerts, health, fx, sources,
             "cost_eur": total_cost,
             "pl_eur": round(total_value - total_cost, 2),
             "pl_pct": round((total_value / total_cost - 1) * 100, 2) if total_cost else 0.0,
+            # Money-weighted annual return across every lot in the book. P/L
+            # says how much; this says how fast, which is what tells a
+            # three-year hold apart from a three-week one at the same +18%.
+            "irr_pct": (book_return or {}).get("irr_pct"),
+            "irr_since": (book_return or {}).get("since"),
+            "irr_note": (book_return or {}).get("note"),
         },
+        # symbol -> {irr_pct, since, note}. Folded across custody accounts here
+        # rather than in the page, because a blended IRR is not the average of
+        # two IRRs and the browser has no way to know that.
+        "returns": (book_return or {}).get("by_symbol", {}),
         "thresholds": {
             "check_soon_days": C.CHECK_SOON_DAYS,
             "decay_alert_pts": C.DECAY_ALERT_PTS,
