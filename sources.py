@@ -198,8 +198,15 @@ def quotes(symbols):
 
 
 def _bars(symbol):
-    """Two years of daily OHLC, or None. Rounded on the way out - four decimals
-    is more precision than any chart can draw, and the file is read by a browser."""
+    """Two years of daily OHLCV, or None. Rounded on the way out - four decimals
+    is more precision than any chart can draw, and the file is read by a browser.
+
+    A bar is [date, open, high, low, close, volume]. Volume is the sixth element
+    and was added after the chart was written, so everything that reads a bar
+    positionally (b[0]..b[4]) is unaffected. It is an int, not a float, because
+    a share count is a count; and it is the only field allowed to be 0, because
+    a real trading day with no turnover exists and is itself information.
+    """
     import yfinance as yf
     try:
         frame = yf.Ticker(symbol).history(period=C.PRICE_HISTORY_PERIOD,
@@ -208,14 +215,26 @@ def _bars(symbol):
         return None
     if frame is None or frame.empty:
         return None
+    has_volume = "Volume" in frame.columns
+    volumes = frame["Volume"] if has_volume else [None] * len(frame.index)
     rows = []
-    for stamp, o, h, l, c in zip(frame.index, frame["Open"], frame["High"],
-                                 frame["Low"], frame["Close"]):
+    for stamp, o, h, l, c, v in zip(frame.index, frame["Open"], frame["High"],
+                                    frame["Low"], frame["Close"], volumes):
         if c != c:                                  # NaN - a holiday row
             continue
+        try:
+            vol = int(v) if v is not None and v == v else None
+        except (TypeError, ValueError, OverflowError):
+            vol = None
         rows.append([str(stamp.date()), round(float(o), 4), round(float(h), 4),
-                     round(float(l), 4), round(float(c), 4)])
+                     round(float(l), 4), round(float(c), 4), vol])
     return rows or None
+
+
+def _bars_have_volume(bars):
+    """Is this bar list in the six-element OHLCV shape? Checked on the last bar,
+    which is the one a partial rewrite would leave short."""
+    return bool(bars) and len(bars[-1]) >= 6
 
 
 def price_history(symbols, today=None):
@@ -245,6 +264,12 @@ def price_history(symbols, today=None):
         if not symbol or symbol == "MISSING":
             continue
         held = series.get(symbol)
+        # A cache written before volume existed holds five-element bars. Serving
+        # those is worse than refetching: the indicators would report "no volume"
+        # for the life of the cache and look like a broken feed rather than a
+        # stale one. Shape mismatch therefore forces a pull, once.
+        if held and held.get("bars") and not _bars_have_volume(held["bars"]):
+            held = None
         if held and held.get("fetched") == str(today) and held.get("bars"):
             out[symbol] = held
             continue
