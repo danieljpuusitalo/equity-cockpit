@@ -163,7 +163,14 @@ def run(quiet=False, verbose=True):
     state = health(csv_age, csv_date, problems, mapping, log_meta,
                    read_heartbeat(), mismatches)
 
-    alerts = analyse.alerts(watchlist, holdings, state)
+    cover = analyse.coverage(holdings, watchlist)
+    say(f"  Coverage: {len(cover['rows']) - cover['n_uncovered']}/"
+        f"{len(cover['rows'])} monitored "
+        f"({cover['n_stocks']} stocks by thesis, {cover['n_funds']} funds by "
+        f"weight); EUR {cover['value_uncovered_eur']:,.0f} "
+        f"({cover['pct_uncovered']:.0f}%) uncovered")
+
+    alerts = analyse.alerts(watchlist, holdings, state, cover)
     data = render.payload(holdings, watchlist, alerts, state, fx, {
         "nordnet_export_date": csv_date,
         "nordnet_export_age_days": csv_age,
@@ -175,7 +182,7 @@ def run(quiet=False, verbose=True):
         # it is counted here rather than raised into health.
         "history_symbols": len(history),
         "history_problems": len(history_problems),
-    }, history=history)
+    }, history=history, coverage=cover)
 
     html_path, json_path = render.write(data)
     say(f"  Rendered: {html_path}")

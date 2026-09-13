@@ -16,6 +16,11 @@
 portfolio.local.json
 *.local.json
 
+# Working notes. CHECKPOINT.local.md quotes position sizes and the coverage
+# measurement, so it stays local for the same reason the CSVs do. Anything
+# named *.local.* is private by convention here.
+*.local.md
+
 # Broker exports - units, cost basis, account numbers, every transaction.
 nordnet-ostoerittain*.csv
 *.csv

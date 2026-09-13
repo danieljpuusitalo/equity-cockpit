@@ -267,11 +267,114 @@ def reconcile(watchlist):
     return issues
 
 
+# ------------------------------------------------------------------ coverage
+
+def coverage(holdings, watchlist):
+    """Is every euro in the book actually being monitored, and by what standard?
+
+    Two standards, because there are two kinds of holding:
+
+      stock -> judged by THESIS. It owes a row on the Equity Log carrying a
+               target and a condition that would falsify it.
+      fund  -> judged by ALLOCATION. It owes a target weight and has to stay
+               inside a drift band. A world index tracker has no thesis to
+               falsify, and demanding one produces a warning that can never be
+               cleared - which is indistinguishable from no warning at all.
+
+    Written because the first honest measurement of this book found 88% of it
+    by value carrying no thesis, while ten of the thirteen Equity Log rows were
+    names that were not held. The Log was a research pipeline being read as a
+    portfolio record, and nothing in the system said so.
+    """
+    total = sum(h["value_eur"] or 0 for h in holdings) or 1.0
+
+    # Notion tickers are not Yahoo symbols (BATS.L, DOM.ST, plain GOOGL), so
+    # match through the same mapping the watchlist join already uses.
+    logged = {}
+    for item in watchlist:
+        symbol = _yahoo_for(item["ticker"])
+        if symbol:
+            logged[symbol] = item
+
+    rows = []
+    for h in holdings:
+        isin, symbol = h["isin"], h.get("yahoo")
+        klass = C.ASSET_CLASS.get(isin, "stock")
+        weight = round((h["value_eur"] or 0) / total * 100, 2)
+        item = logged.get(symbol) if symbol and symbol != "MISSING" else None
+
+        row = {"isin": isin, "ticker": h.get("tunnus") or symbol or isin,
+               "name": h.get("name", ""), "klass": klass, "account": h.get("account"),
+               "value_eur": h["value_eur"], "weight_pct": weight,
+               "target_weight_pct": None, "drift_pts": None,
+               "covered": False, "gap": None}
+
+        if klass == "fund":
+            target = C.TARGET_WEIGHT.get(isin)
+            row["target_weight_pct"] = target
+            if target is None:
+                row["gap"] = "no target weight set"
+            else:
+                drift = round(weight - target, 2)
+                row["drift_pts"] = drift
+                row["covered"] = True
+                if abs(drift) > C.WEIGHT_DRIFT_PCT:
+                    side = "above" if drift > 0 else "below"
+                    row["gap"] = (f"{abs(drift):.1f} pts {side} its "
+                                  f"{target:g}% target weight")
+        else:
+            if item is None:
+                row["gap"] = "no thesis on the Equity Log"
+            elif item.get("target") in (None, ""):
+                row["gap"] = "on the Log but carries no target"
+            else:
+                row["covered"] = True
+                if not (item.get("trigger") or "").strip():
+                    row["gap"] = "target but no falsifying condition written"
+
+        rows.append(row)
+
+    rows.sort(key=lambda r: -(r["value_eur"] or 0))
+    uncovered = [r for r in rows if not r["covered"]]
+
+    # Rows on the Log that are not in the book. Not a fault - it is how research
+    # is supposed to work - but it is why "13 logged" was read as coverage when
+    # only three of those names were owned.
+    held_symbols = {h.get("yahoo") for h in holdings}
+    researched = sorted(i["ticker"] for i in watchlist
+                        if _yahoo_for(i["ticker"]) not in held_symbols)
+
+    return {
+        "rows": rows,
+        "value_total_eur": round(total, 2),
+        "value_uncovered_eur": round(sum(r["value_eur"] or 0 for r in uncovered), 2),
+        "pct_uncovered": round(
+            sum(r["value_eur"] or 0 for r in uncovered) / total * 100, 1),
+        "n_uncovered": len(uncovered),
+        "n_stocks": sum(1 for r in rows if r["klass"] == "stock"),
+        "n_funds": sum(1 for r in rows if r["klass"] == "fund"),
+        "researched_not_held": researched,
+    }
+
+
 # -------------------------------------------------------------------- alerts
 
-def alerts(watchlist, holdings, health):
+def alerts(watchlist, holdings, health, cover=None):
     """What actually deserves your attention today, most urgent first."""
     found = []
+
+    # Coverage is deliberately ONE alert, not one per uncovered name. Twenty
+    # separate "no thesis" warnings is a wall, and a wall gets muted; the
+    # cooldown key carries the count so it re-fires when the number moves.
+    if cover and cover["n_uncovered"]:
+        biggest = [r for r in cover["rows"] if not r["covered"]][:3]
+        found.append({
+            "level": "warning",
+            "key": f"coverage:{cover['n_uncovered']}",
+            "title": f"{cover['pct_uncovered']:.0f}% of the book "
+                     f"({cover['n_uncovered']} holdings) is not being monitored",
+            "detail": "; ".join(f"{r['ticker']} EUR {r['value_eur']:,.0f} - {r['gap']}"
+                                for r in biggest)})
 
     for item in watchlist:
         if item.get("trigger_hit"):
