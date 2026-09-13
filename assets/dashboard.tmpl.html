@@ -1,0 +1,799 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Equity cockpit</title>
+<style>
+/* Palette note: the four plotted colours below were run through the dataviz
+   validator in BOTH modes (lightness band, chroma floor, CVD separation,
+   normal-vision floor, contrast vs surface - all PASS). Do not hand-tune them.
+   Target and trigger also differ by line style and carry axis labels, so they
+   are never distinguished by colour alone. */
+:root{
+  color-scheme: light;
+  --surface-1:#fcfcfb; --surface-2:#f4f4f1; --plane:#f9f9f7;
+  --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.11);
+  --up:#2a78d6; --down:#e34948;
+  --target:#007a5c; --trigger:#a85400;
+  --pos:#2a78d6; --neg:#e34948;
+  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --crit:#d03b3b;
+  --good-ink:#006300; --warn-ink:#8a6000; --crit-ink:#b02525;
+  --accent:#2a78d6;
+}
+@media (prefers-color-scheme: dark){ :root:where(:not([data-theme="light"])){
+  color-scheme: dark;
+  --surface-1:#1a1a19; --surface-2:#232322; --plane:#0d0d0d;
+  --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.11);
+  --up:#3987e5; --down:#e66767;
+  --target:#1f9e76; --trigger:#c47a2c;
+  --pos:#3987e5; --neg:#e66767;
+  --good-ink:#3cc46a; --warn-ink:#e0a72c; --crit-ink:#ef6b6b;
+  --accent:#3987e5;
+}}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --surface-1:#1a1a19; --surface-2:#232322; --plane:#0d0d0d;
+  --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.11);
+  --up:#3987e5; --down:#e66767;
+  --target:#1f9e76; --trigger:#c47a2c;
+  --pos:#3987e5; --neg:#e66767;
+  --good-ink:#3cc46a; --warn-ink:#e0a72c; --crit-ink:#ef6b6b;
+  --accent:#3987e5;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+/* A column flex, not height:calc(100% - 52px - 37px). The banner is present on
+   some runs and not others and its height depends on how many problems there
+   are, so anything that subtracts a fixed number is wrong on most mornings. */
+body{margin:0;background:var(--plane);color:var(--ink);overflow:hidden;
+  display:flex;flex-direction:column;
+  font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+.up-t{color:var(--good-ink)} .dn-t{color:var(--neg)}
+
+/* ------------------------------------------------------------------ tape */
+.tape{display:flex;align-items:center;gap:18px;height:52px;flex:none;padding:0 16px;
+  background:var(--surface-1);border-bottom:1px solid var(--border);
+  position:relative;z-index:5}
+.brand{font-size:11px;font-weight:700;letter-spacing:.14em;color:var(--muted);
+  white-space:nowrap}
+.tape .big{font-size:21px;font-weight:650;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;
+  color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip b{font-weight:620;color:var(--ink)}
+.sep{width:1px;height:22px;background:var(--border);flex:none}
+.tape .spacer{flex:1}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.tbtn{padding:5px 11px;border:1px solid var(--border);border-radius:7px;
+  font-size:12px;color:var(--ink-2)}
+.tbtn:hover{background:var(--surface-2);color:var(--ink)}
+.tbtn[aria-pressed="true"]{background:var(--surface-2);color:var(--ink);
+  border-color:var(--axis)}
+
+/* --------------------------------------------------------------- banner */
+.banner{display:flex;align-items:flex-start;gap:10px;padding:9px 16px;flex:none;
+  font-size:12.5px;border-bottom:1px solid var(--border);background:var(--surface-2)}
+.banner .dot{margin-top:5px}
+.banner b{font-weight:620}
+.banner .why{color:var(--ink-2)}
+
+/* ----------------------------------------------------------------- grid */
+.app{display:grid;grid-template-columns:264px minmax(0,1fr) 336px;
+  flex:1;min-height:0}
+.pane{min-width:0;min-height:0;display:flex;flex-direction:column;
+  background:var(--surface-1)}
+.pane + .pane{border-left:1px solid var(--border)}
+.mid{background:var(--plane)}
+.phead{display:flex;align-items:center;gap:8px;padding:10px 12px;flex:none;
+  border-bottom:1px solid var(--border)}
+.ptitle{font-size:10.5px;font-weight:700;letter-spacing:.12em;color:var(--muted)}
+.pbody{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden}
+
+/* ----------------------------------------------------------------- rail */
+.search{width:100%;padding:6px 9px;border:1px solid var(--border);border-radius:7px;
+  background:var(--plane);color:var(--ink);font:12.5px system-ui,sans-serif;outline:none}
+.search:focus{border-color:var(--accent)}
+.segs{display:flex;gap:4px;padding:8px 12px 4px;flex:none}
+.seg{flex:1;padding:4px 0;border-radius:6px;font-size:11.5px;font-weight:600;
+  color:var(--muted);text-align:center;border:1px solid transparent}
+.seg[aria-pressed="true"]{background:var(--surface-2);color:var(--ink);
+  border-color:var(--border)}
+.row{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;
+  padding:7px 12px 7px 9px;border-left:3px solid transparent;cursor:pointer;
+  border-bottom:1px solid var(--grid)}
+.row:hover{background:var(--surface-2)}
+.row[aria-selected="true"]{background:var(--surface-2);border-left-color:var(--accent)}
+.row .sym{font-size:13px;font-weight:640;display:flex;align-items:center;gap:5px}
+.row .co{grid-column:1;font-size:11px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .px{font-size:12.5px;font-variant-numeric:tabular-nums;text-align:right}
+.row .chg{grid-column:2;font-size:11px;font-variant-numeric:tabular-nums;text-align:right}
+.empty{padding:22px 14px;color:var(--muted);font-size:12.5px}
+
+/* ------------------------------------------------------------------ mid */
+.symhead{display:flex;align-items:baseline;gap:12px;padding:12px 16px 10px;
+  flex:none;flex-wrap:wrap}
+.symhead .tk{font-size:22px;font-weight:680;letter-spacing:-.02em}
+.symhead .co{color:var(--ink-2);font-size:13px}
+.symhead .px{font-size:22px;font-weight:640;font-variant-numeric:tabular-nums;
+  margin-left:auto}
+.symhead .chg{font-size:13.5px;font-variant-numeric:tabular-nums}
+.ranges{display:flex;align-items:center;gap:4px;padding:0 16px 8px;flex:none}
+.rbtn{padding:3px 10px;border-radius:6px;font-size:11.5px;font-weight:600;
+  color:var(--muted);border:1px solid transparent}
+.rbtn:hover{color:var(--ink)}
+.rbtn[aria-pressed="true"]{background:var(--surface-1);color:var(--ink);
+  border-color:var(--border)}
+.rsep{width:1px;height:14px;background:var(--border);margin:0 6px;flex:none}
+.legend{display:flex;gap:14px;margin-left:auto;font-size:11.5px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.swatch{width:14px;height:0;border-top-width:2px;border-top-style:solid;flex:none}
+.chartbox{flex:1;min-height:180px;margin:0 12px;position:relative;
+  background:var(--surface-1);border:1px solid var(--border);border-radius:10px;
+  overflow:hidden}
+.nochart{position:absolute;inset:0;display:flex;align-items:center;
+  justify-content:center;color:var(--muted);font-size:12.5px;text-align:center;
+  padding:20px}
+
+/* --------------------------------------------------------- weight strip */
+.strip{flex:none;padding:10px 12px 12px}
+.striphead{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.strip .ptitle{font-size:10.5px}
+.striphead .note{font-size:11px;color:var(--muted);margin-left:auto}
+.bars{display:flex;gap:2px;height:34px;width:100%}
+.bar{min-width:3px;border-radius:3px;background:var(--axis);cursor:pointer;
+  position:relative}
+.bar:hover{background:var(--ink-2)}
+.bar[data-sel="1"]{background:var(--accent)}
+
+/* --------------------------------------------------------------- thesis */
+.tsec{padding:12px 14px;border-bottom:1px solid var(--grid)}
+.tsec:last-child{border-bottom:0}
+.tlabel{font-size:10.5px;font-weight:700;letter-spacing:.12em;color:var(--muted);
+  margin-bottom:8px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12.5px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:560}
+.prose{font-size:12.5px;line-height:1.5;color:var(--ink-2);
+  overflow-wrap:anywhere}
+.badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;
+  font-weight:640;border:1px solid var(--border)}
+.b-buy{background:color-mix(in srgb,var(--good) 15%,transparent);color:var(--good-ink)}
+.b-watch{background:var(--surface-2);color:var(--ink-2)}
+.b-trim{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn-ink)}
+.b-exit{background:color-mix(in srgb,var(--crit) 15%,transparent);color:var(--crit-ink)}
+.alert{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--grid);
+  font-size:12.5px}
+.alert:last-child{border-bottom:0}
+.alert .dot{margin-top:5px}
+.alert .t{font-weight:600}
+.alert .d{color:var(--ink-2);font-size:12px;margin-top:2px;overflow-wrap:anywhere}
+
+/* ----------------------------------------------------------- data sheet */
+.sheet{position:fixed;inset:0;z-index:20;background:var(--plane);
+  overflow:auto;padding:20px 22px 60px;display:none}
+.sheet[data-open="1"]{display:block}
+.sheet h2{font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);margin:26px 0 10px}
+.sheet h2:first-of-type{margin-top:14px}
+.sheethead{display:flex;align-items:center;gap:14px}
+.sheethead h1{font-size:18px;font-weight:650;margin:0}
+table{width:100%;border-collapse:collapse;font-size:12.5px;
+  font-variant-numeric:tabular-nums}
+th{text-align:right;font-weight:600;color:var(--muted);font-size:10.5px;
+  letter-spacing:.05em;text-transform:uppercase;padding:0 8px 8px;
+  border-bottom:1px solid var(--axis);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+td{padding:7px 8px;border-bottom:1px solid var(--grid);text-align:right;
+  white-space:nowrap}
+td.wrap{white-space:normal;min-width:260px}
+.scroll{overflow-x:auto}
+
+@media (max-width:1180px){
+  body{overflow:auto;display:block}
+  .app{grid-template-columns:1fr;height:auto}
+  .pane + .pane{border-left:0;border-top:1px solid var(--border)}
+  .pbody{overflow:visible}
+  .rail .pbody{max-height:320px;overflow-y:auto}
+  .chartbox{height:340px;flex:none}
+  .tape{flex-wrap:wrap;height:auto;padding:8px 12px;gap:10px 14px}
+}
+</style>
+
+<header class="tape">
+  <span class="brand">EQUITY COCKPIT</span>
+  <span class="big" id="t-value">—</span>
+  <span class="chip" id="t-pl"></span>
+  <span class="sep"></span>
+  <span class="chip" id="t-meta"></span>
+  <span class="spacer"></span>
+  <button class="tbtn" id="t-sheet">Data</button>
+  <button class="tbtn" id="t-theme" aria-pressed="false">Dark</button>
+</header>
+<div id="t-banner"></div>
+
+<div class="app" id="app">
+  <aside class="pane rail">
+    <div class="phead"><input class="search" id="q" type="search"
+      placeholder="Filter ticker or name" autocomplete="off"></div>
+    <div class="segs" id="segs">
+      <button class="seg" data-f="all" aria-pressed="true">All</button>
+      <button class="seg" data-f="held" aria-pressed="false">Held</button>
+      <button class="seg" data-f="watch" aria-pressed="false">Watch</button>
+      <button class="seg" data-f="flag" aria-pressed="false">Flagged</button>
+    </div>
+    <div class="pbody" id="list"></div>
+  </aside>
+
+  <section class="pane mid">
+    <div class="symhead" id="symhead"></div>
+    <div class="ranges" id="ranges">
+      <button class="rbtn" data-d="30">1M</button>
+      <button class="rbtn" data-d="91">3M</button>
+      <button class="rbtn" data-d="182">6M</button>
+      <button class="rbtn" data-d="365" aria-pressed="true">1Y</button>
+      <button class="rbtn" data-d="0">ALL</button>
+      <span class="rsep"></span>
+      <button class="rbtn" data-ma="50" aria-pressed="true">MA50</button>
+      <button class="rbtn" data-ma="200" aria-pressed="true">MA200</button>
+      <span class="legend">
+        <span><i class="swatch" style="border-top-color:var(--target)"></i>Target</span>
+        <span><i class="swatch" style="border-top-color:var(--trigger);
+          border-top-style:dashed"></i>Trigger</span>
+        <span><i class="swatch" style="border-top-color:var(--ink-2);
+          border-top-width:1px"></i>MA50</span>
+        <span><i class="swatch" style="border-top-color:var(--ink-2);
+          border-top-style:dashed"></i>MA200</span>
+      </span>
+    </div>
+    <div class="chartbox"><div id="chart" style="position:absolute;inset:0"></div>
+      <div class="nochart" id="nochart" style="display:none"></div></div>
+    <div class="strip">
+      <div class="striphead"><span class="ptitle">POSITIONS BY WEIGHT</span>
+        <span class="note" id="stripnote"></span></div>
+      <div class="bars" id="bars"></div>
+    </div>
+  </section>
+
+  <aside class="pane thesis">
+    <div class="phead"><span class="ptitle">THESIS</span></div>
+    <div class="pbody" id="thesis"></div>
+  </aside>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="sheethead"><h1>Every number on this page</h1>
+    <button class="tbtn" id="t-close">Close</button></div>
+  <div id="sheetbody"></div>
+</div>
+
+<script id="chartlib">/*__CHARTLIB__*/</script>
+<script id="app">
+const D = /*__DATA__*/;
+
+/* Everything below displays; nothing decides. Any number you see was computed
+   in Python and is in the payload - if a figure is wrong, fix analyse.py. */
+
+const $  = (s) => document.querySelector(s);
+const esc = (s) => String(s == null ? '' : s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const eur = (n) => n == null ? '—' : '€' + Number(n).toLocaleString('en-GB',
+  {maximumFractionDigits:0});
+const px  = (n) => n == null ? '—' : Number(n).toLocaleString('en-GB',
+  {minimumFractionDigits:2, maximumFractionDigits:2});
+const pct = (n, dp) => n == null ? '—' :
+  (n > 0 ? '+' : '') + Number(n).toFixed(dp == null ? 2 : dp) + '%';
+const cls = (n) => n == null ? '' : (n > 0 ? 'up-t' : n < 0 ? 'dn-t' : '');
+const LEVEL = {critical:'var(--crit)', warning:'var(--warn)',
+               info:'var(--muted)', good:'var(--good)'};
+
+/* ---------------------------------------------------------------- model */
+
+// Holdings are per ISIN per account, so the same symbol can appear twice. The
+// rail is a list of companies, not of custody rows - fold them together first.
+const held = new Map();
+for (const h of D.holdings || []) {
+  const sym = h.yahoo || h.ticker;
+  if (!sym) continue;
+  const cur = held.get(sym) || {sym, name:h.name, ticker:h.ticker, ccy:h.ccy,
+    units:0, cost_eur:0, value_eur:0, price:h.price, day_pct:h.day_pct,
+    off_high:h.off_high, bucket:h.bucket, accounts:[], stale:h.stale};
+  cur.units += h.units || 0;
+  cur.cost_eur += h.cost_eur || 0;
+  cur.value_eur += h.value_eur || 0;
+  if (h.account && !cur.accounts.includes(h.account)) cur.accounts.push(h.account);
+  held.set(sym, cur);
+}
+for (const h of held.values()) {
+  h.pl_eur = h.value_eur - h.cost_eur;
+  h.pl_pct = h.cost_eur ? (h.value_eur / h.cost_eur - 1) * 100 : null;
+  h.weight = D.totals.value_eur ? (h.value_eur / D.totals.value_eur) * 100 : 0;
+}
+
+const watch = new Map();
+for (const w of D.watchlist || []) {
+  const sym = w.yahoo || w.ticker;
+  if (sym) watch.set(sym, w);
+}
+
+// An alert names its subject in the key and again in the title. Matching on the
+// symbol string covers both shapes without the analyser having to promise one.
+const alertsFor = (sym) => (D.alerts || []).filter(
+  (a) => (String(a.key || '') + ' ' + String(a.title || '')).includes(sym));
+
+const ROWS = [...new Set([...held.keys(), ...watch.keys()])].map((sym) => {
+  const h = held.get(sym), w = watch.get(sym);
+  const flags = alertsFor(sym);
+  return {
+    sym, h, w, flags,
+    label: (w && w.ticker) || (h && h.ticker) || sym,
+    company: (w && w.company) || (h && h.name) || sym,
+    isHeld: !!h,
+    price: (h && h.price) != null ? h.price : (w ? w.price_now : null),
+    ccy: (h && h.ccy) || (w && w.ccy) || '',
+    day_pct: h ? h.day_pct : null,
+    value_eur: h ? h.value_eur : null,
+    weight: h ? h.weight : 0,
+    worst: flags.reduce((acc, a) =>
+      a.level === 'critical' ? 'critical' : acc === 'critical' ? acc : a.level, null),
+  };
+}).sort((a, b) => (b.value_eur || 0) - (a.value_eur || 0) ||
+                  a.label.localeCompare(b.label));
+
+let state = {sym: ROWS.length ? ROWS[0].sym : null, filter:'all', q:'', days:365,
+             ma:{50:true, 200:true}};
+
+/* ----------------------------------------------------------------- tape */
+
+function paintTape() {
+  const t = D.totals || {}, s = D.sources || {}, hs = D.health || {};
+  $('#t-value').textContent = eur(t.value_eur);
+  $('#t-pl').innerHTML = `<b class="${cls(t.pl_pct)}">${pct(t.pl_pct)}</b>` +
+    `<span style="color:var(--muted)">${eur(t.pl_eur)}</span>`;
+
+  const live = s.equity_log_mode === 'live';
+  const flags = (D.alerts || []).filter((a) => !a.health).length;
+  const stale = s.nordnet_export_age_days > (D.thresholds || {}).csv_stale_days;
+  $('#t-meta').innerHTML = [
+    `<b>${held.size}</b> held`,
+    `<b>${watch.size}</b> watched`,
+    `<b class="${flags ? 'dn-t' : ''}">${flags}</b> flag${flags === 1 ? '' : 's'}`,
+    `CSV <b class="${stale ? 'dn-t' : ''}">${s.nordnet_export_age_days}d</b>`,
+    `Notion <b>${live ? 'live' : 'cached'}</b>`,
+  ].join('<span style="color:var(--axis);margin:0 8px">·</span>');
+
+  const problems = (hs.problems || []);
+  if (problems.length) {
+    const worst = problems.some((p) => p.level === 'critical') ? 'critical' : 'warning';
+    $('#t-banner').innerHTML =
+      `<div class="banner"><span class="dot" style="background:${LEVEL[worst]}"></span>` +
+      `<span><b>${esc(hs.headline || '')}</b> ` +
+      `<span class="why">${problems.map((p) => esc(p.title)).join(' · ')}</span></span></div>`;
+  }
+}
+
+/* ----------------------------------------------------------------- rail */
+
+function visible() {
+  const q = state.q.trim().toLowerCase();
+  return ROWS.filter((r) => {
+    if (state.filter === 'held'  && !r.isHeld) return false;
+    if (state.filter === 'watch' && !r.w) return false;
+    if (state.filter === 'flag'  && !r.flags.length) return false;
+    if (q && !(r.label + ' ' + r.company).toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+
+function paintRail() {
+  const rows = visible();
+  if (!rows.length) {
+    $('#list').innerHTML = '<div class="empty">Nothing matches that filter.</div>';
+    return;
+  }
+  $('#list').innerHTML = rows.map((r) => `
+    <div class="row" data-sym="${esc(r.sym)}" role="option"
+         aria-selected="${r.sym === state.sym}">
+      <div class="sym">${esc(r.label)}${r.worst
+        ? `<i class="dot" style="background:${LEVEL[r.worst]}"></i>` : ''}</div>
+      <div class="px num">${px(r.price)}</div>
+      <div class="co">${esc(r.company)}</div>
+      <div class="chg num ${cls(r.day_pct)}">${r.isHeld
+        ? pct(r.day_pct, 1) : '<span style="color:var(--muted)">watch</span>'}</div>
+    </div>`).join('');
+}
+
+/* ------------------------------------------------------------- mid pane */
+
+function paintHead(r) {
+  const wk = r.w;
+  $('#symhead').innerHTML = `
+    <span class="tk">${esc(r.label)}</span>
+    <span class="co">${esc(r.company)}</span>
+    ${wk && wk.verdict ? verdictBadge(wk.verdict) : ''}
+    <span class="px num">${px(r.price)}<span style="font-size:12px;
+      color:var(--muted);margin-left:5px">${esc(r.ccy)}</span></span>
+    <span class="chg num ${cls(r.day_pct)}">${r.day_pct == null ? '' : pct(r.day_pct)}</span>`;
+}
+
+function verdictBadge(v) {
+  const k = String(v).toLowerCase();
+  const c = k.includes('buy') || k.includes('add') ? 'b-buy'
+          : k.includes('trim') ? 'b-trim'
+          : k.includes('exit') || k.includes('sell') ? 'b-exit' : 'b-watch';
+  return `<span class="badge ${c}">${esc(v)}</span>`;
+}
+
+function paintStrip() {
+  const withValue = ROWS.filter((r) => r.value_eur > 0);
+  $('#stripnote').textContent =
+    `${withValue.length} positions · ${(D.sources || {}).lots} lots · ` +
+    `width is share of ${eur(D.totals.value_eur)}`;
+  $('#bars').innerHTML = withValue.map((r) => `
+    <div class="bar" data-sym="${esc(r.sym)}" data-sel="${r.sym === state.sym ? 1 : 0}"
+      style="flex:${r.weight.toFixed(3)} 1 0"
+      title="${esc(r.label)} — ${r.weight.toFixed(1)}% · ${eur(r.value_eur)}"></div>`
+  ).join('');
+}
+
+/* --------------------------------------------------------- thesis pane */
+
+function paintThesis(r) {
+  const w = r.w, h = r.h, out = [];
+
+  if (w) {
+    const decay = w.upside_decay_pts;
+    out.push(`<div class="tsec"><div class="tlabel">THE CALL</div><dl class="kv">
+      <dt>Verdict</dt><dd>${verdictBadge(w.verdict || '—')}</dd>
+      <dt>Tier</dt><dd>${esc(w.tier || '—')}</dd>
+      <dt>Target</dt><dd>${px(w.target)} ${esc(w.ccy || '')}</dd>
+      <dt>Upside now</dt><dd class="${cls(w.upside_now)}">${pct(w.upside_now, 1)}</dd>
+      <dt>Upside at eval</dt><dd>${pct(w.upside_at_eval, 1)}</dd>
+      <dt>Drift since eval</dt><dd class="${cls(w.drift_pct)}">${pct(w.drift_pct, 1)}</dd>
+      <dt>Last evaluated</dt><dd>${esc(w.last_eval || '—')}${w.days_since_eval == null
+        ? '' : ` <span style="color:var(--muted)">${w.days_since_eval}d</span>`}</dd>
+      <dt>Next check</dt><dd>${esc(w.next_check || '—')}${w.days_to_check == null
+        ? '' : ` <span style="color:var(--muted)">${w.days_to_check}d</span>`}</dd>
+      </dl>${Math.abs(decay || 0) >= (D.thresholds || {}).decay_alert_pts
+        ? `<div class="prose" style="margin-top:9px;color:var(--warn-ink)">
+           ⚠ The board still claims ${pct(w.upside_at_eval, 1)}; today it is
+           ${pct(w.upside_now, 1)} — <b>${Math.abs(decay).toFixed(1)} points</b>
+           of decay. The thesis has not been re-checked since ${esc(w.last_eval)}.</div>` : ''}
+      </div>`);
+
+    out.push(`<div class="tsec"><div class="tlabel">WHAT WOULD CHANGE YOUR MIND</div>
+      ${w.trigger_level ? `<dl class="kv" style="margin-bottom:8px">
+        <dt>Level</dt><dd>${esc(w.trigger_kind || '')} ${px(w.trigger_level)}</dd>
+        <dt>Gap to level</dt><dd class="${w.trigger_hit ? 'dn-t' : ''}">
+          ${pct(w.trigger_gap_pct, 1)}${w.trigger_hit ? ' · HIT' : ''}</dd></dl>`
+        : `<div class="prose" style="margin-bottom:8px;color:var(--muted)">
+           No price level parsed from this trigger — it is a condition, not a
+           number. Read it and judge for yourself.</div>`}
+      <div class="prose">${esc(w.trigger || 'Nothing written down.')}</div></div>`);
+
+    const fund = [['P/E', w.pe], ['Fwd P/E', w.fwd_pe],
+                  ['Net debt/EBITDA', w.net_debt_ebitda], ['Moat', w.moat],
+                  ['Market', w.market], ['Evaluations', w.evaluations]]
+      .filter((kv) => kv[1] != null && kv[1] !== '');
+    if (fund.length) out.push(`<div class="tsec"><div class="tlabel">AS RECORDED</div>
+      <dl class="kv">${fund.map((kv) =>
+        `<dt>${esc(kv[0])}</dt><dd>${esc(kv[1])}</dd>`).join('')}</dl></div>`);
+  } else {
+    out.push(`<div class="tsec"><div class="tlabel">THE CALL</div>
+      <div class="prose">Not on the Equity Log. You own it, but no target, thesis or
+      falsifying condition is written down — so nothing here can tell you when it
+      stops being a good idea.</div></div>`);
+  }
+
+  if (h) out.push(`<div class="tsec"><div class="tlabel">THE POSITION</div><dl class="kv">
+    <dt>Units</dt><dd>${h.units}</dd>
+    <dt>Account${h.accounts.length > 1 ? 's' : ''}</dt><dd>${esc(h.accounts.join(', '))}</dd>
+    <dt>Value</dt><dd>${eur(h.value_eur)}</dd>
+    <dt>Cost</dt><dd>${eur(h.cost_eur)}</dd>
+    <dt>P/L</dt><dd class="${cls(h.pl_pct)}">${pct(h.pl_pct, 1)} · ${eur(h.pl_eur)}</dd>
+    <dt>Weight</dt><dd>${h.weight.toFixed(1)}%</dd>
+    <dt>Off 52w high</dt><dd>${pct(h.off_high, 1)}</dd>
+    <dt>Bucket</dt><dd>${esc(h.bucket || '—')}</dd></dl></div>`);
+
+  if (r.flags.length) out.push(`<div class="tsec"><div class="tlabel">FLAGS</div>
+    ${r.flags.map((a) => `<div class="alert">
+      <span class="dot" style="background:${LEVEL[a.level] || 'var(--muted)'}"></span>
+      <span><div class="t">${esc(a.title)}</div>
+      <div class="d">${esc(a.detail)}</div></span></div>`).join('')}</div>`);
+
+  $('#thesis').innerHTML = out.join('');
+}
+
+/* ----------------------------------------------------------------- chart */
+
+let chart = null, candles = null, lines = [], mas = {};
+
+/* Simple moving average over closes, as a rolling sum - one pass, no window
+   re-summing, so 500 bars costs 500 additions rather than 25,000.
+
+   It is computed over the WHOLE series and sliced afterwards, never over the
+   visible window. An MA50 computed inside a 1M view would be a 21-day average
+   wearing a "50" label, and it would be wrong at exactly the left edge where
+   you are looking for the cross. */
+function sma(bars, period) {
+  if (!bars || bars.length < period) return [];
+  const out = [];
+  let sum = 0;
+  for (let i = 0; i < bars.length; i++) {
+    sum += bars[i][4];
+    if (i >= period) sum -= bars[i - period][4];
+    if (i >= period - 1) out.push({time: bars[i][0], value: sum / period});
+  }
+  return out;
+}
+
+function themeOpts() {
+  const cssVar = (n, fallback) => {
+    try {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+      return v || fallback;
+    } catch (e) { return fallback; }
+  };
+  return {
+    // attributionLogo defaults to TRUE in v4.2+ and stamps a tradingview.com
+    // link into the corner of the pane. It is a documented option, not a
+    // licence condition - Apache-2.0 asks that the notice be preserved, and it
+    // is: the library is inlined verbatim, @license header and all, a few
+    // hundred lines above this one.
+    layout: {background:{color:'transparent'}, textColor:cssVar('--muted','#898781'),
+             fontSize:11, fontFamily:'system-ui, sans-serif', attributionLogo:false},
+    grid: {vertLines:{color:cssVar('--grid','#e1e0d9')},
+           horzLines:{color:cssVar('--grid','#e1e0d9')}},
+    rightPriceScale:{borderColor:cssVar('--axis','#c3c2b7')},
+    timeScale:{borderColor:cssVar('--axis','#c3c2b7')},
+    crosshair:{mode:0, vertLine:{color:cssVar('--axis','#c3c2b7'), labelBackgroundColor:
+      cssVar('--ink-2','#52514e')}, horzLine:{color:cssVar('--axis','#c3c2b7'),
+      labelBackgroundColor:cssVar('--ink-2','#52514e')}},
+    upColor:cssVar('--up','#2a78d6'), downColor:cssVar('--down','#e34948'),
+    target:cssVar('--target','#007a5c'), trigger:cssVar('--trigger','#a85400'),
+    // Deliberately achromatic. Four plotted hues is already the ceiling - a
+    // fifth failed the normal-vision floor against the up-candle blue (purple,
+    // dE 10.7) - and a moving average is context, not identity. Grey is also
+    // the only mark on the plot with no hue at all, which is the strongest
+    // colour-blind separation available and costs nothing.
+    ma:cssVar('--ink-2','#52514e'),
+  };
+}
+
+function paintChart(r) {
+  const box = $('#chart'), miss = $('#nochart');
+  // The library is vendored, not fetched, so this only fires if assets/ was
+  // gutted - but a page that half-renders in silence is the thing we avoid.
+  if (typeof LightweightCharts === 'undefined' || !box || !box.getBoundingClientRect) {
+    if (miss) { miss.style.display = 'flex';
+      miss.textContent = 'Chart library missing from assets/.'; }
+    return;
+  }
+  const series = (D.history || {})[r.sym];
+  const bars = series && series.bars ? series.bars : null;
+  if (!bars || !bars.length) {
+    if (chart) { chart.remove(); chart = null; candles = null; lines = []; mas = {}; }
+    box.innerHTML = '';
+    miss.style.display = 'flex';
+    miss.textContent = `No price history for ${r.label}. Yahoo returned nothing for ` +
+      'this symbol; the rest of the page is unaffected.';
+    return;
+  }
+  miss.style.display = 'none';
+
+  const T = themeOpts();
+  if (!chart) {
+    chart = LightweightCharts.createChart(box, Object.assign({
+      autoSize: true, handleScale:{axisPressedMouseMove:false},
+    }, T));
+    candles = chart.addCandlestickSeries({
+      upColor:T.upColor, downColor:T.downColor,
+      borderUpColor:T.upColor, borderDownColor:T.downColor,
+      wickUpColor:T.upColor, wickDownColor:T.downColor,
+    });
+    // Same colour for both, told apart by weight and dash - so the pair is
+    // never distinguished by colour alone, same contract as target/trigger.
+    // No last value and no price line: an MA does not belong on the axis, and
+    // two extra axis labels would crowd out the two that matter.
+    const maOpts = {color:T.ma, priceLineVisible:false, lastValueVisible:false,
+                    crosshairMarkerVisible:false};
+    mas[50] = chart.addLineSeries(Object.assign({lineWidth:1, title:'MA50',
+      lineStyle:LightweightCharts.LineStyle.Solid}, maOpts));
+    mas[200] = chart.addLineSeries(Object.assign({lineWidth:2, title:'MA200',
+      lineStyle:LightweightCharts.LineStyle.Dashed}, maOpts));
+  }
+
+  // Slice by DATE, not by row count. Bars are trading days - about 252 a year -
+  // so bars.slice(-365) is fifteen months of chart under a button labelled 1Y.
+  let slice = bars;
+  if (state.days > 0) {
+    const last = Date.parse(bars[bars.length - 1][0]);
+    const from = last - state.days * 86400000;
+    slice = bars.filter((b) => Date.parse(b[0]) >= from);
+  }
+  if (!slice.length) slice = bars.slice(-2);
+  candles.setData(slice.map((b) => ({time:b[0], open:b[1], high:b[2],
+                                     low:b[3], close:b[4]})));
+
+  // Full-history MA, then clipped to the window. ISO dates compare correctly as
+  // strings, so no parsing is needed here. A symbol with fewer than `period`
+  // bars yields an empty series rather than a misleading partial one.
+  const edge = slice[0][0];
+  for (const p of [50, 200]) {
+    if (!mas[p]) continue;
+    mas[p].setData(state.ma[p] ? sma(bars, p).filter((pt) => pt.time >= edge) : []);
+  }
+
+  lines.forEach((l) => { try { candles.removePriceLine(l); } catch (e) {} });
+  lines = [];
+  const w = r.w;
+  // Both lines carry a title and an axis label, so target and trigger are never
+  // told apart by colour alone - solid vs dashed, plus the words themselves.
+  if (w && w.target) lines.push(candles.createPriceLine({
+    price:w.target, color:T.target, lineWidth:2,
+    lineStyle:LightweightCharts.LineStyle.Solid,
+    axisLabelVisible:true, title:'target'}));
+  if (w && w.trigger_level) lines.push(candles.createPriceLine({
+    price:w.trigger_level, color:T.trigger, lineWidth:2,
+    lineStyle:LightweightCharts.LineStyle.Dashed,
+    axisLabelVisible:true, title:'trigger'}));
+
+  chart.timeScale().fitContent();
+}
+
+function retheme() {
+  if (!chart) return;
+  const T = themeOpts();
+  chart.applyOptions(T);
+  if (candles) candles.applyOptions({
+    upColor:T.upColor, downColor:T.downColor,
+    borderUpColor:T.upColor, borderDownColor:T.downColor,
+    wickUpColor:T.upColor, wickDownColor:T.downColor});
+  for (const p of [50, 200]) if (mas[p]) mas[p].applyOptions({color:T.ma});
+  const r = ROWS.find((x) => x.sym === state.sym);
+  if (r) paintChart(r);
+}
+
+/* ------------------------------------------------------------ data sheet */
+
+function paintSheet() {
+  const rows = [...held.values()].sort((a, b) => b.value_eur - a.value_eur);
+  const h = `<h2>Holdings — ${rows.length} companies, ${(D.sources||{}).lots} lots</h2>
+    <div class="scroll"><table><thead><tr><th>Ticker</th><th>Company</th>
+    <th>Acct</th><th>Units</th><th>Price</th><th>Day</th><th>Value €</th>
+    <th>Cost €</th><th>P/L €</th><th>P/L %</th><th>Weight</th>
+    <th>Off high</th></tr></thead><tbody>${rows.map((p) => `<tr>
+      <td>${esc(p.ticker)}</td><td>${esc(p.name)}</td>
+      <td>${esc(p.accounts.join('/'))}</td><td>${p.units}</td>
+      <td>${px(p.price)}</td><td class="${cls(p.day_pct)}">${pct(p.day_pct,1)}</td>
+      <td>${eur(p.value_eur)}</td><td>${eur(p.cost_eur)}</td>
+      <td class="${cls(p.pl_eur)}">${eur(p.pl_eur)}</td>
+      <td class="${cls(p.pl_pct)}">${pct(p.pl_pct,1)}</td>
+      <td>${p.weight.toFixed(1)}%</td><td>${pct(p.off_high,1)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+
+  const w = `<h2>Equity Log — ${(D.watchlist||[]).length} rows,
+    ${(D.sources||{}).equity_log_mode}</h2>
+    <div class="scroll"><table><thead><tr><th>Ticker</th><th>Verdict</th>
+    <th>Tier</th><th>Price</th><th>Target</th><th>Upside now</th>
+    <th>At eval</th><th>Decay pts</th><th>Trigger</th><th>Gap</th>
+    <th>Evaluated</th><th>Next</th></tr></thead><tbody>${(D.watchlist||[]).map((x)=>`<tr>
+      <td>${esc(x.ticker)}</td><td>${esc(x.verdict)}</td><td>${esc(x.tier)}</td>
+      <td>${px(x.price_now)}</td><td>${px(x.target)}</td>
+      <td class="${cls(x.upside_now)}">${pct(x.upside_now,1)}</td>
+      <td>${pct(x.upside_at_eval,1)}</td>
+      <td>${x.upside_decay_pts == null ? '—' : x.upside_decay_pts.toFixed(1)}</td>
+      <td>${x.trigger_level ? esc(x.trigger_kind)+' '+px(x.trigger_level) : '—'}</td>
+      <td>${pct(x.trigger_gap_pct,1)}</td><td>${esc(x.last_eval)}</td>
+      <td>${esc(x.next_check)}</td></tr>`).join('')}</tbody></table></div>`;
+
+  const a = `<h2>Flags — ${(D.alerts||[]).length}</h2>
+    <div class="scroll"><table><thead><tr><th>Level</th><th>What</th><th>Why</th>
+    </tr></thead><tbody>${(D.alerts||[]).map((x) => `<tr>
+      <td>${esc(x.level)}</td><td>${esc(x.title)}</td>
+      <td class="wrap">${esc(x.detail)}</td></tr>`).join('')}</tbody></table></div>`;
+
+  const s = D.sources || {};
+  const src = `<h2>Provenance</h2><div class="scroll"><table><tbody>
+    <tr><td>Generated</td><td>${esc(D.generated)}</td></tr>
+    <tr><td>Nordnet export</td><td>${esc(s.nordnet_export_date)} ·
+      ${s.nordnet_export_age_days} days old · ${esc((s.nordnet_files||[]).join(', '))}</td></tr>
+    <tr><td>Equity Log</td><td>${esc(s.equity_log_mode)} ·
+      ${s.equity_log_age_days} days old</td></tr>
+    <tr><td>Price history</td><td>${s.history_symbols} symbols cached ·
+      ${s.history_problems} without a fresh series</td></tr>
+    </tbody></table></div>`;
+
+  $('#sheetbody').innerHTML = h + w + a + src;
+}
+
+/* ---------------------------------------------------------------- wiring */
+
+function select(sym) {
+  if (!sym) return;
+  state.sym = sym;
+  const r = ROWS.find((x) => x.sym === sym);
+  if (!r) return;
+  paintRail(); paintHead(r); paintThesis(r); paintStrip(); paintChart(r);
+}
+
+function on(sel, ev, fn) { const n = $(sel); if (n) n.addEventListener(ev, fn); }
+
+on('#list', 'click', (e) => {
+  const row = e.target && e.target.closest && e.target.closest('.row');
+  if (row) select(row.getAttribute('data-sym'));
+});
+on('#bars', 'click', (e) => {
+  const bar = e.target && e.target.closest && e.target.closest('.bar');
+  if (bar) select(bar.getAttribute('data-sym'));
+});
+on('#segs', 'click', (e) => {
+  const b = e.target && e.target.closest && e.target.closest('.seg');
+  if (!b) return;
+  state.filter = b.getAttribute('data-f');
+  const all = document.querySelectorAll('#segs .seg');
+  for (const n of all) n.setAttribute('aria-pressed', String(n === b));
+  paintRail();
+});
+on('#ranges', 'click', (e) => {
+  const b = e.target && e.target.closest && e.target.closest('.rbtn');
+  if (!b) return;
+  const p = b.getAttribute('data-ma');
+  if (p) {
+    // MA buttons toggle independently; range buttons are mutually exclusive.
+    // Sharing one handler means sharing one repaint, but not one selection rule.
+    state.ma[p] = !state.ma[p];
+    b.setAttribute('aria-pressed', String(state.ma[p]));
+  } else {
+    state.days = Number(b.getAttribute('data-d'));
+    for (const n of document.querySelectorAll('#ranges .rbtn[data-d]'))
+      n.setAttribute('aria-pressed', String(n === b));
+  }
+  const r = ROWS.find((x) => x.sym === state.sym);
+  if (r) paintChart(r);
+});
+on('#q', 'input', (e) => { state.q = e.target.value || ''; paintRail(); });
+
+on('#t-sheet', 'click', () => { const s = $('#sheet'); if (s) s.setAttribute('data-open','1'); });
+on('#t-close', 'click', () => { const s = $('#sheet'); if (s) s.removeAttribute('data-open'); });
+
+on('#t-theme', 'click', () => {
+  let dark = false;
+  try {
+    const root = document.documentElement;
+    dark = root.getAttribute('data-theme') !== 'dark';
+    root.setAttribute('data-theme', dark ? 'dark' : 'light');
+  } catch (e) {}
+  const b = $('#t-theme');
+  if (b) { b.setAttribute('aria-pressed', String(dark)); b.textContent = dark ? 'Light' : 'Dark'; }
+  retheme();
+});
+
+// Arrow keys walk the rail. It is a terminal; hands should not have to leave
+// the keyboard to step through twenty-three names.
+try {
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const rows = visible();
+    const i = rows.findIndex((r) => r.sym === state.sym);
+    const next = rows[Math.min(rows.length - 1, Math.max(0, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+    if (next) { e.preventDefault(); select(next.sym); }
+  });
+} catch (e) {}
+
+paintTape();
+paintSheet();
+if (ROWS.length) {
+  select(state.sym);
+} else {
+  const l = $('#list');
+  if (l) l.innerHTML = '<div class="empty">No positions and no watchlist rows.</div>';
+}
+</script>

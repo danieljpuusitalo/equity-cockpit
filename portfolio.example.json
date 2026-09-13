@@ -1,0 +1,54 @@
+{
+  "_comment": [
+    "Copy this file to portfolio.local.json and fill it in. That copy is gitignored;",
+    "this one is committed and must never contain real holdings.",
+    "",
+    "It is the ONLY file in the repo that knows what you own. Everything else works",
+    "off ISINs it reads from the broker export, so the code is publishable and the",
+    "book is not.",
+    "",
+    "You do not have to write this by hand. Run the cockpit once with the file",
+    "missing and it will name every ISIN in your export that has no entry."
+  ],
+
+  "accounts": {
+    "12345678": "MAIN",
+    "87654321": "FUNDS"
+  },
+
+  "equity_log_data_source": "00000000-0000-0000-0000-000000000000",
+
+  "holdings": {
+    "US0378331005": {
+      "symbol": "AAPL",
+      "name": "Apple",
+      "bucket": "US hardware",
+      "class": "stock"
+    },
+
+    "IE00B4L5Y983": {
+      "symbol": "IWDA.AS",
+      "name": "iShares Core MSCI World",
+      "bucket": "Broad equity - world",
+      "class": "fund",
+      "target_weight_pct": 25.0
+    },
+
+    "SE0000000000": {
+      "symbol": null,
+      "name": "A fund with no public feed",
+      "bucket": "Index funds",
+      "class": "fund",
+      "target_weight_pct": null
+    }
+  },
+
+  "_schema": {
+    "accounts": "broker account number -> the short label you want to see on the page",
+    "equity_log_data_source": "Notion DATA SOURCE id for the Equity Log (not the database id - they differ under API version 2025-09-03)",
+    "symbol": "Yahoo Finance symbol, or null for 'no public feed; carry at the broker's own valuation'",
+    "bucket": "free-text grouping for concentration reporting; anything unmapped reads as Unclassified",
+    "class": "'stock' -> judged by thesis: needs a target, a trigger and a written reason. 'fund' -> judged by allocation: needs a target weight and a drift band, not a thesis.",
+    "target_weight_pct": "funds only. Intended share of the book, in percent. null means 'no policy set yet' - the cockpit reports that as an open gap rather than inventing a number for you."
+  }
+}

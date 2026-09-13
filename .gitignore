@@ -1,0 +1,43 @@
+# ---------------------------------------------------------------------------
+# This repo is publishable. That is only true because of this file, so read it
+# before adding anything.
+#
+# The rule: the repo may contain code, schema and documentation. It may not
+# contain what is owned, what it cost, what it is worth, or any credential.
+# ---------------------------------------------------------------------------
+
+# Credentials. NOTION_TOKEN, and anything added later.
+.env
+*.env
+!*.example.env
+
+# The holdings list. portfolio.local.json is the single file that knows what is
+# owned; portfolio.example.json is the committed schema and stays.
+portfolio.local.json
+*.local.json
+
+# Broker exports - units, cost basis, account numbers, every transaction.
+nordnet-ostoerittain*.csv
+*.csv
+
+# Generated: the dashboard embeds the entire book, and portfolio.json is it in
+# plain text. Never commit out/.
+out/
+
+# Caches and run history. state/equity-log.json is the Notion board mirrored to
+# disk - theses and targets - and history.jsonl is the book day by day.
+state/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,325 @@
+"""The join. This is the part no product on the market does for you.
+
+Notion holds the judgement (thesis, target, the condition that would change
+your mind). Nordnet holds the truth about what you own. Yahoo holds the price.
+Everything here exists to hold those three against each other and report where
+they disagree.
+"""
+from __future__ import annotations
+
+import re
+import datetime as dt
+
+import config as C
+
+# ------------------------------------------------------------------ triggers
+
+# Price levels written into the free-text Trigger field, e.g.
+#   "Price below USD 285 does the same"
+#   "Under ~220 the add question reopens"
+#   "forced selling takes it below SEK 185"
+#   "Price below 3,700p does the same"
+_LEVEL = r"(\d[\d,.]*)"
+# "~$120", "SEK 185", "USD 285", "3,700p" - currency and tilde in either order.
+_PRE = r"[~≈]?\s*(?:USD|EUR|SEK|NOK|DKK|GBP|GBp|\$|€|£)?\s*[~≈]?\s*"
+_PATTERNS = [
+    (re.compile(r"below\s+" + _PRE + _LEVEL, re.I), "below"),
+    (re.compile(r"under\s+" + _PRE + _LEVEL, re.I), "below"),
+    (re.compile(r"drops?\s+to\s+" + _PRE + _LEVEL, re.I), "below"),
+    (re.compile(r"above\s+" + _PRE + _LEVEL, re.I), "above"),
+    (re.compile(r"over\s+" + _PRE + _LEVEL, re.I), "above"),
+]
+
+# A number wearing one of these is a quantity, not a share price: "net debt
+# below EUR 70M", "reguide below $8bn", "margin below 20%", "under 12x".
+# Getting this wrong is worse than parsing nothing - it fires a false alert.
+_NOT_A_PRICE = re.compile(r"^\s*(?:%|x\b|m\b|mn\b|bn\b|b\b|k\b|"
+                          r"million|billion|percent)", re.I)
+
+
+def _to_float(raw):
+    raw = raw.strip().rstrip("p").replace(" ", "")
+    # 3,700 is three thousand seven hundred; 1,5 would be Finnish decimal.
+    if "," in raw and "." not in raw:
+        whole, _, frac = raw.rpartition(",")
+        raw = raw.replace(",", "") if len(frac) == 3 else f"{whole}.{frac}"
+    else:
+        raw = raw.replace(",", "")
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def parse_trigger(text, reference=None):
+    """Pull a machine-checkable price level out of trigger prose.
+
+    Returns (level, kind) or (None, None). Deliberately conservative, because
+    a wrong level is worse than no level: it wakes you at 3am over a number
+    that was never a price. Two guards - a unit suffix rejects quantities
+    ("EUR 70M", "$8bn", "20%"), and if a reference price is supplied the level
+    must land in a plausible band around it.
+    """
+    if not text:
+        return None, None
+    for pattern, kind in _PATTERNS:
+        for match in pattern.finditer(text):
+            if _NOT_A_PRICE.match(text[match.end():match.end() + 12]):
+                continue
+            value = _to_float(match.group(1))
+            if value is None:
+                continue
+            if reference and not (0.4 * reference <= value <= 2.5 * reference):
+                continue
+            return value, kind
+    return None, None
+
+
+def days_until(date_str, today=None):
+    if not date_str:
+        return None
+    today = today or dt.date.today()
+    try:
+        return (dt.date.fromisoformat(date_str[:10]) - today).days
+    except ValueError:
+        return None
+
+
+# ------------------------------------------------------------------ holdings
+
+def value_holdings(positions, quotes, fx):
+    """Attach live prices to positions. Anything unpriced is marked, not dropped."""
+    rows = []
+    for pos in positions:
+        row = dict(pos)
+        symbol, rate = pos["yahoo"], fx.get(pos["ccy"])
+        quote = quotes.get(symbol) if symbol and symbol != "MISSING" else None
+
+        if quote and rate:
+            row["price"] = quote["price"]
+            row["value_eur"] = round(quote["price"] * pos["units"] * rate, 2)
+            row["stale"] = False
+            prev = quote.get("prev_close")
+            row["day_pct"] = (round((quote["price"] / prev - 1) * 100, 2)
+                              if prev else None)
+            high = quote.get("year_high")
+            row["off_high"] = (round((quote["price"] / high - 1) * 100, 1)
+                               if high else None)
+            row["year_high"], row["year_low"] = high, quote.get("year_low")
+        else:
+            # Fall back to Nordnet's own valuation rather than dropping the row.
+            row["price"] = None
+            row["value_eur"] = pos["nordnet_mv_eur"]
+            row["stale"] = True
+            row["day_pct"] = row["off_high"] = None
+            row["year_high"] = row["year_low"] = None
+            row["stale_reason"] = ("no public feed" if symbol is None
+                                   else "price fetch failed")
+
+        cost = pos["cost_eur"]
+        row["pl_eur"] = round(row["value_eur"] - cost, 2) if cost else None
+        row["pl_pct"] = round((row["value_eur"] / cost - 1) * 100, 2) if cost else None
+        rows.append(row)
+    return rows
+
+
+def price_sanity(holdings):
+    """Cross-check live prices against Nordnet's own market value.
+
+    Nordnet valued every lot on the export date. If our live price implies a
+    wildly different number, the ISIN -> Yahoo mapping is wrong (wrong listing
+    line, wrong share class, wrong currency). This is the check that caught
+    WDEF. It is the difference between a dashboard you can trust and one that
+    quietly lies.
+    """
+    findings = []
+    for row in holdings:
+        if row["stale"] or not row["nordnet_mv_eur"]:
+            continue
+        divergence = (row["value_eur"] / row["nordnet_mv_eur"] - 1) * 100
+        row["vs_nordnet_pct"] = round(divergence, 1)
+        if abs(divergence) >= C.PRICE_DIVERGENCE_PCT:
+            findings.append({
+                "isin": row["isin"], "ticker": row["tunnus"],
+                "yahoo": row["yahoo"], "divergence_pct": round(divergence, 1),
+                "live_value_eur": row["value_eur"],
+                "nordnet_value_eur": row["nordnet_mv_eur"],
+                "message": (
+                    f"{row['tunnus']}: live price implies EUR {row['value_eur']:,.0f} "
+                    f"but Nordnet valued it at EUR {row['nordnet_mv_eur']:,.0f} "
+                    f"({divergence:+.1f}%). Check the {row['yahoo']} mapping - "
+                    "wrong listing line or share class."),
+            })
+    return findings
+
+
+# ----------------------------------------------------------------- watchlist
+
+def join_watchlist(log_rows, quotes, holdings, today=None):
+    """Recompute every Equity Log row against the live price."""
+    today = today or dt.date.today()
+    held_by_ticker = {h["tunnus"].upper(): h for h in holdings}
+    out = []
+
+    for row in log_rows:
+        ticker = (row.get("Ticker") or "").strip()
+        symbol = _yahoo_for(ticker)
+        quote = quotes.get(symbol)
+        price_now = quote["price"] if quote else None
+        eval_price = _f(row.get("Price at eval"))
+        target = _f(row.get("Target"))
+
+        item = {
+            "ticker": ticker,
+            "yahoo": symbol,
+            "company": row.get("Company"),
+            "verdict": row.get("Verdict"),
+            "tier": str(row.get("Tier") or ""),
+            "held_notion": row.get("Held"),
+            "ccy": row.get("Currency"),
+            "price_at_eval": eval_price,
+            "price_now": price_now,
+            "target": target,
+            "last_eval": row.get("Last evaluated"),
+            "next_check": row.get("Next check"),
+            "trigger": row.get("Trigger"),
+            "page_id": row.get("page_id"),
+            "stale_price": price_now is None,
+            "market": row.get("Market"),
+            "moat": row.get("Moat"),
+            "pe": _f(row.get("P/E")),
+            "fwd_pe": _f(row.get("Fwd P/E")),
+            "net_debt_ebitda": _f(row.get("Net debt/EBITDA")),
+            "previous_verdict": row.get("Previous verdict"),
+            "evaluations": row.get("Evaluations"),
+        }
+
+        item["drift_pct"] = (round((price_now / eval_price - 1) * 100, 2)
+                             if price_now and eval_price else None)
+        item["upside_now"] = (round((target / price_now - 1) * 100, 1)
+                              if price_now and target else None)
+        item["upside_at_eval"] = (round((target / eval_price - 1) * 100, 1)
+                                  if eval_price and target else None)
+        item["upside_decay_pts"] = (
+            round(item["upside_now"] - item["upside_at_eval"], 1)
+            if item["upside_now"] is not None
+            and item["upside_at_eval"] is not None else None)
+
+        level, kind = parse_trigger(row.get("Trigger"), price_now or eval_price)
+        item["trigger_level"], item["trigger_kind"] = level, kind
+        if level and price_now:
+            gap = (level / price_now - 1) * 100
+            item["trigger_gap_pct"] = round(gap, 1)
+            item["trigger_hit"] = (price_now <= level if kind == "below"
+                                   else price_now >= level)
+        else:
+            item["trigger_gap_pct"] = None
+            item["trigger_hit"] = None
+
+        item["days_to_check"] = days_until(row.get("Next check"), today)
+        item["days_since_eval"] = (
+            -days_until(row.get("Last evaluated"), today)
+            if days_until(row.get("Last evaluated"), today) is not None else None)
+
+        actual = held_by_ticker.get(_base_ticker(ticker).upper())
+        item["held_actual"] = actual["account"] if actual else "Not held"
+        item["held_units"] = actual["units"] if actual else None
+        out.append(item)
+    return out
+
+
+def _base_ticker(ticker):
+    return (ticker or "").split(".")[0].strip()
+
+
+def _yahoo_for(ticker):
+    """Equity Log tickers are already Yahoo-shaped ('TNOM.HE', 'GOOGL')."""
+    return (ticker or "").strip() or None
+
+
+def _f(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def reconcile(watchlist):
+    """Where the Notion `Held` field and the broker export disagree."""
+    issues = []
+    for item in watchlist:
+        notion = (item["held_notion"] or "").strip()
+        actual = item["held_actual"]
+        if notion in ("", "-"):
+            issues.append({"ticker": item["ticker"], "kind": "blank",
+                           "notion": notion or "(blank)", "actual": actual,
+                           "message": f"{item['ticker']}: Held is blank in Notion; "
+                                      f"broker says {actual}."})
+            continue
+        notion_held = notion.upper() not in ("NOT HELD", "NO", "NONE")
+        actual_held = actual != "Not held"
+        if notion_held != actual_held:
+            issues.append({"ticker": item["ticker"], "kind": "mismatch",
+                           "notion": notion, "actual": actual,
+                           "message": f"{item['ticker']}: Notion says '{notion}', "
+                                      f"broker export says '{actual}'."})
+    return issues
+
+
+# -------------------------------------------------------------------- alerts
+
+def alerts(watchlist, holdings, health):
+    """What actually deserves your attention today, most urgent first."""
+    found = []
+
+    for item in watchlist:
+        if item.get("trigger_hit"):
+            found.append({
+                "level": "critical", "key": f"trigger-hit:{item['ticker']}",
+                "title": f"{item['ticker']} has hit its written trigger",
+                "detail": f"Live {item['price_now']:.2f} {item['ccy']} vs trigger "
+                          f"{item['trigger_level']}. {item['trigger']}"})
+
+    for item in watchlist:
+        days = item.get("days_to_check")
+        if days is not None and 0 <= days <= C.CHECK_SOON_DAYS:
+            found.append({
+                "level": "warning", "key": f"check-due:{item['ticker']}:{item['next_check']}",
+                "title": f"{item['ticker']} catalyst in {days} days ({item['next_check']})",
+                "detail": item["trigger"] or ""})
+
+    for item in watchlist:
+        gap = item.get("trigger_gap_pct")
+        if gap is not None and not item.get("trigger_hit") and abs(gap) <= C.TRIGGER_NEAR_PCT:
+            found.append({
+                "level": "warning", "key": f"trigger-near:{item['ticker']}",
+                "title": f"{item['ticker']} is {abs(gap):.1f}% from its trigger",
+                "detail": f"Live {item['price_now']:.2f} {item['ccy']}, "
+                          f"trigger at {item['trigger_level']}."})
+
+    for item in watchlist:
+        decay = item.get("upside_decay_pts")
+        if decay is not None and abs(decay) >= C.DECAY_ALERT_PTS:
+            direction = "widened" if decay > 0 else "narrowed"
+            found.append({
+                "level": "warning" if decay < 0 else "good",
+                "key": f"decay:{item['ticker']}:{round(decay)}",
+                "title": f"{item['ticker']} upside {direction} "
+                         f"{item['upside_at_eval']:.1f}% -> {item['upside_now']:.1f}%",
+                "detail": f"Price moved {item['drift_pct']:+.1f}% since the "
+                          f"{item['last_eval']} check. The board still says "
+                          f"{item['upside_at_eval']:.1f}%."})
+
+    # Health problems ride in the alert list because that is what Telegram
+    # reads - a task that quietly stopped running has to be able to say so.
+    # The page tags them and shows them in its banner instead, so the same
+    # sentence is not printed twice.
+    for problem in health.get("problems", []):
+        found.append({"level": problem["level"], "key": problem["key"],
+                      "title": problem["title"], "detail": problem["detail"],
+                      "health": True})
+
+    order = {"critical": 0, "warning": 1, "good": 2}
+    found.sort(key=lambda a: order.get(a["level"], 3))
+    return found
