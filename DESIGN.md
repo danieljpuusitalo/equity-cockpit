@@ -21,6 +21,19 @@ returned. None of them stores the three things that actually decay:
 - the **thesis** behind it,
 - the **condition that would falsify it**.
 
+*Re-surveyed 2026-09-13, and the original claim was slightly too strong.* A
+thesis-tracking category did appear in 2025–26 — Helm Terminal, MyThesis, Vela,
+Horyzon and others — and two of them genuinely automate the monitoring. But
+Helm is explicitly "any **US** ticker", MyThesis charges **per holding per
+month** (~$115/mo at 23 positions), and no product in that category documents
+Nordic exchange support at all. Meanwhile nothing that covers Helsinki and
+Stockholm does conviction. So the gap is the **intersection**, not an absence —
+which is the more honest and more durable claim. Nordnet is the other half of
+the moat: its external API says "currently not onboarding new customers", the
+PSD2 route via Tink is deprecated, and Nordnet has no holdings-export button at
+all (their FAQ tells you to select the table and paste it into Excel). Every
+competitor that imports Nordnet does it by CSV round-trip too.
+
 Daniel's Notion Equity Log holds the target and the verdict as real fields. The
 other two live inside one prose property, `Trigger` — there is **no thesis
 field**. This was assumed when the cockpit was built and only checked

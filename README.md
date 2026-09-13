@@ -9,8 +9,13 @@ disagree:
   and a `Trigger` paragraph carrying the reasoning and the condition that would
   change your mind.
 
-Every portfolio tracker on the market does the first two. None of them stores
-the third, which is the only part that decays silently. This exists for the gap.
+Every portfolio tracker on the market does the first two. The third — the part
+that decays silently — falls in a gap: the products that track a written thesis
+(Helm, MyThesis, and a handful of 2025–26 startups) are **US tickers only**, and
+the products that cover Helsinki and Stockholm do performance accounting, not
+conviction. Nor does any of them sync Nordnet; the external API has been closed
+to new customers for years, so every one is a CSV round-trip. This exists for
+that intersection.
 
 One caveat, measured rather than assumed: the Log has **no separate thesis
 field**. `Trigger` is doing four jobs at once — falsifying condition, metric,
