@@ -88,6 +88,12 @@ replacing `nordnet-ostoerittain.csv` (OST) and `nordnet-ostoerittain (1).csv`
 (AOT). The dashboard shows the export age on every run and raises a warning past
 30 days.
 
+> `OST` and `AOT` are the two **accounts**, not the file format: *osakesäästötili*
+> (the equity savings account) and *arvo-osuustili* (the book-entry account).
+> `ostoerittäin` is only the name of the lot-level Nordnet view both are exported
+> from. The filenames put the two words next to each other and they have been
+> misread as the same thing.
+
 > That project folder is also read by the scheduled daily markets briefing.
 > Do not move, rename or restructure it.
 
