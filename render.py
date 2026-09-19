@@ -20,7 +20,7 @@ CHARTLIB = C.ROOT / "assets" / "lightweight-charts.standalone.production.js"
 
 
 def payload(positions_valued, watchlist, alerts, health, fx, sources,
-            history=None, coverage=None, book_return=None):
+            history=None, coverage=None, book_return=None, indicators=None):
     """The single object the page renders. Nothing is computed in the browser
     that could have been computed here - the page displays, it does not decide."""
     total_value = round(sum(h["value_eur"] or 0 for h in positions_valued), 2)
@@ -42,6 +42,11 @@ def payload(positions_valued, watchlist, alerts, health, fx, sources,
         # Stocks answer to a thesis, funds to a target weight - see
         # analyse.coverage for why those are different questions.
         "coverage": coverage or {},
+        # symbol -> latest value of every indicator, computed off the same
+        # cached bars the chart draws, so this costs no extra fetch. Descriptive
+        # only: numbers and words like "overbought", never a buy or a sell. The
+        # thesis decides; this is the weather report it decides in.
+        "indicators": indicators or {},
         "alerts": alerts,
         "health": health,
         "fx": fx,

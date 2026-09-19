@@ -290,6 +290,157 @@ def price_history(symbols, today=None):
     return out, problems, pulled
 
 
+# ------------------------------------------------------------- fundamentals
+
+# What we keep out of the 150-180 keys `.info` returns. Everything here is
+# either a multiple the board records by hand, or context for one.
+#
+# `recommendationKey` is deliberately NOT among them, and it is the one field
+# here worth explaining. Yahoo returns "strong_buy" / "hold" / "none", and it
+# would render as a badge for free. It is left on the floor for the same reason
+# indicators.snapshot never emits a BUY: this board belongs to someone who
+# writes his own thesis, and the moment a page prints somebody else's verdict
+# next to his, it is making the decision the thesis exists to make.
+# `targetMeanPrice` is kept, because a number you can hold your own target up
+# against is evidence; a verb telling you what to do is not.
+#
+# `dividendYield` is also skipped: yfinance has shipped it as both a fraction
+# and a percentage across versions, and a yield of "0.79" that might be 0.79%
+# or 79% is worse than no yield at all. If it is wanted later, verify the unit
+# against a known payer first - do not infer it from the magnitude.
+_INFO_FIELDS = ("trailingPE", "forwardPE", "priceToBook", "marketCap",
+                "trailingEps", "forwardEps", "totalDebt", "totalCash",
+                "ebitda", "sector", "industry", "targetMeanPrice",
+                "numberOfAnalystOpinions", "returnOnEquity", "profitMargins",
+                "beta")
+
+
+def _info(symbol, retries=2, pause=0.5):
+    """One symbol's `.info`, or None. Never raises."""
+    import yfinance as yf
+    for attempt in range(retries):
+        try:
+            info = yf.Ticker(symbol).info
+            if info:
+                return info
+        except Exception:
+            pass
+        if attempt < retries - 1:
+            time.sleep(pause)
+    return None
+
+
+def _shape_info(info):
+    """The handful of figures the board actually argues with.
+
+    Returns None when nothing usable came back, which is the normal and
+    expected answer for a fund - not a fault, and not worth a problem entry.
+    """
+    def num(key):
+        value = info.get(key)
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        return value if value == value else None        # NaN
+
+    debt, cash, ebitda = num("totalDebt"), num("totalCash"), num("ebitda")
+    # Net debt, not gross: Nokia carries more cash than debt, and a gross-debt
+    # ratio would report a net-cash balance sheet as levered. Negative is
+    # correct and meaningful here - it means net cash.
+    net_debt_ebitda = None
+    if debt is not None and ebitda:
+        net_debt_ebitda = round((debt - (cash or 0.0)) / ebitda, 2)
+
+    out = {
+        "pe": num("trailingPE"),
+        "fwd_pe": num("forwardPE"),
+        "pb": num("priceToBook"),
+        "market_cap": num("marketCap"),
+        "eps": num("trailingEps"),
+        "fwd_eps": num("forwardEps"),
+        "net_debt_ebitda": net_debt_ebitda,
+        "street_target": num("targetMeanPrice"),
+        "street_analysts": num("numberOfAnalystOpinions"),
+        "roe_pct": (num("returnOnEquity") or 0) * 100 if num("returnOnEquity") is not None else None,
+        "margin_pct": (num("profitMargins") or 0) * 100 if num("profitMargins") is not None else None,
+        "beta": num("beta"),
+        "sector": info.get("sector") or None,
+        "industry": info.get("industry") or None,
+    }
+    # A lone trailing P/E on an accumulating ETF is a portfolio-weighted
+    # aggregate wearing a company's clothes - IMAE.AS returns exactly that and
+    # nothing else. Require a real company's worth of fields before believing
+    # any of it.
+    if sum(1 for v in out.values() if v is not None) < 4:
+        return None
+    return out
+
+
+def fundamentals(symbols, today=None):
+    """Live multiples per symbol, cached on disk and refetched once a day.
+
+    Same contract as price_history: ask Yahoo only when what we hold is not
+    from today, keep the last good answer when a fetch fails, and report
+    staleness rather than dropping the figure. A symbol that has never returned
+    anything is cached as an explicit null so the miss is visible in the file
+    rather than looking like a symbol nobody asked about.
+
+    Returns (data, problems, pulled).
+    """
+    today = today or dt.date.today()
+    cache = {}
+    if C.FUNDAMENTALS_CACHE.exists():
+        try:
+            cache = json.loads(C.FUNDAMENTALS_CACHE.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            cache = {}
+    series = cache.get("symbols", {})
+
+    out, problems, pulled = {}, {}, 0
+    for symbol in symbols:
+        if not symbol or symbol == "MISSING":
+            continue
+        held = series.get(symbol)
+        if held and held.get("fetched") == str(today):
+            out[symbol] = held
+            continue
+        info = _info(symbol)
+        shaped = _shape_info(info) if info else None
+        if shaped:
+            out[symbol] = {"fetched": str(today), "fields": shaped}
+            pulled += 1
+        elif info is not None and (held or {}).get("fields"):
+            # Answered, but with less than a company's worth of fields - from a
+            # symbol that HAS answered properly before. That is a degraded
+            # response, not a reclassification: yfinance returns a thin dict on
+            # a rate limit as readily as it does for a fund, and `_info` only
+            # returns None when the dict is empty outright. Writing the null
+            # here would blank a real stock's multiples with no problem
+            # recorded, which reads identically to the company having stopped
+            # reporting. Keep the last good answer and say it is stale.
+            out[symbol] = held
+            problems[symbol] = (f"fundamentals came back thin; showing "
+                                f"{held.get('fetched')}")
+        elif info is not None:
+            # Answered, but with nothing a company would have, and nothing
+            # better was ever cached. A fund. Record the miss so tomorrow's run
+            # does not read it as unasked.
+            out[symbol] = {"fetched": str(today), "fields": None}
+            pulled += 1
+        elif held:
+            out[symbol] = held
+            problems[symbol] = f"fundamentals not refreshed; showing {held.get('fetched')}"
+        else:
+            problems[symbol] = "no fundamentals from Yahoo"
+
+    C.FUNDAMENTALS_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    C.FUNDAMENTALS_CACHE.write_text(json.dumps(
+        {"fetched": str(today), "symbols": out}, separators=(",", ":")),
+        encoding="utf-8")
+    return out, problems, pulled
+
+
 # -------------------------------------------------------------------- Notion
 
 def _load_env_file(path: Path):

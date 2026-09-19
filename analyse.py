@@ -302,7 +302,7 @@ def price_sanity(holdings):
 def join_watchlist(log_rows, quotes, holdings, today=None):
     """Recompute every Equity Log row against the live price."""
     today = today or dt.date.today()
-    held_by_ticker = {h["tunnus"].upper(): h for h in holdings}
+    held_by_ticker = _held_index(holdings)
     out = []
 
     for row in log_rows:
@@ -375,11 +375,33 @@ def join_watchlist(log_rows, quotes, holdings, today=None):
             -days_until(row.get("Last evaluated"), today)
             if days_until(row.get("Last evaluated"), today) is not None else None)
 
-        actual = held_by_ticker.get(_base_ticker(ticker).upper())
+        actual = (held_by_ticker.get((symbol or "").upper())
+                  or held_by_ticker.get(_base_ticker(ticker).upper()))
         item["held_actual"] = actual["account"] if actual else "Not held"
         item["held_units"] = actual["units"] if actual else None
         out.append(item)
     return out
+
+
+def _held_index(holdings):
+    """Index the broker's positions by every name the Equity Log might use.
+
+    The Log speaks Yahoo ('NOVO-B.CO'); Nordnet speaks its own symbol
+    ('NOVO B'). Stripping the suffix off the Yahoo ticker and hoping the stems
+    collide works for ADMCM and MSFT and fails for exactly the names where the
+    two vendors punctuate differently - 'NOVO-B' never equals 'NOVO B', so a
+    real holding reported itself as unowned and raised a disagreement alert
+    against a board that was right. The holding already carries the Yahoo
+    symbol it was priced with; match on that first and keep the stem as a
+    fallback so nothing that resolved before stops resolving.
+    """
+    index = {}
+    for h in holdings:
+        for key in (_base_ticker(h.get("tunnus")), h.get("tunnus"),
+                    h.get("yahoo")):
+            if key:
+                index.setdefault(str(key).upper(), h)
+    return index
 
 
 def _base_ticker(ticker):
@@ -396,6 +418,47 @@ def _f(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+# ------------------------------------------------------------- fundamentals
+
+def attach_fundamentals(watchlist, funda):
+    """Hold the recorded multiples against today's, and say how far apart they are.
+
+    `P/E`, `Fwd P/E` and `Net debt/EBITDA` are typed into Notion by hand on the
+    day a name is evaluated and never touched again. That is not sloppiness -
+    it is what a point-in-time record IS - but the page was showing them as
+    bare numbers with nothing to say they were months old, which turns a
+    historical note into an apparent live fact.
+
+    Nothing is overwritten here. The recorded figure stays exactly where it is;
+    the live one arrives beside it, and the gap between them becomes visible.
+    That gap is the useful signal: a P/E 40% off the one in the write-up means
+    the valuation case in that write-up is describing a different share.
+    """
+    for item in watchlist:
+        entry = funda.get(item.get("yahoo") or "") or {}
+        fields = entry.get("fields")
+        item["live"] = dict(fields, asof=entry.get("fetched")) if fields else None
+        item["pe_drift_pct"] = _drift(item.get("pe"), (fields or {}).get("pe"))
+        item["fwd_pe_drift_pct"] = _drift(item.get("fwd_pe"),
+                                          (fields or {}).get("fwd_pe"))
+        # The street's implied upside, computed the same way as yours so the two
+        # numbers are actually comparable. Shown side by side, never merged: a
+        # consensus target is evidence about what others expect, not a second
+        # opinion on your own target.
+        street = (fields or {}).get("street_target")
+        item["street_upside_pct"] = (
+            round((street / item["price_now"] - 1) * 100, 1)
+            if street and item.get("price_now") else None)
+    return watchlist
+
+
+def _drift(recorded, live):
+    """How far the live multiple sits from the one written down, in percent."""
+    if not recorded or not live or recorded <= 0 or live <= 0:
+        return None
+    return round((live / recorded - 1) * 100, 1)
 
 
 def reconcile(watchlist):
@@ -457,6 +520,10 @@ def coverage(holdings, watchlist):
         item = logged.get(symbol) if symbol and symbol != "MISSING" else None
 
         row = {"isin": isin, "ticker": h.get("tunnus") or symbol or isin,
+               # The page keys every row by Yahoo symbol. Carrying it here is
+               # what lets the rail mark an uncovered holding without the
+               # browser re-deriving a mapping Python already owns.
+               "yahoo": symbol if symbol and symbol != "MISSING" else None,
                "name": h.get("name", ""), "klass": klass, "account": h.get("account"),
                "value_eur": h["value_eur"], "weight_pct": weight,
                "target_weight_pct": None, "drift_pts": None,
@@ -582,6 +649,34 @@ def alerts(watchlist, holdings, health, cover=None):
                 "detail": f"Price moved {item['drift_pct']:+.1f}% since the "
                           f"{item['last_eval']} check. The board still says "
                           f"{item['upside_at_eval']:.1f}%."})
+
+    # The multiples on the board are a point-in-time record and go out of date
+    # by design. This fires when one has drifted far enough that the valuation
+    # argument written beside it is describing a different share.
+    #
+    # Per name rather than one aggregate - unlike the coverage alert, which is
+    # deliberately single - because the thesis pane attaches flags to a symbol
+    # by matching the key, and "MCD's recorded P/E is stale" is a finding about
+    # MCD that belongs in MCD's pane. The 25% band keeps the count small.
+    for item in watchlist:
+        drift = item.get("pe_drift_pct")
+        if drift is None or abs(drift) < C.MULTIPLE_DRIFT_PCT:
+            continue
+        live = (item.get("live") or {}).get("pe")
+        found.append({
+            "level": "warning",
+            "key": f"multiple-stale:{item['ticker']}:{round(drift / 10)}",
+            # Phrased from the live side because that is the base the drift is
+            # computed on: live/recorded - 1. "A is 113% above B" does NOT make
+            # "B is 113% below A" - the two statements have different
+            # denominators, and only the first one is this number.
+            "title": f"{item['ticker']}: today's P/E is {abs(drift):.0f}% "
+                     f"{'above' if drift > 0 else 'below'} the board's",
+            "detail": f"The board says {item['pe']:g}"
+                      + (f", typed at the {item['last_eval']} check"
+                         if item.get("last_eval") else " and never dated")
+                      + f"; Yahoo says {live:.1f} today. The multiple in that "
+                        "write-up is not the one you own now."})
 
     # Health problems ride in the alert list because that is what Telegram
     # reads - a task that quietly stopped running has to be able to say so.

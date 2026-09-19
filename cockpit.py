@@ -19,6 +19,7 @@ import datetime as dt
 import config as C
 import sources
 import analyse
+import indicators
 import render
 import notify
 
@@ -148,12 +149,32 @@ def run(quiet=False, verbose=True):
     say(f"  History: {len(history)}/{len(symbols)} symbols "
         f"({pulled} pulled from Yahoo, {len(history)-pulled} from cache)")
 
+    # Multiples are a stock question. Funds are asked nothing - Yahoo returns
+    # nothing for them anyway, and the coverage model judges them by weight.
+    # Everything on the Equity Log is asked, held or not: the Log is the
+    # research pipeline, and a name being researched is exactly when its P/E
+    # matters.
+    funda_symbols = sorted(
+        {(r.get("Ticker") or "").strip() for r in log_rows
+         if (r.get("Ticker") or "").strip()}
+        | {p["yahoo"] for p in positions
+           if p["yahoo"] and p["yahoo"] != "MISSING"
+           and C.ASSET_CLASS.get(p["isin"], "stock") == "stock"})
+    funda, funda_problems, funda_pulled = sources.fundamentals(funda_symbols)
+    priced_funda = sum(1 for v in funda.values() if v.get("fields"))
+    say(f"  Fundamentals: {priced_funda}/{len(funda_symbols)} symbols carry "
+        f"multiples ({funda_pulled} pulled from Yahoo, "
+        f"{len(funda)-funda_pulled} from cache)")
+
     holdings = analyse.value_holdings(positions, quotes, fx)
     # Money-weighted return off the live price, not the export-date figure
     # Nordnet ships in columns the parser asserts and then ignores.
     book_return = analyse.attach_returns(holdings, lots)
     mapping = analyse.price_sanity(holdings)
     watchlist = analyse.join_watchlist(log_rows, quotes, holdings)
+    # Beside the recorded multiples, never over them. Must run before alerts(),
+    # which reads the drift this computes.
+    analyse.attach_fundamentals(watchlist, funda)
     mismatches = analyse.reconcile(watchlist)
 
     problems = list(csv_problems)
@@ -185,7 +206,13 @@ def run(quiet=False, verbose=True):
         # it is counted here rather than raised into health.
         "history_symbols": len(history),
         "history_problems": len(history_problems),
-    }, history=history, coverage=cover, book_return=book_return)
+        # Same reasoning as history: a name without multiples is a fund or a
+        # thin listing, not a broken feed, so it is counted rather than raised.
+        "fundamentals_asked": len(funda_symbols),
+        "fundamentals_priced": priced_funda,
+        "fundamentals_problems": len(funda_problems),
+    }, history=history, coverage=cover, book_return=book_return,
+       indicators=indicators.snapshot_all(history))
 
     html_path, json_path = render.write(data)
     say(f"  Rendered: {html_path}")

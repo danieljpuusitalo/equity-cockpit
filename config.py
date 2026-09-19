@@ -101,6 +101,24 @@ WEIGHT_DRIFT_PCT = 3.0
 PRICE_HISTORY_CACHE = STATE / "price-history.json"
 PRICE_HISTORY_PERIOD = "2y"
 
+# --- Fundamentals (the multiples, live) ---
+# P/E, Fwd P/E and Net debt/EBITDA are typed into Notion by hand at eval time
+# and then decay silently - the board showed a P/E from June with nothing to say
+# it was from June. Yahoo returns all three free, so the page can show the
+# recorded figure next to today's and let you see the gap.
+#
+# Measured 2026-09-18 rather than assumed: .info answers in 0.24-0.56s per
+# symbol (18/18 fields on NOKIA.HE, 17/18 on QTCOM.HE and HAYPP.ST), so the
+# whole board costs about seven seconds. Funds return nothing - XAIX.DE 0/18,
+# IMAE.AS 2/18 - which is why they are not asked; a tracker has no multiple and
+# the coverage model already judges it by weight instead.
+FUNDAMENTALS_CACHE = STATE / "fundamentals.json"
+# How far the recorded multiple may sit from the live one before the cockpit
+# says the valuation case is stale. A P/E is a fast-moving number; this is
+# deliberately wide, because the alert is about a figure nobody has revisited,
+# not about a day's move.
+MULTIPLE_DRIFT_PCT = 25.0
+
 # Property names we read out of the Equity Log, exactly as Notion spells them.
 # If Notion renames one of these, selftest fails loudly and by name rather than
 # silently returning None forever. (Verified against the live board 2026-09-13:
@@ -120,11 +138,14 @@ NOTION_PROPS = ["Ticker", "Company", "Verdict", "Tier", "Held", "Currency",
 # Properties that are allowed to be empty on every row without that counting as
 # a schema break (they are genuinely optional on the board).
 #
-# The three new ones are here because they are empty on all 13 rows TODAY. That
-# is a migration state, not a permanent one: once a handful of names have been
-# re-checked, move them out so the selftest starts guarding them again.
-NOTION_PROPS_OPTIONAL = {"Previous verdict", "Net debt/EBITDA", "P/E", "Moat",
-                         "Thesis", "Inflection date", "Inflection event"}
+# "Thesis", "Inflection date" and "Inflection event" sat here from 2026-09-13
+# until 2026-09-18 because they were empty on all 13 legacy rows and a
+# non-optional property that is None everywhere reads as a rename. That was a
+# migration state and it is over: the board now carries 23 rows, 10 of them
+# with a thesis and a real inflection date, so the guard can do its job. If one
+# of the three ever goes missing in Notion, the selftest says which - which is
+# the whole reason this list exists.
+NOTION_PROPS_OPTIONAL = {"Previous verdict", "Net debt/EBITDA", "P/E", "Moat"}
 
 # --- Telegram (reuses the existing bot; no new credential) ---
 TELEGRAM_ENV = HOME / ".claude" / "channels" / "telegram" / ".env"
