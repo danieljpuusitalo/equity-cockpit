@@ -109,6 +109,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .row:hover{background:var(--surface-2)}
 .row[aria-selected="true"]{background:var(--surface-2);border-left-color:var(--accent)}
 .row .sym{font-size:13px;font-weight:640;display:flex;align-items:center;gap:5px}
+/* A hollow ring beside the filled alert dot. "Nothing is watching this" is not
+   a severity, so it gets no colour - it gets the absence of one, which is also
+   the only mark on the rail that survives every kind of colour blindness. */
+.ring{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--axis);
+  box-sizing:border-box;flex:none}
 .row .co{grid-column:1;font-size:11px;color:var(--muted);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .px{font-size:12.5px;font-variant-numeric:tabular-nums;text-align:right}
@@ -161,6 +166,24 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:560}
 .prose{font-size:12.5px;line-height:1.5;color:var(--ink-2);
   overflow-wrap:anywhere}
+/* Three columns, because the point of the section is the gap between two of
+   them. A dt may be followed by more than one dd - this is that, not a hack. */
+.trio{display:grid;grid-template-columns:auto 1fr 1fr;gap:6px 10px;font-size:12.5px;
+  align-items:baseline}
+.trio dt{color:var(--muted)}
+.trio dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:560}
+.trio .hd{font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--muted);
+  text-transform:uppercase}
+.trio .was{font-weight:500;color:var(--ink-2)}
+.drift{font-size:11px;color:var(--muted);margin-left:4px;font-weight:500}
+/* A bounded number reads badly as a decimal and well as a position. The two
+   faint ticks are the 30/70 lines; the mark is today. No colour: overbought is
+   a description, not an instruction, and red would make it one. */
+.meter{display:inline-block;width:64px;height:6px;border-radius:3px;
+  background:var(--grid);position:relative;vertical-align:middle;margin-left:8px}
+.meter u{position:absolute;top:0;width:1px;height:6px;background:var(--muted)}
+.meter i{position:absolute;top:-2px;width:2px;height:10px;background:var(--ink);
+  border-radius:1px;margin-left:-1px}
 .badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;
   font-weight:640;border:1px solid var(--border)}
 .b-buy{background:color-mix(in srgb,var(--good) 15%,transparent);color:var(--good-ink)}
@@ -289,6 +312,31 @@ const px  = (n) => n == null ? '—' : Number(n).toLocaleString('en-GB',
 const pct = (n, dp) => n == null ? '—' :
   (n > 0 ? '+' : '') + Number(n).toFixed(dp == null ? 2 : dp) + '%';
 const cls = (n) => n == null ? '' : (n > 0 ? 'up-t' : n < 0 ? 'dn-t' : '');
+const num = (n, dp) => n == null ? '—' : Number(n).toFixed(dp == null ? 2 : dp);
+// The analyser writes gaps as lowercase fragments ("no thesis on the Equity
+// Log") because they are also read mid-sentence in Telegram. Here they start a
+// sentence, so they get a capital - in the page, not in the payload.
+const cap = (s) => !s ? '' : String(s).charAt(0).toUpperCase() + String(s).slice(1);
+// Market cap in the quote currency, at the magnitude a human reads. 442bn, not
+// 442,100,482,048 - the digits past the third are noise on a figure that moves
+// by a percent a day.
+const big = (n) => {
+  if (n == null) return '—';
+  const a = Math.abs(n);
+  if (a >= 1e12) return (n / 1e12).toFixed(2) + 'tn';
+  if (a >= 1e9)  return (n / 1e9).toFixed(1) + 'bn';
+  if (a >= 1e6)  return (n / 1e6).toFixed(0) + 'm';
+  return Number(n).toLocaleString('en-GB', {maximumFractionDigits:0});
+};
+// Where a bounded reading sits in its band, with the two conventional lines
+// drawn faintly behind it. lo/hi are in the same units as v.
+const meter = (v, lo, hi, marks) => {
+  if (v == null) return '';
+  const at = (x) => Math.max(0, Math.min(100, ((x - lo) / (hi - lo)) * 100));
+  return `<span class="meter">${(marks || []).map(
+    (m) => `<u style="left:${at(m).toFixed(1)}%"></u>`).join('')
+  }<i style="left:${at(v).toFixed(1)}%"></i></span>`;
+};
 const LEVEL = {critical:'var(--crit)', warning:'var(--warn)',
                info:'var(--muted)', good:'var(--good)'};
 
@@ -321,6 +369,19 @@ for (const w of D.watchlist || []) {
   if (sym) watch.set(sym, w);
 }
 
+// Coverage is per held position and carries its own `yahoo`, so the join needs
+// no mapping the page would have to re-derive. Positions are per ISIN per
+// account; a symbol held in both would land twice, and the one that matters is
+// the uncovered one - a gap in either account is a gap.
+const COV = (D.coverage || {});
+const coverBy = new Map();
+for (const c of COV.rows || []) {
+  const sym = c.yahoo || c.ticker;
+  if (!sym) continue;
+  const prev = coverBy.get(sym);
+  if (!prev || (prev.covered && !c.covered)) coverBy.set(sym, c);
+}
+
 // An alert names its subject in the key and again in the title. Matching on the
 // symbol string covers both shapes without the analyser having to promise one.
 const alertsFor = (sym) => (D.alerts || []).filter(
@@ -331,6 +392,8 @@ const ROWS = [...new Set([...held.keys(), ...watch.keys()])].map((sym) => {
   const flags = alertsFor(sym);
   return {
     sym, h, w, flags,
+    cov: coverBy.get(sym) || null,
+    ind: (D.indicators || {})[sym] || null,
     label: (w && w.ticker) || (h && h.ticker) || sym,
     company: (w && w.company) || (h && h.name) || sym,
     isHeld: !!h,
@@ -365,13 +428,26 @@ function paintTape() {
   const live = s.equity_log_mode === 'live';
   const flags = (D.alerts || []).filter((a) => !a.health).length;
   const stale = s.nordnet_export_age_days > (D.thresholds || {}).csv_stale_days;
+  // Coverage sits on the tape rather than three clicks away because it is the
+  // one number that says how much of this page is decoration. A position with
+  // no thesis and no target weight cannot be judged by anything here.
+  const nCov = (COV.rows || []).length;
+  const nMon = nCov - (COV.n_uncovered || 0);
+  const covChip = nCov
+    ? `<span title="${eur(COV.value_uncovered_eur)} of ${eur(COV.value_total_eur)} sits in
+        ${COV.n_uncovered} positions with no thesis (stocks) or no target weight (funds)."
+        ><b>${nMon}</b>/${nCov} monitored<span style="color:var(--muted)"> · </span><b
+        class="${COV.pct_uncovered > 0 ? 'dn-t' : ''}">${(COV.pct_uncovered || 0).toFixed(0)}%</b>
+        of value unwatched</span>`
+    : '';
   $('#t-meta').innerHTML = [
     `<b>${held.size}</b> held`,
     `<b>${watch.size}</b> watched`,
     `<b class="${flags ? 'dn-t' : ''}">${flags}</b> flag${flags === 1 ? '' : 's'}`,
+    covChip,
     `CSV <b class="${stale ? 'dn-t' : ''}">${s.nordnet_export_age_days}d</b>`,
     `Notion <b>${live ? 'live' : 'cached'}</b>`,
-  ].join('<span style="color:var(--axis);margin:0 8px">·</span>');
+  ].filter(Boolean).join('<span style="color:var(--axis);margin:0 8px">·</span>');
 
   const problems = (hs.problems || []);
   if (problems.length) {
@@ -406,7 +482,9 @@ function paintRail() {
     <div class="row" data-sym="${esc(r.sym)}" role="option"
          aria-selected="${r.sym === state.sym}">
       <div class="sym">${esc(r.label)}${r.worst
-        ? `<i class="dot" style="background:${LEVEL[r.worst]}"></i>` : ''}</div>
+        ? `<i class="dot" style="background:${LEVEL[r.worst]}"></i>` : ''}${
+        r.cov && !r.cov.covered
+          ? `<i class="ring" title="Not monitored — ${esc(r.cov.gap || '')}"></i>` : ''}</div>
       <div class="px num">${px(r.price)}</div>
       <div class="co">${esc(r.company)}</div>
       <div class="chg num ${cls(r.day_pct)}">${r.isHeld
@@ -501,12 +579,13 @@ function paintThesis(r) {
            number. Read it and judge for yourself.</div>`}
       <div class="prose">${esc(w.trigger || 'Nothing written down.')}</div></div>`);
 
-    const fund = [['P/E', w.pe], ['Fwd P/E', w.fwd_pe],
-                  ['Net debt/EBITDA', w.net_debt_ebitda], ['Moat', w.moat],
-                  ['Market', w.market], ['Evaluations', w.evaluations]]
+    out.push(paintMultiples(w, r));
+
+    const noted = [['Moat', w.moat], ['Market', w.market],
+                   ['Evaluations', w.evaluations]]
       .filter((kv) => kv[1] != null && kv[1] !== '');
-    if (fund.length) out.push(`<div class="tsec"><div class="tlabel">AS RECORDED</div>
-      <dl class="kv">${fund.map((kv) =>
+    if (noted.length) out.push(`<div class="tsec"><div class="tlabel">AS RECORDED</div>
+      <dl class="kv">${noted.map((kv) =>
         `<dt>${esc(kv[0])}</dt><dd>${esc(kv[1])}</dd>`).join('')}</dl></div>`);
   } else {
     out.push(`<div class="tsec"><div class="tlabel">THE CALL</div>
@@ -514,6 +593,8 @@ function paintThesis(r) {
       falsifying condition is written down — so nothing here can tell you when it
       stops being a good idea.</div></div>`);
   }
+
+  out.push(paintMissing(r));
 
   if (h) out.push(`<div class="tsec"><div class="tlabel">THE POSITION</div><dl class="kv">
     <dt>Units</dt><dd>${h.units}</dd>
@@ -532,6 +613,8 @@ function paintThesis(r) {
     <dt>Off 52w high</dt><dd>${pct(h.off_high, 1)}</dd>
     <dt>Bucket</dt><dd>${esc(h.bucket || '—')}</dd></dl></div>`);
 
+  out.push(paintBehaviour(r));
+
   if (r.flags.length) out.push(`<div class="tsec"><div class="tlabel">FLAGS</div>
     ${r.flags.map((a) => `<div class="alert">
       <span class="dot" style="background:${LEVEL[a.level] || 'var(--muted)'}"></span>
@@ -539,6 +622,137 @@ function paintThesis(r) {
       <div class="d">${esc(a.detail)}</div></span></div>`).join('')}</div>`);
 
   $('#thesis').innerHTML = out.join('');
+}
+
+/* The board's figures against today's. Nothing is reconciled and nothing is
+   overwritten - the whole point of the section is the distance between the two
+   columns, and a merged number would hide exactly that. The left column is what
+   Daniel wrote down when he last evaluated the name; the right is Yahoo this
+   morning. Where the board is silent the row still shows, because "we never
+   recorded this" is itself worth seeing next to a live number. */
+function paintMultiples(w, r) {
+  const L = w.live || {}, ccy = esc(w.ccy || r.ccy || '');
+  // Deliberately achromatic. A multiple that fell since the write-up is
+  // cheaper, not worse, and green/red here would have the page taking a view
+  // on which direction is good news - which is the thesis's job, not this
+  // table's. The sign and the size are the whole message.
+  const drift = (d) => d == null ? '' : `<span class="drift">${pct(d, 0)}</span>`;
+  const row = (label, was, now, d, suffix) =>
+    (was == null && now == null) ? '' :
+    `<dt>${esc(label)}</dt><dd class="was">${was == null ? '—' : esc(was)}</dd>
+     <dd>${now == null ? '—' : now}${suffix || ''}${drift(d)}</dd>`;
+
+  const body = [
+    row('P/E', w.pe, num(L.pe, 1), w.pe_drift_pct),
+    row('Fwd P/E', w.fwd_pe, num(L.fwd_pe, 1), w.fwd_pe_drift_pct),
+    row('Net debt/EBITDA', w.net_debt_ebitda, num(L.net_debt_ebitda, 2)),
+    row('P/B', null, num(L.pb, 1)),
+    row('EPS', null, num(L.eps, 2), null, ` <span class="drift">${ccy}</span>`),
+    row('Return on equity', null, L.roe_pct == null ? null : num(L.roe_pct, 1) + '%'),
+    row('Net margin', null, L.margin_pct == null ? null : num(L.margin_pct, 1) + '%'),
+    row('Beta', null, num(L.beta, 2)),
+    row('Market cap', null, big(L.market_cap), null,
+        ` <span class="drift">${ccy}</span>`),
+  ].filter(Boolean).join('');
+  if (!body && L.street_target == null) return '';
+
+  /* The street's target, deliberately without the street's verdict. A number
+     you can hold your own target up against is evidence; a word telling you to
+     buy is somebody else making the decision this pane exists to make. */
+  const street = L.street_target == null ? '' : `
+    <dl class="kv" style="margin-top:11px">
+      <dt>Street target</dt><dd>${px(L.street_target)} ${ccy}${L.street_analysts
+        ? ` <span style="color:var(--muted)">${L.street_analysts} analysts</span>` : ''}</dd>
+      <dt>Street sees</dt><dd class="${cls(w.street_upside_pct)}">${pct(w.street_upside_pct, 1)}</dd>
+      <dt>You see</dt><dd class="${cls(w.upside_now)}">${pct(w.upside_now, 1)}</dd>
+    </dl>`;
+
+  const sector = L.sector
+    ? `<div class="prose" style="margin-top:9px;color:var(--muted)">${esc(L.sector)}${
+        L.industry ? ' · ' + esc(L.industry) : ''}</div>` : '';
+
+  return `<div class="tsec"><div class="tlabel">THE MULTIPLES</div>
+    <dl class="trio">
+      <dt></dt>
+      <dd class="hd">Board${w.last_eval ? ' ' + esc(String(w.last_eval).slice(5)) : ''}</dd>
+      <dd class="hd">Today</dd>
+      ${body}
+    </dl>${street}${sector}</div>`;
+}
+
+/* Coverage, as money. The prose above already explains why an unexamined
+   position is a problem; what this section adds is how much of the book is
+   riding on one. Covered names get nothing - the thesis section above is
+   already the evidence, and a green "all good" box would be noise. */
+function paintMissing(r) {
+  const c = r.cov;
+  if (!c || c.covered) return '';
+  const stock = c.klass === 'stock';
+  const alloc = c.target_weight_pct == null ? '' : `
+    <dl class="kv" style="margin-top:8px">
+      <dt>Target weight</dt><dd>${num(c.target_weight_pct, 1)}%</dd>
+      <dt>Drift</dt><dd class="${cls(c.drift_pts)}">${c.drift_pts == null
+        ? '—' : num(c.drift_pts, 1) + ' pts'}</dd></dl>`;
+  return `<div class="tsec"><div class="tlabel">WHAT'S MISSING</div>
+    <dl class="kv">
+      <dt>At stake</dt><dd>${eur(c.value_eur)} · ${num(c.weight_pct, 1)}% of the book</dd>
+      <dt>Judged by</dt><dd>${stock ? 'a thesis' : 'an allocation'}</dd>
+    </dl>
+    <div class="prose" style="margin-top:9px">${esc(cap(c.gap) || 'Not monitored.')}${
+      stock
+        ? ' — so there is no target to measure today against and no condition that '
+          + 'would tell you the reasoning had broken.'
+        : ' — an index tracker answers to a weight, not to a story, and without '
+          + 'one there is no band for it to drift out of.'}</div>${alloc}</div>`;
+}
+
+/* The chart, read back as numbers. Descriptive only: this section says where
+   price is, never what to do about it - "overbought" is weather, and the
+   thesis above is the decision. Everything here was computed in Python off the
+   same cached bars the chart draws, so it costs no extra fetch and cannot
+   disagree with what is plotted a pane to the left. */
+function paintBehaviour(r) {
+  const i = r.ind;
+  if (!i) return '';
+  const rows = [];
+  if (i.rsi != null) rows.push(`<dt>RSI ${i.rsi_period}</dt><dd>${num(i.rsi, 1)}
+    <span style="color:var(--muted)">${esc(i.rsi_state || '')}</span>
+    ${meter(i.rsi, 0, 100, [30, 70])}</dd>`);
+  // No tick marks on these two: the ends of the track already ARE the bands,
+  // and a 1px rule at left:100% renders half outside the bar it belongs to.
+  if (i.bb_pct_b != null) rows.push(`<dt>In its band</dt><dd>${num(i.bb_pct_b * 100, 0)}%
+    <span style="color:var(--muted)">${num(i.bb_lower, 2)}–${num(i.bb_upper, 2)}</span>
+    ${meter(i.bb_pct_b, 0, 1)}</dd>`);
+  if (i.macd_hist != null) rows.push(`<dt>MACD histogram</dt>
+    <dd class="${cls(i.macd_hist)}">${num(i.macd_hist, 2)}
+    <span style="color:var(--muted)">line ${num(i.macd, 2)} · signal
+    ${num(i.macd_signal, 2)}</span></dd>`);
+  if (i.ma_spread_pct != null) rows.push(`<dt>MA50 vs MA200</dt>
+    <dd class="${cls(i.ma_spread_pct)}">${pct(i.ma_spread_pct, 1)}</dd>`);
+  if (i.above_sma200_pct != null) rows.push(`<dt>Above MA200</dt>
+    <dd class="${cls(i.above_sma200_pct)}">${pct(i.above_sma200_pct, 1)}</dd>`);
+  if (i.vol_30d != null) rows.push(`<dt>Volatility</dt><dd>${num(i.vol_30d, 1)}%
+    <span style="color:var(--muted)">annualised, 30d</span></dd>`);
+  if (i.atr_pct != null) rows.push(`<dt>Daily range</dt><dd>${num(i.atr_pct, 2)}%
+    <span style="color:var(--muted)">ATR ${num(i.atr, 2)}</span></dd>`);
+  if (i.max_drawdown_pct != null) rows.push(`<dt>Max drawdown</dt>
+    <dd class="dn-t">${pct(i.max_drawdown_pct, 1)}</dd>`);
+  // range.pct is WHERE the close sits between the low and the high, not how
+  // wide the band is. Labelling it "wide" would have read as a volatility
+  // number and been wrong by a mile on anything that has halved.
+  if (i.range && i.range.pct != null) rows.push(`<dt>In its ${i.range.days}d range</dt>
+    <dd>${num(i.range.pct, 0)}%
+    <span style="color:var(--muted)">${num(i.range.low, 2)}–${num(i.range.high, 2)}</span>
+    ${meter(i.range.pct, 0, 100)}</dd>`);
+  if (i.volume && i.volume.relative != null) rows.push(`<dt>Volume</dt>
+    <dd>${num(i.volume.relative, 2)}×
+    <span style="color:var(--muted)">the ${i.volume.period}d average</span></dd>`);
+  if (!rows.length) return '';
+  return `<div class="tsec"><div class="tlabel">THE CHART</div>
+    <dl class="kv">${rows.join('')}</dl>
+    <div class="prose" style="margin-top:9px;color:var(--muted)">
+      ${i.bars} bars to ${esc(i.asof)}. Description, not advice — none of this
+      knows why you own it.</div></div>`;
 }
 
 /* ----------------------------------------------------------------- chart */
@@ -724,6 +938,80 @@ function paintSheet() {
       <td>${pct(x.trigger_gap_pct,1)}</td><td>${esc(x.last_eval)}</td>
       <td>${esc(x.next_check)}</td></tr>`).join('')}</tbody></table></div>`;
 
+  // Ordered by money at risk, not alphabetically: the question the table
+  // answers is "how much of the book is nobody watching", and the answer is
+  // read off the top rows.
+  const cr = [...(COV.rows || [])].sort((a, b) => b.value_eur - a.value_eur);
+  const cov = !cr.length ? '' : `<h2>Coverage —
+    ${cr.length - (COV.n_uncovered||0)}/${cr.length} monitored,
+    ${eur(COV.value_uncovered_eur)} (${(COV.pct_uncovered||0).toFixed(0)}%) unwatched</h2>
+    <div class="scroll"><table><thead><tr><th>Ticker</th><th>Monitored</th>
+    <th>Gap</th><th>Value €</th><th>Weight</th><th>Class</th><th>Judged by</th>
+    <th>Target wt</th><th>Drift pts</th><th>Acct</th><th>Name</th>
+    </tr></thead><tbody>${cr.map((c) => `<tr>
+      <td>${esc(c.ticker)}</td><td>${c.covered ? 'yes' : '<b>no</b>'}</td>
+      <td>${esc(c.gap || '')}</td>
+      <td>${eur(c.value_eur)}</td><td>${num(c.weight_pct,1)}%</td>
+      <td>${esc(c.klass)}</td>
+      <td>${c.klass === 'stock' ? 'thesis' : 'allocation'}</td>
+      <td>${c.target_weight_pct == null ? '—' : num(c.target_weight_pct,1)+'%'}</td>
+      <td>${c.drift_pts == null ? '—' : num(c.drift_pts,1)}</td>
+      <td>${esc(c.account)}</td><td>${esc(c.name)}</td>
+      </tr>`).join('')}</tbody></table></div>
+    ${(COV.researched_not_held||[]).length ? `<div class="prose"
+      style="margin-top:8px">Researched but not owned — ${(COV.researched_not_held||[])
+      .map(esc).join(', ')}.</div>` : ''}`;
+
+  // The board's figures beside today's, for every name that has either. Two
+  // columns per multiple rather than one reconciled number: the gap IS the
+  // reading, and a merged figure would be the one thing this cannot show.
+  const fw = (D.watchlist||[]).filter((x) => x.live || x.pe != null || x.fwd_pe != null);
+  const mult = !fw.length ? '' : `<h2>Multiples — board vs today,
+    ${fw.filter((x) => x.live).length} live</h2>
+    <div class="scroll"><table><thead><tr><th>Ticker</th>
+    <th>P/E board</th><th>P/E now</th><th>Drift</th>
+    <th>Fwd board</th><th>Fwd now</th><th>Drift</th>
+    <th>P/B</th><th>ND/EBITDA</th><th>ROE</th><th>Margin</th><th>Beta</th>
+    <th>Mkt cap</th><th>Street tgt</th><th>Street</th><th>Yours</th><th>Analysts</th>
+    <th>As of</th></tr></thead><tbody>${fw.map((x) => { const L = x.live || {};
+      return `<tr><td>${esc(x.ticker)}</td>
+      <td>${num(x.pe,1)}</td><td>${num(L.pe,1)}</td>
+      <td>${pct(x.pe_drift_pct,0)}</td>
+      <td>${num(x.fwd_pe,1)}</td><td>${num(L.fwd_pe,1)}</td>
+      <td>${pct(x.fwd_pe_drift_pct,0)}</td>
+      <td>${num(L.pb,1)}</td><td>${num(L.net_debt_ebitda,2)}</td>
+      <td>${L.roe_pct == null ? '—' : num(L.roe_pct,1)+'%'}</td>
+      <td>${L.margin_pct == null ? '—' : num(L.margin_pct,1)+'%'}</td>
+      <td>${num(L.beta,2)}</td><td>${big(L.market_cap)}</td>
+      <td>${px(L.street_target)}</td>
+      <td class="${cls(x.street_upside_pct)}">${pct(x.street_upside_pct,1)}</td>
+      <td class="${cls(x.upside_now)}">${pct(x.upside_now,1)}</td>
+      <td>${L.street_analysts == null ? '—' : num(L.street_analysts,0)}</td>
+      <td>${esc(L.asof || '—')}</td></tr>`; }).join('')}</tbody></table></div>`;
+
+  const ir = ROWS.filter((x) => x.ind);
+  const ind = !ir.length ? '' : `<h2>The chart, in numbers — ${ir.length} symbols</h2>
+    <div class="scroll"><table><thead><tr><th>Ticker</th><th>Close</th><th>RSI</th>
+    <th>State</th><th>%B</th><th>Band w</th><th>MACD h</th><th>MA50</th><th>MA200</th>
+    <th>Spread</th><th>vs MA200</th><th>ATR %</th><th>Vol 30d</th><th>Max DD</th>
+    <th>In range</th><th>Vol ×avg</th><th>Bars</th><th>As of</th>
+    </tr></thead><tbody>${ir.map((x) => { const i = x.ind;
+      return `<tr><td>${esc(x.label)}</td><td>${px(i.close)}</td>
+      <td>${num(i.rsi,1)}</td><td>${esc(i.rsi_state || '')}</td>
+      <td>${i.bb_pct_b == null ? '—' : num(i.bb_pct_b,2)}</td>
+      <td>${i.bb_width == null ? '—' : num(i.bb_width*100,1)+'%'}</td>
+      <td class="${cls(i.macd_hist)}">${num(i.macd_hist,2)}</td>
+      <td>${px(i.sma50)}</td><td>${px(i.sma200)}</td>
+      <td class="${cls(i.ma_spread_pct)}">${pct(i.ma_spread_pct,1)}</td>
+      <td class="${cls(i.above_sma200_pct)}">${pct(i.above_sma200_pct,1)}</td>
+      <td>${num(i.atr_pct,2)}</td><td>${num(i.vol_30d,1)}</td>
+      <td class="dn-t">${pct(i.max_drawdown_pct,1)}</td>
+      <td>${i.range ? num(i.range.pct,0) : '—'}</td>
+      <td>${i.volume ? num(i.volume.relative,2) : '—'}</td>
+      <td>${i.bars}</td><td>${esc(i.asof)}</td></tr>`; }).join('')}</tbody></table></div>
+    <div class="prose" style="margin-top:8px">Computed in Python off the same
+      cached bars the chart draws. Descriptive only — no row here is a signal.</div>`;
+
   const a = `<h2>Flags — ${(D.alerts||[]).length}</h2>
     <div class="scroll"><table><thead><tr><th>Level</th><th>What</th><th>Why</th>
     </tr></thead><tbody>${(D.alerts||[]).map((x) => `<tr>
@@ -739,9 +1027,15 @@ function paintSheet() {
       ${s.equity_log_age_days} days old</td></tr>
     <tr><td>Price history</td><td>${s.history_symbols} symbols cached ·
       ${s.history_problems} without a fresh series</td></tr>
+    <tr><td>Fundamentals</td><td>${s.fundamentals_asked == null ? 'not fetched'
+      : `${s.fundamentals_priced}/${s.fundamentals_asked} symbols carry multiples ·
+         ${s.fundamentals_problems} problem${s.fundamentals_problems === 1 ? '' : 's'}`
+      }</td></tr>
+    <tr><td>Indicators</td><td>${Object.keys(D.indicators || {}).length} symbols ·
+      derived from the cached bars, no separate fetch</td></tr>
     </tbody></table></div>`;
 
-  $('#sheetbody').innerHTML = h + w + a + src;
+  $('#sheetbody').innerHTML = h + w + cov + mult + ind + a + src;
 }
 
 /* ---------------------------------------------------------------- wiring */
