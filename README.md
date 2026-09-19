@@ -62,6 +62,7 @@ Manual commands, from this folder:
 ```powershell
 .\run.ps1              # full run: read, price, analyse, render, notify
 .\run.ps1 run --quiet  # same, but never message Telegram
+.\run.ps1 refresh      # re-price and re-render only — no Notion, no Telegram
 .\run.ps1 selftest     # offline wiring checks — does anything still hold?
 .\run.ps1 doctor       # what is stale, missing or drifting, in English
 ```
@@ -181,9 +182,9 @@ sources.py      every external boundary. A source that fails degrades; it never 
 analyse.py      pure computation. No I/O. Everything worth testing lives here
 render.py       builds the data blob and writes the dashboard
 notify.py       Telegram, with dedupe and cooldown
-cockpit.py      the entry point: run | selftest | doctor | sync-notion
+cockpit.py      the entry point: run | refresh | selftest | doctor | sync-notion
 run.ps1         interpreter-pinned wrapper — what the scheduler calls
-install-task.ps1  registers/removes the scheduled task
+install-task.ps1  registers/removes the two scheduled tasks
 assets/         the dashboard template + the vendored chart library
 state/          caches, heartbeat, run log, history, alerts already seen
 out/            the generated dashboard and its JSON
@@ -239,14 +240,40 @@ in them.
 
 ---
 
-## The scheduled task
+## The scheduled tasks
 
 ```powershell
-.\install-task.ps1                 # weekdays 07:40 (re-run to change)
-.\install-task.ps1 -At 18:10
-.\install-task.ps1 -Remove
+.\install-task.ps1                 # both (re-run to change)
+.\install-task.ps1 -At 18:10       # move the daily run
+.\install-task.ps1 -NoRefresh      # daily run only
+.\install-task.ps1 -Remove         # unregister both
 Get-ScheduledTaskInfo -TaskName EquityCockpit
+Get-ScheduledTaskInfo -TaskName EquityCockpitRefresh
 ```
+
+Two tasks, because they are two jobs:
+
+| Task | When | Does |
+|---|---|---|
+| `EquityCockpit` | weekdays 07:40 | reads every source, re-checks the Equity Log, messages Telegram, writes the day's history line |
+| `EquityCockpitRefresh` | weekdays, every 30 min, 09:30–22:00 | re-prices and re-renders. Nothing else |
+
+The refresh exists because Yahoo is ~15 minutes delayed even at 07:40, so by the
+afternoon the page shows a price eight hours old while looking exactly as
+authoritative as it did at breakfast. The tape carries a **Priced HH:MM** chip
+and the data sheet a **Run** row, so a refreshed page never passes itself off as
+a re-read board.
+
+What the refresh deliberately does *not* do is as much the point as what it
+does. It never reads Notion, never messages Telegram, never re-fetches daily
+bars or multiples — none of those move between 10:00 and 10:30, and `.info` is
+the call that answers *thin* under a rate limit, which this repo went to some
+trouble to stop mistaking for a fund. It also writes neither `last_run.json` nor
+`history.jsonl`: the heartbeat has to keep meaning "the board was last read
+then", or a dead daily task would hide behind 26 healthy refreshes a day.
+
+The window is 09:30–22:00 because Helsinki and Stockholm run 10:00–17:30 CET and
+New York closes at 22:00. Nothing in this book trades outside it.
 
 `LastTaskResult` of `0` means the run succeeded. Anything else, read
 `state/run.log`.

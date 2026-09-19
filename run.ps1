@@ -6,6 +6,7 @@
 # the pinned one ever stops working we find another rather than dying quietly.
 #
 #   .\run.ps1              full run
+#   .\run.ps1 refresh      re-price and re-render only (intraday, every 30 min)
 #   .\run.ps1 selftest     offline wiring checks
 #   .\run.ps1 doctor       what is stale or drifting
 #

@@ -16,6 +16,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import config as C        # noqa: E402
 import analyse            # noqa: E402
 import sources            # noqa: E402
+import render             # noqa: E402
+import notify             # noqa: E402
+import cockpit            # noqa: E402
 
 
 # ------------------------------------------------------------ trigger parser
@@ -562,3 +565,180 @@ def test_a_total_failure_still_falls_back_to_the_cache(cache_at, monkeypatch):
 
     assert out["NOKIA.HE"]["fields"] == good
     assert "NOKIA.HE" in problems
+
+
+# ----------------------------------- the intraday refresh asks for nothing
+#
+# `cached_only` runs 26 times a day. Every one of these tests exists because a
+# refresh that quietly fetched, or quietly wrote, would be indistinguishable
+# from one that did not - until the rate limit, or a restamped cache file that
+# tells tomorrow's full run it has nothing to fetch.
+
+def _explode(*a, **k):
+    raise AssertionError("the refresh reached the network")
+
+
+def test_a_refresh_asks_yahoo_for_no_multiples(cache_at, monkeypatch):
+    good = sources._shape_info(_info())
+    cache_at({"NOKIA.HE": {"fetched": "2026-09-18", "fields": good}})
+    monkeypatch.setattr(sources, "_info", _explode)
+
+    out, problems, pulled = sources.fundamentals(
+        ["NOKIA.HE"], today=dt.date(2026, 9, 19), cached_only=True)
+
+    assert out["NOKIA.HE"]["fields"] == good
+    assert pulled == 0 and problems == {}
+
+
+def test_a_refresh_does_not_restamp_the_fundamentals_cache(cache_at, monkeypatch):
+    """The `fetched` dates in this file are what tomorrow's full run reads to
+    decide whether to fetch. A read-only pass that rewrote them would talk the
+    full run out of the one fetch that matters."""
+    path = cache_at({"NOKIA.HE": {"fetched": "2026-09-18",
+                                  "fields": sources._shape_info(_info())}})
+    monkeypatch.setattr(sources, "_info", _explode)
+    before = path.read_bytes()
+
+    sources.fundamentals(["NOKIA.HE"], today=dt.date(2026, 9, 19),
+                         cached_only=True)
+
+    assert path.read_bytes() == before, "a read-only pass wrote to disk"
+
+
+def test_a_refresh_serves_yesterdays_bars_without_fetching(tmp_path, monkeypatch):
+    """Daily bars do not change between 10:00 and 10:30. Paying for them every
+    half hour would buy nothing and spend the rate limit the prices need."""
+    bars = [["2026-09-18", 4.1, 4.3, 4.0, 4.2, 1_000_000]]
+    path = tmp_path / "price-history.json"
+    path.write_text(json.dumps({"fetched": "2026-09-18", "symbols": {
+        "NOKIA.HE": {"fetched": "2026-09-18", "bars": bars}}}), encoding="utf-8")
+    monkeypatch.setattr(C, "PRICE_HISTORY_CACHE", path)
+    monkeypatch.setattr(sources, "_bars", _explode)
+    before = path.read_bytes()
+
+    out, _, pulled = sources.price_history(
+        ["NOKIA.HE"], today=dt.date(2026, 9, 19), cached_only=True)
+
+    assert out["NOKIA.HE"]["bars"] == bars
+    assert pulled == 0
+    assert path.read_bytes() == before, "a read-only pass wrote to disk"
+
+
+def test_a_refresh_never_asks_notion_even_holding_a_token(tmp_path, monkeypatch):
+    """A token existing is not a reason to spend it. The thesis has not been
+    rewritten since breakfast; only the price it is held against has moved."""
+    path = tmp_path / "equity-log.json"
+    path.write_text(json.dumps({"fetched": "2026-09-19T07:40:00",
+                                "rows": [{"Ticker": "NOKIA.HE"}]}),
+                    encoding="utf-8")
+    monkeypatch.setattr(C, "EQUITY_LOG_CACHE", path)
+    monkeypatch.setattr(sources, "notion_token", lambda: "secret_live_token")
+    monkeypatch.setattr(sources, "_equity_log_live", _explode)
+
+    rows, meta = sources.equity_log(cached_only=True)
+
+    assert rows == [{"Ticker": "NOKIA.HE"}]
+    assert meta["mode"] == "cache" and meta["problem"] is None
+
+
+def test_a_refresh_with_no_cached_log_says_so(tmp_path, monkeypatch):
+    """An empty board renders as a book with no thesis anywhere and no
+    complaint - the page would look monitored and be nothing of the kind."""
+    monkeypatch.setattr(C, "EQUITY_LOG_CACHE", tmp_path / "missing.json")
+    monkeypatch.setattr(sources, "_equity_log_live", _explode)
+
+    rows, meta = sources.equity_log(cached_only=True)
+
+    assert rows == []
+    assert "no Equity Log cache" in meta["problem"]
+
+
+# ------------------------------ ...and leaves the daily record alone
+
+@pytest.fixture
+def one_position_book(tmp_path, monkeypatch):
+    """Every boundary `_cycle` touches, replaced. Nothing here reaches disk or
+    network, so what the test observes is purely which side effects fired."""
+    lot = {"isin": "FI0009000681", "account_no": "1", "name": "Nokia",
+           "tunnus": "NOKIA", "ccy": "EUR", "units": 100.0, "cost_eur": 400.0,
+           "nordnet_mv_eur": 420.0, "bought": "2024-01-15",
+           "exported": "2026-09-19", "source_file": "fake.csv"}
+    pos = dict(lot, account="OST", lots=1, first_bought="2024-01-15",
+               bucket="Nordics", yahoo="NOKIA.HE")
+
+    monkeypatch.setattr(sources, "nordnet_lots", lambda: ([lot], []))
+    monkeypatch.setattr(sources, "positions", lambda lots: [pos])
+    monkeypatch.setattr(sources, "export_age_days",
+                        lambda lots, today=None: (0, "2026-09-19"))
+    monkeypatch.setattr(sources, "equity_log",
+                        lambda cached_only=False: ([], {"mode": "cache",
+                                                        "age_days": 0,
+                                                        "problem": None}))
+    monkeypatch.setattr(sources, "fx_rates", lambda: ({"EUR": 1.0}, {}))
+    monkeypatch.setattr(sources, "quotes", lambda syms: (
+        {"NOKIA.HE": {"price": 4.2, "prev_close": 4.1, "year_high": 5.0,
+                      "year_low": 3.0, "currency": "EUR"}}, {}))
+    monkeypatch.setattr(sources, "price_history",
+                        lambda syms, today=None, cached_only=False: ({}, {}, 0))
+    monkeypatch.setattr(sources, "fundamentals",
+                        lambda syms, today=None, cached_only=False: ({}, {}, 0))
+    monkeypatch.setattr(render, "write", lambda data, out_dir=None: ("a", "b"))
+    monkeypatch.setattr(cockpit, "REFRESH_BEAT", tmp_path / "last_refresh.json")
+    return tmp_path
+
+
+def test_a_refresh_writes_no_heartbeat_and_no_history_line(one_position_book,
+                                                           monkeypatch):
+    """`last_run.json` is what the "the cockpit had not run for N days" check
+    reads. A refresh stamping it would keep that check permanently satisfied
+    while the daily task lay dead, and the page would report a board it had not
+    read in a week. `history.jsonl` already holds several records per date, so
+    the objection there is not frequency but that a record carries no `mode` -
+    a scheduled 26-a-day cadence would be indistinguishable from the 07:40 run
+    inside the one file a chart of the book's value would read."""
+    monkeypatch.setattr(cockpit, "write_heartbeat", _explode)
+    monkeypatch.setattr(cockpit, "append_history", _explode)
+    monkeypatch.setattr(notify, "notify", _explode)
+
+    summary = cockpit.refresh(verbose=False)
+
+    assert summary["mode"] == "refresh"
+    assert summary["notified"] == 0
+    assert cockpit.REFRESH_BEAT.exists(), "the refresh left no trace at all"
+    assert json.loads(cockpit.REFRESH_BEAT.read_text())["mode"] == "refresh"
+
+
+def test_the_full_run_still_writes_both(one_position_book, monkeypatch):
+    """The other half of the same guard: splitting the heartbeat must not have
+    cost the full run the record it is the only writer of."""
+    wrote = []
+    monkeypatch.setattr(cockpit, "write_heartbeat", lambda s: wrote.append("beat"))
+    monkeypatch.setattr(cockpit, "append_history", lambda r: wrote.append("history"))
+    monkeypatch.setattr(notify, "notify",
+                        lambda alerts, data, dry_run=False: {"sent": 0, "skipped": 0})
+
+    summary = cockpit.run(quiet=True, verbose=False)
+
+    assert summary["mode"] == "full"
+    assert wrote == ["beat", "history"]
+    assert not cockpit.REFRESH_BEAT.exists(), "a full run wrote the refresh beat"
+
+
+def test_the_page_says_which_kind_of_run_painted_it(one_position_book):
+    """Two pages an hour apart differ in exactly one respect and the numbers do
+    not show which. If the payload does not carry it, nothing can."""
+    captured = {}
+    original = render.payload
+
+    def spy(*a, **k):
+        data = original(*a, **k)
+        captured.update(data["sources"])
+        return data
+
+    render.payload = spy
+    try:
+        cockpit.refresh(verbose=False)
+    finally:
+        render.payload = original
+
+    assert captured["run_mode"] == "refresh"

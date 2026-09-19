@@ -2,6 +2,9 @@
 
     python cockpit.py run          full run: read, price, analyse, render, notify
     python cockpit.py run --quiet  same, but never message Telegram
+    python cockpit.py refresh      re-price and re-render only; no Notion, no
+                                   Telegram, nothing fetched that does not move
+                                   intraday. Safe to run every half hour.
     python cockpit.py selftest     offline checks - does the wiring still hold?
     python cockpit.py doctor       what is stale, missing or drifting, in English
     python cockpit.py sync-notion FILE.json   load an Equity Log snapshot into cache
@@ -24,6 +27,9 @@ import render
 import notify
 
 HEARTBEAT = C.STATE / "last_run.json"
+# Deliberately a different file from HEARTBEAT. See refresh() for why the two
+# must not be the same one.
+REFRESH_BEAT = C.STATE / "last_refresh.json"
 HISTORY = C.STATE / "history.jsonl"
 
 
@@ -42,6 +48,21 @@ def write_heartbeat(summary):
     C.STATE.mkdir(parents=True, exist_ok=True)
     HEARTBEAT.write_text(json.dumps(summary, indent=1, default=str),
                          encoding="utf-8")
+
+
+def read_refresh_beat():
+    if not REFRESH_BEAT.exists():
+        return None
+    try:
+        return json.loads(REFRESH_BEAT.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+
+
+def write_refresh_beat(summary):
+    C.STATE.mkdir(parents=True, exist_ok=True)
+    REFRESH_BEAT.write_text(json.dumps(summary, indent=1, default=str),
+                            encoding="utf-8")
 
 
 def append_history(record):
@@ -126,8 +147,35 @@ def health(csv_age, csv_date, source_problems, mapping_findings,
 # ---------------------------------------------------------------------- run
 
 def run(quiet=False, verbose=True):
+    """The full daily cycle: read everything, price it, tell Telegram."""
+    return _cycle("full", quiet=quiet, verbose=verbose)
+
+
+def refresh(verbose=True):
+    """Re-price and re-render, nothing else.
+
+    The daily run happens once, at 07:40, and Yahoo is ~15 minutes delayed even
+    then - so by the afternoon the page shows a price eight hours old while
+    looking exactly as authoritative as it did at breakfast. This closes that
+    gap and touches nothing else: no Notion read, no Telegram pass, no fetch of
+    anything that does not move intraday.
+
+    What it deliberately does NOT do is write the run heartbeat or a history
+    line. Both belong to the full cycle. A refresh that stamped `last_run.json`
+    would keep the "the cockpit had not run for N days" check permanently
+    satisfied while the daily task lay dead - the page would report a fresh
+    board it had not actually read in a week. The heartbeat has to keep meaning
+    the thing it is checked for.
+    """
+    return _cycle("refresh", quiet=True, verbose=verbose)
+
+
+def _cycle(mode, quiet=False, verbose=True):
     started = dt.datetime.now()
     say = print if verbose else (lambda *a, **k: None)
+    # One flag, read in four places. Everything that does not move between
+    # 09:30 and 10:00 is served from the disk it was written to this morning.
+    cached = mode == "refresh"
 
     lots, csv_problems = sources.nordnet_lots()
     positions = sources.positions(lots)
@@ -135,8 +183,9 @@ def run(quiet=False, verbose=True):
     say(f"  Nordnet: {len(lots)} lots -> {len(positions)} positions "
         f"(exported {csv_date}, {csv_age}d ago)")
 
-    log_rows, log_meta = sources.equity_log()
-    say(f"  Equity Log: {len(log_rows)} rows ({log_meta['mode']})")
+    log_rows, log_meta = sources.equity_log(cached_only=cached)
+    say(f"  Equity Log: {len(log_rows)} rows ({log_meta['mode']}"
+        + (", not re-read" if cached else "") + ")")
 
     fx, fx_problems = sources.fx_rates()
     symbols = sorted({p["yahoo"] for p in positions if p["yahoo"]}
@@ -145,7 +194,8 @@ def run(quiet=False, verbose=True):
     say(f"  Prices: {len(quotes)}/{len(symbols)} symbols, "
         f"{len(fx)-1} FX pairs")
 
-    history, history_problems, pulled = sources.price_history(symbols)
+    history, history_problems, pulled = sources.price_history(
+        symbols, cached_only=cached)
     say(f"  History: {len(history)}/{len(symbols)} symbols "
         f"({pulled} pulled from Yahoo, {len(history)-pulled} from cache)")
 
@@ -160,7 +210,8 @@ def run(quiet=False, verbose=True):
         | {p["yahoo"] for p in positions
            if p["yahoo"] and p["yahoo"] != "MISSING"
            and C.ASSET_CLASS.get(p["isin"], "stock") == "stock"})
-    funda, funda_problems, funda_pulled = sources.fundamentals(funda_symbols)
+    funda, funda_problems, funda_pulled = sources.fundamentals(
+        funda_symbols, cached_only=cached)
     priced_funda = sum(1 for v in funda.values() if v.get("fields"))
     say(f"  Fundamentals: {priced_funda}/{len(funda_symbols)} symbols carry "
         f"multiples ({funda_pulled} pulled from Yahoo, "
@@ -184,8 +235,11 @@ def run(quiet=False, verbose=True):
     problems += [f"price {k}: {v}" for k, v in quote_problems.items()
                  if k not in known_missing]
 
+    # Read once and used twice: health checks it for staleness, and the page
+    # prints it so a refreshed price is never mistaken for a refreshed board.
+    last_run = read_heartbeat()
     state = health(csv_age, csv_date, problems, mapping, log_meta,
-                   read_heartbeat(), mismatches)
+                   last_run, mismatches)
 
     cover = analyse.coverage(holdings, watchlist)
     say(f"  Coverage: {len(cover['rows']) - cover['n_uncovered']}/"
@@ -211,24 +265,38 @@ def run(quiet=False, verbose=True):
         "fundamentals_asked": len(funda_symbols),
         "fundamentals_priced": priced_funda,
         "fundamentals_problems": len(funda_problems),
+        # 'full' read every source; 'refresh' re-priced and served the rest off
+        # disk. The page shows which, because an intraday page is fresher in
+        # exactly one respect and a reader has no way to tell from the numbers.
+        "run_mode": mode,
+        "last_full_run": (last_run or {}).get("at"),
     }, history=history, coverage=cover, book_return=book_return,
        indicators=indicators.snapshot_all(history))
 
     html_path, json_path = render.write(data)
     say(f"  Rendered: {html_path}")
 
-    sent = notify.notify(alerts, data, dry_run=quiet)
-    # 'sent' counts alerts, and they all travel in one message - say so, or the
-    # line reads as if you were just messaged eight times.
-    say(f"  Telegram: "
-        + ("no message - nothing new" if not sent["sent"]
-           else f"1 message carrying {sent['sent']} alert"
-                f"{'' if sent['sent'] == 1 else 's'}")
-        + f" ({sent['skipped']} already known)"
-        + (f", problem: {sent['problem']}" if sent.get("problem") else ""))
+    if cached:
+        # Not dry_run - not called at all. The alert dedupe state notify keeps
+        # is what stops the same alert being sent twice; a refresh touching it
+        # 26 times a day would either spam or, worse, quietly mark tomorrow's
+        # real alert as already seen.
+        sent = {"sent": 0, "skipped": 0}
+        say("  Telegram: not contacted - refresh re-prices, it does not alert")
+    else:
+        sent = notify.notify(alerts, data, dry_run=quiet)
+        # 'sent' counts alerts, and they all travel in one message - say so, or
+        # the line reads as if you were just messaged eight times.
+        say(f"  Telegram: "
+            + ("no message - nothing new" if not sent["sent"]
+               else f"1 message carrying {sent['sent']} alert"
+                    f"{'' if sent['sent'] == 1 else 's'}")
+            + f" ({sent['skipped']} already known)"
+            + (f", problem: {sent['problem']}" if sent.get("problem") else ""))
 
     summary = {
         "at": started.isoformat(timespec="seconds"),
+        "mode": mode,
         "seconds": round((dt.datetime.now() - started).total_seconds(), 1),
         "status": state["status"],
         "value_eur": data["totals"]["value_eur"],
@@ -240,15 +308,29 @@ def run(quiet=False, verbose=True):
         "alerts": len(alerts), "notified": sent["sent"],
         "problems": [p["title"] for p in state["problems"]],
     }
-    write_heartbeat(summary)
-    append_history({
-        "date": started.date().isoformat(),
-        "at": summary["at"],
-        "value_eur": summary["value_eur"], "cost_eur": summary["cost_eur"],
-        "pl_pct": summary["pl_pct"], "status": summary["status"],
-        "by_account": _by_account(holdings),
-        "holdings": {h["ticker"]: h["value_eur"] for h in data["holdings"]},
-    })
+    if cached:
+        # A separate file, and no history line.
+        #
+        # Checked rather than assumed: `history.jsonl` is NOT one row per day -
+        # it already holds 32 records across 6 dates, because every manual run
+        # appends one. So the objection is not "it would stop being daily". It
+        # is that a record carries no `mode`, so a scheduled 26-a-day cadence
+        # would be indistinguishable from the 07:40 run inside the one file any
+        # future chart of the book's value reads - and a day's change computed
+        # across a mixed series would be wrong with nothing to show for it.
+        # An intraday value series is worth having; it needs a field saying
+        # what it is first. Until then the refresh stays out.
+        write_refresh_beat(summary)
+    else:
+        write_heartbeat(summary)
+        append_history({
+            "date": started.date().isoformat(),
+            "at": summary["at"],
+            "value_eur": summary["value_eur"], "cost_eur": summary["cost_eur"],
+            "pl_pct": summary["pl_pct"], "status": summary["status"],
+            "by_account": _by_account(holdings),
+            "holdings": {h["ticker"]: h["value_eur"] for h in data["holdings"]},
+        })
     say(f"  {state['headline']}: {state['detail']}")
     return summary
 
@@ -401,6 +483,20 @@ def doctor():
         return 1
     age = (dt.datetime.now() - dt.datetime.fromisoformat(beat["at"]))
     print(f"  Last run   {beat['at']}  ({age.days}d {age.seconds // 3600}h ago)")
+    # Printed on its own line, never folded into the one above. The two answer
+    # different questions - "when was the board last read" and "how old is the
+    # price on screen" - and a single freshness number would answer neither.
+    warm = read_refresh_beat()
+    if warm:
+        try:
+            gap = dt.datetime.now() - dt.datetime.fromisoformat(warm["at"])
+            # Total minutes, not `.seconds` - that field resets every midnight
+            # and would report a two-day-old refresh as twenty minutes old.
+            mins = int(gap.total_seconds() // 60)
+            print(f"  Refreshed  {warm['at']}  "
+                  f"({mins // 60}h {mins % 60}m ago, prices only)")
+        except (ValueError, KeyError, TypeError):
+            pass
     print(f"  Status     {beat['status']}")
     print(f"  Book       EUR {beat['value_eur']:,.0f}  "
           f"({beat['pl_pct']:+.2f}% vs cost)")
@@ -455,6 +551,7 @@ def main(argv=None):
     run_cmd = sub.add_parser("run")
     run_cmd.add_argument("--quiet", action="store_true",
                          help="analyse and render, but send nothing")
+    sub.add_parser("refresh")
     sub.add_parser("selftest")
     sub.add_parser("doctor")
     sync = sub.add_parser("sync-notion")
@@ -464,6 +561,10 @@ def main(argv=None):
     if args.cmd == "run":
         print("Equity cockpit")
         summary = run(quiet=args.quiet)
+        return 0 if summary["status"] != "broken" else 1
+    if args.cmd == "refresh":
+        print("Equity cockpit - intraday refresh")
+        summary = refresh()
         return 0 if summary["status"] != "broken" else 1
     if args.cmd == "selftest":
         print("Selftest")

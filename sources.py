@@ -237,13 +237,20 @@ def _bars_have_volume(bars):
     return bool(bars) and len(bars[-1]) >= 6
 
 
-def price_history(symbols, today=None):
+def price_history(symbols, today=None, cached_only=False):
     """Daily bars per symbol, cached on disk and refetched once per day.
 
     The cache is what makes charts affordable on a 07:40 schedule: Yahoo is asked
     for a symbol only when what we hold is not from today. A symbol that fails
     keeps its last good bars and is reported stale - a chart that is a day old is
     worth far more than no chart.
+
+    `cached_only` serves whatever is on disk and asks Yahoo for nothing. The
+    intraday refresh runs every half hour and daily bars do not change in that
+    time, so paying for them 26 times a day would buy nothing and spend the
+    rate limit the live prices need. It also does not WRITE the cache: a
+    read-only pass has no business restamping a file whose dates are what the
+    next full run reads to decide whether to fetch.
 
     Returns (history, problems, pulled). `pulled` is how many symbols this run
     actually asked Yahoo for. It cannot be derived from the cache afterwards -
@@ -273,6 +280,12 @@ def price_history(symbols, today=None):
         if held and held.get("fetched") == str(today) and held.get("bars"):
             out[symbol] = held
             continue
+        if cached_only:
+            if held and held.get("bars"):
+                out[symbol] = held
+            else:
+                problems[symbol] = "no cached history"
+            continue
         bars = _bars(symbol)
         if bars:
             out[symbol] = {"fetched": str(today), "bars": bars}
@@ -283,10 +296,11 @@ def price_history(symbols, today=None):
         else:
             problems[symbol] = "no history from Yahoo"
 
-    C.PRICE_HISTORY_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    C.PRICE_HISTORY_CACHE.write_text(json.dumps(
-        {"fetched": str(today), "symbols": out}, separators=(",", ":")),
-        encoding="utf-8")
+    if not cached_only:
+        C.PRICE_HISTORY_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        C.PRICE_HISTORY_CACHE.write_text(json.dumps(
+            {"fetched": str(today), "symbols": out}, separators=(",", ":")),
+            encoding="utf-8")
     return out, problems, pulled
 
 
@@ -377,7 +391,7 @@ def _shape_info(info):
     return out
 
 
-def fundamentals(symbols, today=None):
+def fundamentals(symbols, today=None, cached_only=False):
     """Live multiples per symbol, cached on disk and refetched once a day.
 
     Same contract as price_history: ask Yahoo only when what we hold is not
@@ -385,6 +399,13 @@ def fundamentals(symbols, today=None):
     staleness rather than dropping the figure. A symbol that has never returned
     anything is cached as an explicit null so the miss is visible in the file
     rather than looking like a symbol nobody asked about.
+
+    `cached_only` serves the disk and asks nothing, for the intraday refresh.
+    A P/E does not move between 10:00 and 10:30 in any way this board acts on,
+    and `.info` is the expensive call - it is also the one that answers THIN
+    under a rate limit, which is the fault this module went to some trouble to
+    stop mistaking for a fund. Asking it 26 times a day would manufacture the
+    conditions for that fault.
 
     Returns (data, problems, pulled).
     """
@@ -404,6 +425,12 @@ def fundamentals(symbols, today=None):
         held = series.get(symbol)
         if held and held.get("fetched") == str(today):
             out[symbol] = held
+            continue
+        if cached_only:
+            if held:
+                out[symbol] = held
+            else:
+                problems[symbol] = "no cached fundamentals"
             continue
         info = _info(symbol)
         shaped = _shape_info(info) if info else None
@@ -434,10 +461,11 @@ def fundamentals(symbols, today=None):
         else:
             problems[symbol] = "no fundamentals from Yahoo"
 
-    C.FUNDAMENTALS_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    C.FUNDAMENTALS_CACHE.write_text(json.dumps(
-        {"fetched": str(today), "symbols": out}, separators=(",", ":")),
-        encoding="utf-8")
+    if not cached_only:
+        C.FUNDAMENTALS_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        C.FUNDAMENTALS_CACHE.write_text(json.dumps(
+            {"fetched": str(today), "symbols": out}, separators=(",", ":")),
+            encoding="utf-8")
     return out, problems, pulled
 
 
@@ -484,12 +512,23 @@ def _plain(prop):
     return None
 
 
-def equity_log():
+def equity_log(cached_only=False):
     """The Notion Equity Log. Live if a token exists, else the cached snapshot.
 
     Returns (rows, meta) where meta records which path was taken and how old
     the data is, so the dashboard can be honest about it.
+
+    `cached_only` skips Notion entirely, for the intraday refresh. A thesis is
+    not rewritten between 10:00 and 10:30; what changes intraday is the price
+    it is held against. Skipping the read keeps the refresh free of a second
+    vendor and of a credential that can expire mid-afternoon.
     """
+    if cached_only:
+        rows, meta = _equity_log_cached()
+        if not rows:
+            meta["problem"] = ("intraday refresh has no Equity Log cache to "
+                               "read; run `cockpit.py run` to populate it")
+        return rows, meta
     token = notion_token()
     if token:
         rows, problem = _equity_log_live(token)

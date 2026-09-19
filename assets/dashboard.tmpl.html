@@ -445,6 +445,13 @@ function paintTape() {
     `<b>${watch.size}</b> watched`,
     `<b class="${flags ? 'dn-t' : ''}">${flags}</b> flag${flags === 1 ? '' : 's'}`,
     covChip,
+    // The clock the prices were taken at. Without it an afternoon page and a
+    // breakfast page are indistinguishable, which is the whole reason the
+    // intraday refresh exists - and a page that refreshed but does not say so
+    // is no more trustworthy than one that did not.
+    `Priced <b title="${esc(D.generated || '')}${s.run_mode === 'refresh'
+        ? ` · intraday refresh; board last read ${esc(s.last_full_run || '')}`
+        : ' · full run'}">${esc((D.generated || '').slice(11, 16))}</b>`,
     `CSV <b class="${stale ? 'dn-t' : ''}">${s.nordnet_export_age_days}d</b>`,
     `Notion <b>${live ? 'live' : 'cached'}</b>`,
   ].filter(Boolean).join('<span style="color:var(--axis);margin:0 8px">·</span>');
@@ -1021,6 +1028,10 @@ function paintSheet() {
   const s = D.sources || {};
   const src = `<h2>Provenance</h2><div class="scroll"><table><tbody>
     <tr><td>Generated</td><td>${esc(D.generated)}</td></tr>
+    <tr><td>Run</td><td>${s.run_mode === 'refresh'
+      ? `intraday refresh · prices and FX re-fetched, everything else served from
+         the last full run at ${esc(s.last_full_run || 'unknown')}`
+      : 'full · every source read'}</td></tr>
     <tr><td>Nordnet export</td><td>${esc(s.nordnet_export_date)} ·
       ${s.nordnet_export_age_days} days old · ${esc((s.nordnet_files||[]).join(', '))}</td></tr>
     <tr><td>Equity Log</td><td>${esc(s.equity_log_mode)} ·
