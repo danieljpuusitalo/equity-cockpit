@@ -14,6 +14,7 @@ testing lives in analyse.py; every external boundary lives in sources.py.
 """
 from __future__ import annotations
 
+import re
 import sys
 import json
 import argparse
@@ -608,6 +609,77 @@ def selftest():
     check("assets: narrow layout keeps both tiers", not tiers,
           f"template lost: {', '.join(tiers)}" if tiers
           else "two-column tier and one-column fallback both present")
+
+    # The type scale is only a scale while it is the only source of sizes. It
+    # decayed into 15 font-sizes, 10 weights and 10 radii once before, one rule
+    # at a time, and no single edit in that drift looked wrong on its own. So
+    # the check is not "is there a scale" - it is "is anything still bypassing
+    # it". Raw literals are counted outside the :root block that defines them.
+    style = tmpl.split("</style>")[0]
+    body_css = style[style.index("*{box-sizing:border-box}"):] \
+        if "*{box-sizing:border-box}" in style else style
+    raw = {name: sorted(set(re.findall(pat, body_css)))
+           for name, pat in (("font-size", r"font-size:([\d.]+px)"),
+                             ("font-weight", r"font-weight:(\d+)"),
+                             ("border-radius", r"border-radius:([\d.]+px)"),
+                             ("gap", r"gap:([\d.]+px)"))}
+    stray = {k: v for k, v in raw.items() if v}
+    check("assets: type scale has no bypasses", not stray,
+          "; ".join(f"{k}: {', '.join(v)}" for k, v in stray.items()) if stray
+          else "sizes, weights, radii and gaps all come from :root tokens")
+
+    # Right-aligned is correct for the numeric columns and wrong for every word
+    # column, which is how six tables came to right-rag their sector, account
+    # and currency cells against a hard edge. The opt-out has to exist AND be
+    # used; a rule nobody applies is the same as no rule.
+    # The count is reported rather than compared to a threshold. There is no
+    # defensible number of text columns to demand - it changes whenever a
+    # column is added - but a run that prints 2 where the last one printed 20
+    # is a regression anybody can see, and inventing a floor here would just be
+    # a recalled number pretending to be a requirement.
+    marked = tmpl.count('class="t"') + tmpl.count(' t"')
+    align = []
+    if "th.t,td.t{text-align:left}" not in tmpl.replace(" ", ""):
+        align.append("the .t opt-out rule is gone")
+    elif not marked:
+        align.append("the .t rule exists but nothing uses it")
+    if "thead th{position:sticky" not in tmpl:
+        align.append("table headers no longer stick")
+    check("assets: tables align words left and numbers right", not align,
+          "; ".join(align) if align
+          else f"{marked} text columns opt out of the numeric default, "
+               f"headers sticky")
+
+    # An unclosed row tag is the worst kind of defect this page can have,
+    # because it does not break the page - it silently shifts one table's
+    # values a column left of their own headings and keeps looking tidy. The
+    # funds table shipped like that: `<tr class=... data-on="0"` with no `>`,
+    # so the browser parsed `<td` as an attribute, ate the symbol cell, and
+    # rendered eight cells under nine headers. Every figure in that table was
+    # sitting under the wrong name.
+    unclosed = re.findall(r"<(tr|thead|tbody)\b[^>]{0,400}?<t[dh]\b", tmpl)
+    check("assets: no table row swallows its first cell", not unclosed,
+          f"{len(unclosed)} unclosed row/section tag(s): {set(unclosed)}"
+          if unclosed else "every row tag closes before its cells")
+
+    # DESIGN.md 5b says not to hand-tune the plotted colours and to re-run the
+    # validator if you change one. That was unenforceable while the validator
+    # lived outside the repo, so a palette could drift and nothing would notice.
+    # tools/palette_check.py reads the tokens straight out of the template, so
+    # this check has no second copy of the palette to go stale against.
+    try:
+        sys.path.insert(0, str(C.ROOT / "tools"))
+        import palette_check
+
+        # Fed the template text this function already read, so the check runs
+        # against the same bytes as every other assets: check above it.
+        res = palette_check.evaluate(palette_check.read_tokens(tmpl))
+        check("assets: palette still separable",
+              not res.failures,
+              "; ".join(res.failures[:3]) if res.failures
+              else f"{len(res.rows)} checks across both modes, all pass")
+    except Exception as exc:                       # noqa: BLE001 - report, never crash
+        check("assets: palette still separable", False, f"checker failed: {exc}")
 
     # A placeholder target that renders as a bare number IS a policy to whoever
     # reads the page next, and the repo already has form for exactly this - a

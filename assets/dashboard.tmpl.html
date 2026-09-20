@@ -2,44 +2,95 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Equity cockpit</title>
 <style>
-/* Palette note: the four plotted colours below were run through the dataviz
-   validator in BOTH modes (lightness band, chroma floor, CVD separation,
-   normal-vision floor, contrast vs surface - all PASS). Do not hand-tune them.
-   Target and trigger also differ by line style and carry axis labels, so they
-   are never distinguished by colour alone. */
+/* Palette note: every colour below is checked by `py tools/palette_check.py`
+   in BOTH modes - lightness band, chroma floor, CVD separation, normal-vision
+   floor, mark contrast vs every surface it lands on, and WCAG AA for anything
+   used as text. Do not hand-tune them; change a value and re-run the checker,
+   which is also wired into `run.ps1 selftest`.
+
+   Gain is green and loss is red EVERYWHERE - text, treemap tiles, bars and
+   candle bodies. That was not true before: signed numbers were green/red while
+   the bar beside them was blue/red, so a single row said both things at once.
+
+   Moving the candles onto green put them on the same plot as the green target
+   line, so the check is now all six pairs among the four plotted hues, not the
+   two it used to be. Target and trigger additionally differ by line style and
+   carry axis labels, so that pair is never colour-alone. Nothing else on the
+   page leans on hue by itself either: down-candles are hollow, the treemap
+   keeps its sign glyph, and the diverging bars have a real zero axis. */
 :root{
   color-scheme: light;
   --surface-1:#fcfcfb; --surface-2:#f4f4f1; --plane:#f9f9f7;
-  --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+  --ink:#0b0b0b; --ink-2:#52514e; --muted:#6f6d67;
   --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.11);
-  --up:#2a78d6; --down:#e34948;
-  --target:#007a5c; --trigger:#a85400;
-  --pos:#2a78d6; --neg:#e34948;
-  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --crit:#d03b3b;
-  --good-ink:#006300; --warn-ink:#8a6000; --crit-ink:#b02525;
-  --accent:#2a78d6;
+  --up:#2f9e63; --down:#8c2a34;
+  --target:#4a55c8; --trigger:#8f6900;
+  --pos:#2f9e63; --neg:#8c2a34;
+  --good:#2f9e63; --warn:#fab219; --serious:#ec835a; --crit:#d03b3b;
+  --good-ink:#166b46; --warn-ink:#8a6000; --crit-ink:#9b2731;
+  --accent:#4a55c8;
 }
 @media (prefers-color-scheme: dark){ :root:where(:not([data-theme="light"])){
   color-scheme: dark;
   --surface-1:#1a1a19; --surface-2:#232322; --plane:#0d0d0d;
-  --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+  --ink:#e8e6e2; --ink-2:#c3c2b7; --muted:#8f8d86;
   --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.11);
-  --up:#3987e5; --down:#e66767;
-  --target:#1f9e76; --trigger:#c47a2c;
-  --pos:#3987e5; --neg:#e66767;
-  --good-ink:#3cc46a; --warn-ink:#e0a72c; --crit-ink:#ef6b6b;
+  --up:#5bd39b; --down:#d24f3a;
+  --target:#3987e5; --trigger:#eda01d;
+  --pos:#5bd39b; --neg:#d24f3a;
+  --good:#5bd39b; --warn:#e0a72c; --serious:#e2825a; --crit:#e05a5a;
+  --good-ink:#63d8a2; --warn-ink:#e0a72c; --crit-ink:#ec7d67;
   --accent:#3987e5;
 }}
 :root[data-theme="dark"]{
   color-scheme: dark;
   --surface-1:#1a1a19; --surface-2:#232322; --plane:#0d0d0d;
-  --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+  --ink:#e8e6e2; --ink-2:#c3c2b7; --muted:#8f8d86;
   --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.11);
-  --up:#3987e5; --down:#e66767;
-  --target:#1f9e76; --trigger:#c47a2c;
-  --pos:#3987e5; --neg:#e66767;
-  --good-ink:#3cc46a; --warn-ink:#e0a72c; --crit-ink:#ef6b6b;
+  --up:#5bd39b; --down:#d24f3a;
+  --target:#3987e5; --trigger:#eda01d;
+  --pos:#5bd39b; --neg:#d24f3a;
+  --good:#5bd39b; --warn:#e0a72c; --serious:#e2825a; --crit:#e05a5a;
+  --good-ink:#63d8a2; --warn-ink:#e0a72c; --crit-ink:#ec7d67;
   --accent:#3987e5;
+}
+
+/* Type, spacing and shape. These are mode-independent, so they sit in their
+   own block rather than being repeated in all three palette blocks.
+
+   The page had 15 font sizes, 10 weights and 10 radii before this. Not 15
+   deliberate sizes - 9 of them formed a half-pixel staircase (10, 10.5, 11,
+   11.5, 12, 12.5, 13, 13.5, 14) carrying 88% of all declarations, which is
+   what a scale looks like when every rule picked its own number. Four separate
+   sizes were doing the single job of "the big number".
+
+   Collapsed to six steps plus a caret size. Half-pixels are kept where they
+   were already load-bearing: this renders at fractional DPI and 11.5px is a
+   real, distinct size, not a typo. What is gone is the neighbouring value
+   nobody could tell apart from it. */
+:root{
+  --font-ui: system-ui,-apple-system,"Segoe UI",sans-serif;
+  /* Numbers get tabular figures via .num; the family is the same, so a price
+     and its label never disagree about shape. */
+  --t-1:10.5px;  /* micro caps: column group labels, badges, estimate marks */
+  --t-2:11.5px;  /* table cells, chips, secondary text */
+  --t-3:12.5px;  /* body and default control text */
+  --t-4:13.5px;  /* emphasised row text: ticker, company, change */
+  --t-5:18px;    /* section heading */
+  --t-6:22px;    /* display: the one number a card exists to show */
+  --t-caret:9px; /* the sort/disclosure glyphs, which are icons not type */
+
+  --w-med:560; --w-semi:640; --w-bold:700;
+
+  /* Fitted to the page's own histogram rather than to a ratio: 13 distinct gap
+     values clustered around 2, 4, 6, 10 and 14, so those are the steps. A
+     tidier 4/8/16/24 scale would have moved almost every gap on the page to
+     serve an idea of neatness no reader can see.
+     Multi-value paddings are left alone here - `padding:7px 8px` is component
+     geometry, not rhythm, and is set where each component is defined. */
+  --s-1:2px; --s-2:4px; --s-3:6px; --s-4:10px; --s-5:14px; --s-6:20px;
+
+  --r-sm:3px; --r-md:7px; --r-lg:10px; --r-pill:999px;
 }
 
 *{box-sizing:border-box}
@@ -49,37 +100,61 @@ html,body{height:100%}
    are, so anything that subtracts a fixed number is wrong on most mornings. */
 body{margin:0;background:var(--plane);color:var(--ink);overflow:hidden;
   display:flex;flex-direction:column;
-  font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+  font:var(--t-4)/1.45 var(--font-ui);
   -webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .num{font-variant-numeric:tabular-nums}
-.up-t{color:var(--good-ink)} .dn-t{color:var(--neg)}
+/* Text uses the -ink tokens, marks use --pos/--neg. They are different jobs:
+   a mark can be the only channel and owes CVD separation, text always carries
+   a sign glyph and instead owes WCAG AA against the surface. .dn-t used to
+   borrow the mark colour, which is why it never paid the text contrast. */
+.up-t{color:var(--good-ink)} .dn-t{color:var(--crit-ink)}
+/* `.chip b` below sets a colour and is (0,1,1); these are (0,1,0), so without
+   the scoped pair the chip wins and every signed number on the tape renders
+   ink-black - the headline P/L, the flag count, a stale CSV, the unwatched
+   share. They were all colourless until this was measured in the light theme. */
+.chip b.up-t{color:var(--good-ink)} .chip b.dn-t{color:var(--crit-ink)}
 
 /* ------------------------------------------------------------------ tape */
-.tape{display:flex;align-items:center;gap:18px;height:52px;flex:none;padding:0 16px;
+/* Wraps at every width rather than at a breakpoint. The meta chip is as long as
+   the book is wide - at 955px it measured 769px on its own, which pushed the view
+   nav to left:1133 and the theme button to 1380, both off a 955px screen. That is
+   not a cosmetic overflow: Positions became unreachable. A guessed breakpoint
+   would only move where it happens, so the bar is allowed to take a second row
+   whenever the facts do not fit, and min-height keeps it at one row when they do. */
+.tape{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-3) var(--s-6);
+  min-height:52px;flex:none;padding:8px 16px;
   background:var(--surface-1);border-bottom:1px solid var(--border);
   position:relative;z-index:5}
-.brand{font-size:11px;font-weight:700;letter-spacing:.14em;color:var(--muted);
+.brand{font-size:var(--t-2);font-weight:var(--w-bold);letter-spacing:.14em;color:var(--muted);
   white-space:nowrap}
-.tape .big{font-size:21px;font-weight:650;letter-spacing:-.02em;
+.tape .big{font-size:var(--t-6);font-weight:var(--w-semi);letter-spacing:-.02em;
   font-variant-numeric:tabular-nums}
-.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;
+.chip{display:inline-flex;align-items:center;gap:var(--s-3);font-size:var(--t-3);
   color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
-.chip b{font-weight:620;color:var(--ink)}
+.chip b{font-weight:var(--w-semi);color:var(--ink)}
+/* The meta chip is the one that has to give. Block flow rather than inline-flex
+   so it breaks at the separators and nowhere else - each fact is a .f that stays
+   whole, so a line never ends with "24" and starts with "held". */
+#t-meta{display:block;white-space:normal;min-width:0;line-height:1.5}
+#t-meta .f{white-space:nowrap}
 .sep{width:1px;height:22px;background:var(--border);flex:none}
-.tape .spacer{flex:1}
+/* No flex spacer: under wrap a spacer eats the rest of its own line and pushes
+   whatever follows it onto a line of its own, which stranded the theme button
+   three rows down. An auto margin does the same right-alignment per line while
+   leaving the nav and the button adjacent, so the controls travel together. */
 .dot{width:7px;height:7px;border-radius:50%;flex:none}
-.tbtn{padding:5px 11px;border:1px solid var(--border);border-radius:7px;
-  font-size:12px;color:var(--ink-2)}
+.tbtn{padding:5px 11px;border:1px solid var(--border);border-radius:var(--r-md);
+  font-size:var(--t-3);color:var(--ink-2)}
 .tbtn:hover{background:var(--surface-2);color:var(--ink)}
 .tbtn[aria-pressed="true"]{background:var(--surface-2);color:var(--ink);
   border-color:var(--axis)}
 
 /* --------------------------------------------------------------- banner */
-.banner{display:flex;align-items:flex-start;gap:10px;padding:9px 16px;flex:none;
-  font-size:12.5px;border-bottom:1px solid var(--border);background:var(--surface-2)}
+.banner{display:flex;align-items:flex-start;gap:var(--s-4);padding:9px 16px;flex:none;
+  font-size:var(--t-3);border-bottom:1px solid var(--border);background:var(--surface-2)}
 .banner .dot{margin-top:5px}
-.banner b{font-weight:620}
+.banner b{font-weight:var(--w-semi)}
 .banner .why{color:var(--ink-2)}
 
 /* ----------------------------------------------------------------- grid */
@@ -89,69 +164,69 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   background:var(--surface-1)}
 .pane + .pane{border-left:1px solid var(--border)}
 .mid{background:var(--plane)}
-.phead{display:flex;align-items:center;gap:8px;padding:10px 12px;flex:none;
+.phead{display:flex;align-items:center;gap:var(--s-4);padding:10px 12px;flex:none;
   border-bottom:1px solid var(--border)}
-.ptitle{font-size:10.5px;font-weight:700;letter-spacing:.12em;color:var(--muted)}
+.ptitle{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.12em;color:var(--muted)}
 .pbody{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden}
 
 /* ----------------------------------------------------------------- rail */
-.search{width:100%;padding:6px 9px;border:1px solid var(--border);border-radius:7px;
-  background:var(--plane);color:var(--ink);font:12.5px system-ui,sans-serif;outline:none}
+.search{width:100%;padding:6px 9px;border:1px solid var(--border);border-radius:var(--r-md);
+  background:var(--plane);color:var(--ink);font:var(--t-3) var(--font-ui);outline:none}
 .search:focus{border-color:var(--accent)}
-.segs{display:flex;gap:4px;padding:8px 12px 4px;flex:none}
-.seg{flex:1;padding:4px 0;border-radius:6px;font-size:11.5px;font-weight:600;
+.segs{display:flex;gap:var(--s-2);padding:8px 12px 4px;flex:none}
+.seg{flex:1;padding:4px 0;border-radius:var(--r-md);font-size:var(--t-2);font-weight:var(--w-semi);
   color:var(--muted);text-align:center;border:1px solid transparent}
 .seg[aria-pressed="true"]{background:var(--surface-2);color:var(--ink);
   border-color:var(--border)}
-.row{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;
+.row{display:grid;grid-template-columns:1fr auto;gap:var(--s-1) 8px;align-items:center;
   padding:7px 12px 7px 9px;border-left:3px solid transparent;cursor:pointer;
   border-bottom:1px solid var(--grid)}
 .row:hover{background:var(--surface-2)}
 .row[aria-selected="true"]{background:var(--surface-2);border-left-color:var(--accent)}
-.row .sym{font-size:13px;font-weight:640;display:flex;align-items:center;gap:5px}
+.row .sym{font-size:var(--t-4);font-weight:var(--w-semi);display:flex;align-items:center;gap:var(--s-2)}
 /* A hollow ring beside the filled alert dot. "Nothing is watching this" is not
    a severity, so it gets no colour - it gets the absence of one, which is also
    the only mark on the rail that survives every kind of colour blindness. */
 .ring{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--axis);
   box-sizing:border-box;flex:none}
-.row .co{grid-column:1;font-size:11px;color:var(--muted);
+.row .co{grid-column:1;font-size:var(--t-2);color:var(--muted);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row .px{font-size:12.5px;font-variant-numeric:tabular-nums;text-align:right}
-.row .chg{grid-column:2;font-size:11px;font-variant-numeric:tabular-nums;text-align:right}
-.empty{padding:22px 14px;color:var(--muted);font-size:12.5px}
+.row .px{font-size:var(--t-3);font-variant-numeric:tabular-nums;text-align:right}
+.row .chg{grid-column:2;font-size:var(--t-2);font-variant-numeric:tabular-nums;text-align:right}
+.empty{padding:22px 14px;color:var(--muted);font-size:var(--t-3)}
 
 /* ------------------------------------------------------------------ mid */
-.symhead{display:flex;align-items:baseline;gap:12px;padding:12px 16px 10px;
+.symhead{display:flex;align-items:baseline;gap:var(--s-5);padding:12px 16px 10px;
   flex:none;flex-wrap:wrap}
-.symhead .tk{font-size:22px;font-weight:680;letter-spacing:-.02em}
-.symhead .co{color:var(--ink-2);font-size:13px}
-.symhead .px{font-size:22px;font-weight:640;font-variant-numeric:tabular-nums;
+.symhead .tk{font-size:var(--t-6);font-weight:var(--w-bold);letter-spacing:-.02em}
+.symhead .co{color:var(--ink-2);font-size:var(--t-4)}
+.symhead .px{font-size:var(--t-6);font-weight:var(--w-semi);font-variant-numeric:tabular-nums;
   margin-left:auto}
-.symhead .chg{font-size:13.5px;font-variant-numeric:tabular-nums}
-.ranges{display:flex;align-items:center;gap:4px;padding:0 16px 8px;flex:none}
-.rbtn{padding:3px 10px;border-radius:6px;font-size:11.5px;font-weight:600;
+.symhead .chg{font-size:var(--t-4);font-variant-numeric:tabular-nums}
+.ranges{display:flex;align-items:center;gap:var(--s-2);padding:0 16px 8px;flex:none}
+.rbtn{padding:3px 10px;border-radius:var(--r-md);font-size:var(--t-2);font-weight:var(--w-semi);
   color:var(--muted);border:1px solid transparent}
 .rbtn:hover{color:var(--ink)}
 .rbtn[aria-pressed="true"]{background:var(--surface-1);color:var(--ink);
   border-color:var(--border)}
 .rsep{width:1px;height:14px;background:var(--border);margin:0 6px;flex:none}
-.legend{display:flex;gap:14px;margin-left:auto;font-size:11.5px;color:var(--ink-2)}
-.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend{display:flex;gap:var(--s-5);margin-left:auto;font-size:var(--t-2);color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:var(--s-2)}
 .swatch{width:14px;height:0;border-top-width:2px;border-top-style:solid;flex:none}
 .chartbox{flex:1;min-height:180px;margin:0 12px;position:relative;
-  background:var(--surface-1);border:1px solid var(--border);border-radius:10px;
+  background:var(--surface-1);border:1px solid var(--border);border-radius:var(--r-lg);
   overflow:hidden}
 .nochart{position:absolute;inset:0;display:flex;align-items:center;
-  justify-content:center;color:var(--muted);font-size:12.5px;text-align:center;
+  justify-content:center;color:var(--muted);font-size:var(--t-3);text-align:center;
   padding:20px}
 
 /* --------------------------------------------------------- weight strip */
 .strip{flex:none;padding:10px 12px 12px}
-.striphead{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
-.strip .ptitle{font-size:10.5px}
-.striphead .note{font-size:11px;color:var(--muted);margin-left:auto}
-.bars{display:flex;gap:2px;height:34px;width:100%}
-.bar{min-width:3px;border-radius:3px;background:var(--axis);cursor:pointer;
+.striphead{display:flex;align-items:baseline;gap:var(--s-4);margin-bottom:6px}
+.strip .ptitle{font-size:var(--t-1)}
+.striphead .note{font-size:var(--t-2);color:var(--muted);margin-left:auto}
+.bars{display:flex;gap:var(--s-1);height:34px;width:100%}
+.bar{min-width:3px;border-radius:var(--r-sm);background:var(--axis);cursor:pointer;
   position:relative}
 .bar:hover{background:var(--ink-2)}
 .bar[data-sel="1"]{background:var(--accent)}
@@ -159,62 +234,77 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 /* --------------------------------------------------------------- thesis */
 .tsec{padding:12px 14px;border-bottom:1px solid var(--grid)}
 .tsec:last-child{border-bottom:0}
-.tlabel{font-size:10.5px;font-weight:700;letter-spacing:.12em;color:var(--muted);
+.tlabel{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.12em;color:var(--muted);
   margin-bottom:8px}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12.5px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:var(--s-3) 12px;font-size:var(--t-3)}
 .kv dt{color:var(--muted)}
-.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:560}
-.prose{font-size:12.5px;line-height:1.5;color:var(--ink-2);
+.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:var(--w-med)}
+.prose{font-size:var(--t-3);line-height:1.5;color:var(--ink-2);
   overflow-wrap:anywhere}
 /* Three columns, because the point of the section is the gap between two of
    them. A dt may be followed by more than one dd - this is that, not a hack. */
-.trio{display:grid;grid-template-columns:auto 1fr 1fr;gap:6px 10px;font-size:12.5px;
+.trio{display:grid;grid-template-columns:auto 1fr 1fr;gap:var(--s-3) 10px;font-size:var(--t-3);
   align-items:baseline}
 .trio dt{color:var(--muted)}
-.trio dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:560}
-.trio .hd{font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--muted);
+.trio dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:var(--w-med)}
+.trio .hd{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.08em;color:var(--muted);
   text-transform:uppercase}
-.trio .was{font-weight:500;color:var(--ink-2)}
-.drift{font-size:11px;color:var(--muted);margin-left:4px;font-weight:500}
+.trio .was{font-weight:var(--w-med);color:var(--ink-2)}
+.drift{font-size:var(--t-2);color:var(--muted);margin-left:4px;font-weight:var(--w-med)}
 /* A bounded number reads badly as a decimal and well as a position. The two
    faint ticks are the 30/70 lines; the mark is today. No colour: overbought is
    a description, not an instruction, and red would make it one. */
-.meter{display:inline-block;width:64px;height:6px;border-radius:3px;
+.meter{display:inline-block;width:64px;height:6px;border-radius:var(--r-sm);
   background:var(--grid);position:relative;vertical-align:middle;margin-left:8px}
 .meter u{position:absolute;top:0;width:1px;height:6px;background:var(--muted)}
 .meter i{position:absolute;top:-2px;width:2px;height:10px;background:var(--ink);
-  border-radius:1px;margin-left:-1px}
-.badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;
-  font-weight:640;border:1px solid var(--border)}
+  border-radius:var(--r-sm);margin-left:-1px}
+.badge{display:inline-block;padding:1px 8px;border-radius:var(--r-pill);font-size:var(--t-2);
+  font-weight:var(--w-semi);border:1px solid var(--border)}
 .b-buy{background:color-mix(in srgb,var(--good) 15%,transparent);color:var(--good-ink)}
 .b-watch{background:var(--surface-2);color:var(--ink-2)}
 .b-trim{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn-ink)}
 .b-exit{background:color-mix(in srgb,var(--crit) 15%,transparent);color:var(--crit-ink)}
-.alert{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--grid);
-  font-size:12.5px}
+.alert{display:flex;gap:var(--s-4);padding:8px 0;border-bottom:1px solid var(--grid);
+  font-size:var(--t-3)}
 .alert:last-child{border-bottom:0}
 .alert .dot{margin-top:5px}
-.alert .t{font-weight:600}
-.alert .d{color:var(--ink-2);font-size:12px;margin-top:2px;overflow-wrap:anywhere}
+.alert .t{font-weight:var(--w-semi)}
+/* Clamped to three lines. Unclamped, seven flags ran the card to 798px against
+   Concentration's 188px beside it - 610px of dead column. The full text is on
+   the title and in the Flags table on the Data sheet; the card is the index. */
+.alert .d{color:var(--ink-2);font-size:var(--t-3);margin-top:2px;overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;
+  overflow:hidden}
 
 /* ----------------------------------------------------------- data sheet */
 .sheet{position:fixed;inset:0;z-index:20;background:var(--plane);
   overflow:auto;padding:20px 22px 60px;display:none}
 .sheet[data-open="1"]{display:block}
-.sheet h2{font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+.sheet h2{font-size:var(--t-3);letter-spacing:.1em;text-transform:uppercase;
   color:var(--muted);margin:26px 0 10px}
 .sheet h2:first-of-type{margin-top:14px}
-.sheethead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.sheethead h1{font-size:18px;font-weight:650;margin:0;margin-right:auto}
-table{width:100%;border-collapse:collapse;font-size:12.5px;
-  font-variant-numeric:tabular-nums}
-th{text-align:right;font-weight:600;color:var(--muted);font-size:10.5px;
+.sheethead{display:flex;align-items:center;gap:var(--s-4);flex-wrap:wrap}
+.sheethead h1{font-size:var(--t-5);font-weight:var(--w-semi);margin:0;margin-right:auto}
+/* Right is the right default here: most columns are numbers, and numbers align
+   on their last digit or they cannot be compared down a column. What was wrong
+   was that nothing opted out, so every text column - sector, account, currency,
+   "judged by", "reached through" - was right-ragged against a hard edge and
+   had to be read from an unpredictable left margin. Hence .t. */
+table{width:100%;border-collapse:collapse;font-size:var(--t-3);
+  line-height:1.4;font-variant-numeric:tabular-nums}
+th{text-align:right;font-weight:var(--w-semi);color:var(--muted);font-size:var(--t-1);
   letter-spacing:.05em;text-transform:uppercase;padding:0 8px 8px;
   border-bottom:1px solid var(--axis);white-space:nowrap}
-th:first-child,td:first-child{text-align:left}
+th:first-child,td:first-child,th.t,td.t{text-align:left}
 td{padding:7px 8px;border-bottom:1px solid var(--grid);text-align:right;
   white-space:nowrap}
 td.wrap{white-space:normal;min-width:260px}
+/* The sheet scrolls as one page, so a long table takes its header off screen
+   and the reader is left guessing which column they are in. Sticky inside the
+   scroller costs nothing and removes the guess. The background is opaque
+   because rows pass underneath it. */
+thead th{position:sticky;top:0;z-index:1;background:var(--plane)}
 .scroll{overflow-x:auto}
 
 /* ------------------------------------------------------------- exposure */
@@ -223,19 +313,19 @@ td.wrap{white-space:normal;min-width:260px}
    normalised to its biggest neighbour turns 31% and 16% into 100% and 52%,
    which is the one distortion a composition chart must not introduce. */
 .xgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
-  gap:10px;margin-bottom:4px}
-.xcard{border:1px solid var(--border);border-radius:8px;padding:10px 12px;
+  gap:var(--s-4);margin-bottom:4px}
+.xcard{border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;
   background:var(--surface-1)}
-.xcard .k{font-size:10.5px;font-weight:700;letter-spacing:.1em;
+.xcard .k{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.1em;
   text-transform:uppercase;color:var(--muted)}
-.xcard .v{font-size:21px;font-weight:620;font-variant-numeric:tabular-nums;
+.xcard .v{font-size:var(--t-6);font-weight:var(--w-semi);font-variant-numeric:tabular-nums;
   margin:4px 0 2px;line-height:1.1}
-.xcard .s{font-size:11.5px;color:var(--ink-2);line-height:1.4}
+.xcard .s{font-size:var(--t-2);color:var(--ink-2);line-height:1.4}
 /* Namespaced .xrow, not .bar: the weight strip up at line 154 already owns
    .bar, and a second rule on that name silently reflowed it to a grid. */
-.xrow{display:grid;grid-template-columns:168px 1fr 66px;gap:10px;
-  align-items:center;padding:3px 0;font-size:12.5px;cursor:default;
-  border-radius:4px}
+.xrow{display:grid;grid-template-columns:168px 1fr 66px;gap:var(--s-4);
+  align-items:center;padding:3px 0;font-size:var(--t-3);cursor:default;
+  border-radius:var(--r-sm)}
 /* Only a row that can actually filter something offers to be clicked. The
    unresolved bar looks identical and is inert, so the cursor is the only
    honest warning the reader gets before the click that does nothing. */
@@ -244,15 +334,15 @@ td.wrap{white-space:normal;min-width:260px}
 .xrow[data-on="1"]{background:color-mix(in srgb,var(--accent) 13%,transparent)}
 .xrow .n{color:var(--ink-2);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;padding-left:5px}
-.xrow[data-on="1"] .n{color:var(--ink);font-weight:600}
-.xrow .t{height:11px;border-radius:3px;background:var(--grid);overflow:hidden;
+.xrow[data-on="1"] .n{color:var(--ink);font-weight:var(--w-semi)}
+.xrow .t{height:11px;border-radius:var(--r-sm);background:var(--grid);overflow:hidden;
   display:flex}
 .xrow .f{height:100%;background:var(--accent)}
 /* A second tone, deliberately not a second hue. Direct and indirect are the
    same exposure reached two ways; a contrasting colour would read as two
    opposed things rather than one thing counted twice over. */
 .xrow .f2{height:100%;background:color-mix(in srgb,var(--accent) 38%,transparent)}
-.xrow .p{text-align:right;font-variant-numeric:tabular-nums;font-weight:560;
+.xrow .p{text-align:right;font-variant-numeric:tabular-nums;font-weight:var(--w-med);
   padding-right:5px}
 /* The mass no source could place, drawn rather than footnoted. A composition
    chart that silently omits what it could not resolve is the chart most
@@ -262,7 +352,7 @@ td.wrap{white-space:normal;min-width:260px}
 .xrow.un .n,.xrow.un .p{color:var(--muted)}
 .xrow.un .f{background:repeating-linear-gradient(135deg,var(--axis) 0 3px,
   transparent 3px 7px)}
-.xkey{font-size:11.5px;color:var(--muted);margin:1px 0 10px}
+.xkey{font-size:var(--t-2);color:var(--muted);margin:1px 0 10px}
 .xcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
   gap:0 26px}
 
@@ -272,29 +362,29 @@ td.wrap{white-space:normal;min-width:260px}
    moment you want a different question answered. */
 .sheetnav{position:sticky;top:-20px;z-index:3;background:var(--plane);
   padding:8px 0 9px;margin:0 0 4px;border-bottom:1px solid var(--grid);
-  display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.navb{font-size:11.5px;padding:4px 11px;border-radius:999px;
+  display:flex;flex-wrap:wrap;gap:var(--s-3);align-items:center}
+.navb{font-size:var(--t-2);padding:4px 11px;border-radius:var(--r-pill);
   border:1px solid var(--border);color:var(--ink-2);background:var(--surface-1)}
 .navb:hover{border-color:var(--axis);color:var(--ink)}
-.sheet h2{cursor:pointer;user-select:none;display:flex;align-items:center;gap:7px}
-.sheet h2::before{content:"▾";font-size:9px;color:var(--axis);
+.sheet h2{cursor:pointer;user-select:none;display:flex;align-items:center;gap:var(--s-3)}
+.sheet h2::before{content:"▾";font-size:var(--t-caret);color:var(--axis);
   transition:transform .12s}
 .sheet h2[data-shut="1"]::before{transform:rotate(-90deg)}
 .sec[data-shut="1"]{display:none}
 /* One live filter, stated in words, clearable, and applied to every table it
    can touch. A filter that is not visible is a lie the page tells quietly. */
-.xchip{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;
-  padding:3px 6px 3px 11px;border-radius:999px;margin-left:auto;
+.xchip{display:inline-flex;align-items:center;gap:var(--s-3);font-size:var(--t-2);
+  padding:3px 6px 3px 11px;border-radius:var(--r-pill);margin-left:auto;
   background:color-mix(in srgb,var(--accent) 15%,transparent);
   color:var(--ink);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent)}
-.xchip b{font-weight:640}
-.xchip button{font-size:14px;line-height:1;padding:0 4px;color:var(--ink-2)}
+.xchip b{font-weight:var(--w-semi)}
+.xchip button{font-size:var(--t-4);line-height:1;padding:0 4px;color:var(--ink-2)}
 .xchip button:hover{color:var(--ink)}
-.xsearch{font:inherit;font-size:11.5px;padding:4px 9px;border-radius:999px;
+.xsearch{font:inherit;font-size:var(--t-2);padding:4px 9px;border-radius:var(--r-pill);
   border:1px solid var(--border);background:var(--surface-1);color:var(--ink);
   width:170px;outline:none}
 .xsearch:focus{border-color:var(--accent)}
-.xtog{font-size:11.5px;padding:4px 10px;border-radius:999px;
+.xtog{font-size:var(--t-2);padding:4px 10px;border-radius:var(--r-pill);
   border:1px solid var(--border);color:var(--muted);background:var(--surface-1)}
 .xtog[aria-pressed="true"]{color:var(--ink);border-color:var(--axis);
   background:var(--surface-2)}
@@ -303,33 +393,33 @@ td.wrap{white-space:normal;min-width:260px}
    ends up reading the wrong row as the biggest. */
 th.s{cursor:pointer;user-select:none}
 th.s:hover{color:var(--ink)}
-th.s[data-dir]::after{content:"▾";margin-left:4px;font-size:8px}
+th.s[data-dir]::after{content:"▾";margin-left:4px;font-size:var(--t-caret)}
 th.s[data-dir="1"]::after{content:"▴"}
 tr.click{cursor:pointer}
 tr.click:hover td{background:var(--surface-2)}
 tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
-.sheet .empty{font-size:12.5px;color:var(--muted);padding:10px 0}
+.sheet .empty{font-size:var(--t-3);color:var(--muted);padding:10px 0}
 /* ------------------------------------------------------------- reporting */
 .cal{display:grid;grid-template-columns:70px 1fr;gap:0 14px;align-items:start}
-.calwk{font-size:10.5px;font-weight:700;letter-spacing:.09em;color:var(--muted);
+.calwk{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.09em;color:var(--muted);
   text-transform:uppercase;padding:9px 0 0}
 .calbox{border-left:2px solid var(--grid);padding:0 0 12px 14px}
 .calbox.soon{border-left-color:var(--warn)}
-.calrow{display:flex;align-items:baseline;gap:9px;padding:5px 0;
-  font-size:12.5px;cursor:pointer;border-radius:4px}
+.calrow{display:flex;align-items:baseline;gap:var(--s-4);padding:5px 0;
+  font-size:var(--t-3);cursor:pointer;border-radius:var(--r-sm)}
 .calrow:hover{background:var(--surface-2)}
-.calrow .d{color:var(--muted);font-size:11.5px;width:52px;flex:none}
-.calrow .sym{font-weight:640;width:88px;flex:none}
+.calrow .d{color:var(--muted);font-size:var(--t-2);width:52px;flex:none}
+.calrow .sym{font-weight:var(--w-semi);width:88px;flex:none}
 .calrow .co{color:var(--ink-2);flex:1;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
 .calrow .wt{font-variant-numeric:tabular-nums;color:var(--ink-2)}
 /* Yahoo's own "this date is extrapolated" flag, carried to the surface. A
    guessed date printed beside a confirmed one with no mark is the
    derived-status bug this repo keeps finding in its own display layer. */
-.est{font-size:10px;color:var(--muted);border:1px solid var(--border);
-  border-radius:3px;padding:0 4px;font-weight:600}
-.beat{color:var(--good-ink);font-weight:620}
-.miss{color:var(--neg);font-weight:620}
+.est{font-size:var(--t-1);color:var(--muted);border:1px solid var(--border);
+  border-radius:var(--r-sm);padding:0 4px;font-weight:var(--w-semi)}
+.beat{color:var(--good-ink);font-weight:var(--w-semi)}
+.miss{color:var(--crit-ink);font-weight:var(--w-semi)}
 
 /* ------------------------------------------------------------------ views */
 /* Two top-level views, one surface each. The cockpit used to open on a single
@@ -339,99 +429,133 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
    because it is an appendix to whichever one you are reading. */
 .view{display:flex;flex-direction:column;flex:1;min-height:0}
 .view[hidden]{display:none}
-.vnav{display:flex;gap:3px;margin-left:14px}
-.vbtn{padding:4px 11px;border-radius:7px;font-size:12px;font-weight:600;
+/* The nav and the theme button are one group so a wrap can never put them on
+   separate lines. Auto-margin on the nav alone did exactly that: the nav took
+   the right of its line and the button fell to the next one, left-aligned. */
+.tctl{display:flex;align-items:center;gap:var(--s-6);margin-left:auto}
+.vnav{display:flex;gap:var(--s-1)}
+.vbtn{padding:4px 11px;border-radius:var(--r-md);font-size:var(--t-3);font-weight:var(--w-semi);
   color:var(--muted);border:1px solid transparent;background:none}
 .vbtn:hover{color:var(--ink-2)}
 .vbtn[aria-pressed="true"]{background:var(--surface-2);color:var(--ink);
   border-color:var(--border)}
 
 .ov{overflow-y:auto;flex:1;padding:14px 16px 28px;background:var(--surface-1)}
-.ovgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));
-  gap:13px;align-items:start}
-.ovwide{grid-column:1/-1}
-@media (min-width:1100px){ .ovtall{grid-column:span 2} }
-.card{border:1px solid var(--border);border-radius:9px;padding:11px 13px;
+
+/* Twelve fixed tracks, not auto-fit. Auto-fit decided the column count from the
+   viewport and the cards took whatever fell out: at 1920 it resolved to six,
+   which left Concentration alone on a row and Flags alone on the last one, with
+   five empty tracks beside each. Fixed tracks let the spans be declared, so the
+   rows close: 8+4, 4+4+4, 6+6, 12. The headline band above uses the same twelve
+   tracks (4 stats x 3) so a stat edge lines up with a card edge. */
+.ovgrid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
+  gap:var(--s-5);align-items:start}
+/* Scoped as children so each span class outranks the `> *` default rather than
+   merely following it. Without that, a later tier's default silently overrides
+   an earlier tier's explicit span - they tie on specificity and order decides. */
+.ovgrid > *{grid-column:span 4}
+.ovgrid > .ov-6{grid-column:span 6}
+.ovgrid > .ov-8{grid-column:span 8}
+.ovgrid > .ov-12{grid-column:span 12}
+.card{border:1px solid var(--border);border-radius:var(--r-lg);padding:11px 13px;
   background:var(--surface-1);min-width:0}
-.card h3{font-size:10.5px;font-weight:700;letter-spacing:.11em;
+.card h3{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.11em;
   text-transform:uppercase;color:var(--muted);margin:0 0 9px;
-  display:flex;justify-content:space-between;gap:10px;align-items:baseline}
-.card h3 .rt{font-weight:600;letter-spacing:.02em;text-transform:none;
-  font-size:11px}
+  display:flex;justify-content:space-between;gap:var(--s-4);align-items:baseline}
+.card h3 .rt{font-weight:var(--w-semi);letter-spacing:.02em;text-transform:none;
+  font-size:var(--t-2)}
 
 /* The headline band. Four numbers that describe the whole book, at a size that
    says they are the headline - not a 12px strip in the chrome. */
-.ovtop{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
-  gap:13px;margin-bottom:13px}
-.stat{border:1px solid var(--border);border-radius:9px;padding:11px 13px;
+.ovtop{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
+  gap:var(--s-5);margin-bottom:13px}
+.ovtop > *{grid-column:span 4}
+.stat{border:1px solid var(--border);border-radius:var(--r-lg);padding:11px 13px;
   background:var(--surface-1)}
-.stat .k{font-size:10.5px;font-weight:700;letter-spacing:.11em;
+.stat .k{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.11em;
   text-transform:uppercase;color:var(--muted)}
-.stat .v{font-size:25px;font-weight:660;letter-spacing:-.02em;margin:5px 0 1px;
+.stat .v{font-size:var(--t-6);font-weight:var(--w-bold);letter-spacing:-.02em;margin:5px 0 1px;
   font-variant-numeric:tabular-nums;line-height:1.05}
-.stat .s{font-size:11.5px;color:var(--ink-2);line-height:1.35}
+.stat .s{font-size:var(--t-2);color:var(--ink-2);line-height:1.35}
 
 /* ---------------------------------------------------------------- treemap */
 /* Rectangles arrive from Python already placed (see treemap.py). The page
    positions them in percent and does no layout arithmetic of its own, so the
    picture cannot drift from the numbers beside it. */
+/* The ratio is what the picture wants; the cap is what the page can spend. At
+   full width the 21:9 box grew to ~790px tall and pushed everything else below
+   the fold, so the card that answers "what do I own" was also the card that
+   hid the rest. Capped, the treemap is the tallest thing on the page and still
+   fits above the next row on a 1080 screen. */
 .tmap{position:relative;width:100%;aspect-ratio:21/9;min-height:230px;
-  background:var(--plane);border-radius:7px;overflow:hidden}
+  max-height:520px;
+  background:var(--plane);border-radius:var(--r-md);overflow:hidden}
 .tile{position:absolute;overflow:hidden;padding:4px 6px;cursor:default;
-  border:1px solid var(--surface-1);border-radius:2px;
+  border:1px solid var(--surface-1);border-radius:var(--r-sm);
   display:flex;flex-direction:column;justify-content:flex-start}
 .tile[data-sym]{cursor:pointer}
 .tile[data-sym]:hover{outline:2px solid var(--ink);outline-offset:-2px;z-index:2}
-.tile .tt{font-size:11.5px;font-weight:680;color:var(--ink);line-height:1.15;
+.tile .tt{font-size:var(--t-2);font-weight:var(--w-bold);color:var(--ink);line-height:1.15;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tile .tw{font-size:10.5px;color:var(--ink-2);font-variant-numeric:tabular-nums;
+.tile .tw{font-size:var(--t-1);color:var(--ink-2);font-variant-numeric:tabular-nums;
   line-height:1.3;white-space:nowrap}
-/* Below roughly 46x30 there is no room for a second line and barely room for
-   the first. Hiding the label beats overlapping text that reads as corruption. */
+/* Two rungs, set by fitTiles against measured pixels. `sm` drops the weight
+   line, `xs` drops both. The old `xs` rule hid .tt and left .tw showing, so
+   the smallest tiles displayed a percentage with no ticker attached to it -
+   a number labelled by nothing, which is worse than no label at all. */
 .tile.sm .tw{display:none}
-.tile.xs .tt{display:none}
-.tmapkey{display:flex;gap:12px;align-items:center;flex-wrap:wrap;
-  font-size:11px;color:var(--muted);margin-top:7px}
-.ramp{display:inline-flex;height:9px;width:112px;border-radius:2px;
-  overflow:hidden;border:1px solid var(--border)}
-.ramp i{flex:1}
+.tile.xs .tt,.tile.xs .tw{display:none}
+.tmap.empty{display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:0 var(--s-6);color:var(--muted);font-size:var(--t-3)}
+.tmapkey{display:flex;gap:var(--s-5);align-items:center;flex-wrap:wrap;
+  font-size:var(--t-2);color:var(--muted);margin-top:7px}
+/* The key is a gradient because tone() is a continuous function. Seven discrete
+   swatches implied seven buckets, which is a claim about the tiles that is not
+   true - a tile at +7% and one at +14% are different colours, not one band. */
+.ramp{display:inline-block;height:9px;width:112px;border-radius:var(--r-sm);
+  border:1px solid var(--border)}
 
 /* ------------------------------------------------------------- list cards */
 /* A ranked list with a magnitude bar. The bar is scaled to the largest row in
    the card, which is legitimate here because the question is "which of these
    is biggest", not "what share of the whole is this" - the opposite of the
    composition bars up at .xrow, and the reason they are different classes. */
-.lrow{display:grid;grid-template-columns:62px 1fr 74px;gap:9px;
-  align-items:center;padding:3px 0;font-size:12.5px;border-radius:4px}
+.lrow{display:grid;grid-template-columns:62px 1fr 74px;gap:var(--s-4);
+  align-items:center;padding:3px 0;font-size:var(--t-3);border-radius:var(--r-sm)}
 .lrow.click{cursor:pointer}
 .lrow.click:hover{background:var(--surface-2)}
-.lrow .t{font-weight:620;white-space:nowrap;overflow:hidden;
+.lrow .t{font-weight:var(--w-semi);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
 .lrow .track{position:relative;height:13px;background:var(--surface-2);
-  border-radius:3px;overflow:hidden}
-.lrow .track i{position:absolute;top:0;bottom:0;border-radius:3px}
-.lrow .track i.p{left:50%;background:var(--pos)}
-.lrow .track i.n{right:50%;background:var(--neg)}
-.lrow .track .mid{position:absolute;left:50%;top:0;bottom:0;width:1px;
+  border-radius:var(--r-sm);overflow:hidden}
+/* The zero line sat at left:50% width:1px and the bars started at exactly 50%
+   too, so the first bar painted over it every time - the axis was in the markup
+   and never once visible. Cutting a 2px gutter at the centre and starting the
+   bars outside it fixes it by geometry rather than by z-index, so it holds
+   whichever way the stacking context is later rearranged. */
+.lrow .track i{position:absolute;top:0;bottom:0;border-radius:var(--r-sm)}
+.lrow .track i.p{left:calc(50% + 1px);background:var(--pos)}
+.lrow .track i.n{right:calc(50% + 1px);background:var(--neg)}
+.lrow .track .mid{position:absolute;left:calc(50% - 1px);top:0;bottom:0;width:2px;
   background:var(--axis)}
-.lrow .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:560}
-.lnote{font-size:11px;color:var(--muted);margin-top:7px;line-height:1.4}
+.lrow .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:var(--w-med)}
+.lnote{font-size:var(--t-2);color:var(--muted);margin-top:7px;line-height:1.4}
 /* The sheet's composition bars reused at a third of the width. The 168px label
    column there would leave a card here with a 30px track, so the label gives
    way to the bar - the bar is the thing being read. */
 .card .xrow{grid-template-columns:minmax(64px,1.15fr) minmax(56px,1fr) 44px;
-  gap:8px;font-size:12px}
+  gap:var(--s-4);font-size:var(--t-3)}
 .card .xrow .n,.card .xrow .p{padding:0}
 
 /* --------------------------------------------------------- calendar strip */
-.cstrip{display:flex;gap:7px;flex-wrap:wrap}
-.cpill{border:1px solid var(--border);border-radius:7px;padding:6px 9px;
-  font-size:11.5px;min-width:74px}
+.cstrip{display:flex;gap:var(--s-3);flex-wrap:wrap}
+.cpill{border:1px solid var(--border);border-radius:var(--r-md);padding:6px 9px;
+  font-size:var(--t-2);min-width:74px}
 .cpill.soon{border-color:var(--warn)}
-.cpill .d{font-size:10.5px;color:var(--muted);letter-spacing:.06em;
+.cpill .d{font-size:var(--t-1);color:var(--muted);letter-spacing:.06em;
   text-transform:uppercase}
-.cpill .t{font-weight:640;margin-top:2px}
-.cpill .w{font-size:10.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.cpill .t{font-weight:var(--w-semi);margin-top:2px}
+.cpill .w{font-size:var(--t-1);color:var(--ink-2);font-variant-numeric:tabular-nums}
 
 /* ------------------------------------------------------ narrow: two column */
 /* Below 1180px the three columns stop fitting - 264 of rail plus 336 of thesis
@@ -461,6 +585,13 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
      page that says what the dashed line means, and a narrow window is not a
      reason to stop explaining a chart. */
   .ranges{flex-wrap:wrap}
+  /* Same twelve tracks, halved spans: two cards per row instead of three, and
+     the treemap takes the full width back because at 1180px a 2/3 column is
+     under 800px and the small tiles stop being legible before the card does. */
+  .ovgrid > *{grid-column:span 6}
+  .ovgrid > .ov-8{grid-column:span 12}
+  /* The three stats stay on one row: at 1180 that is ~380px each, which is
+     wider than the widest of them needs. Halving them would leave one alone. */
 }
 
 /* ------------------------------------------------------ narrow: one column */
@@ -483,8 +614,13 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
   .pbody{overflow:visible}
   .rail .pbody{max-height:50vh;overflow-y:auto}
   .chartbox{height:320px;flex:none}
-  .tape{flex-wrap:wrap;height:auto;padding:8px 12px;gap:10px 14px}
+  /* The tape wraps at every width now; narrow only buys back the side padding. */
+  .tape{padding:8px 12px}
   .ranges{flex-wrap:wrap}
+  /* One card per row. The stats stay paired: they are four short numbers and
+     stacking them costs four screens of scroll to say what two lines can. */
+  .ovgrid > *,.ovgrid > .ov-6,.ovgrid > .ov-8{grid-column:span 12}
+  .ovtop > *{grid-column:span 12}
 }
 </style>
 
@@ -494,6 +630,7 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
   <span class="chip" id="t-pl"></span>
   <span class="sep"></span>
   <span class="chip" id="t-meta"></span>
+  <div class="tctl">
   <nav class="vnav" id="vnav">
     <button class="vbtn" data-view="overview" aria-pressed="true">Overview</button>
     <button class="vbtn" data-view="positions" aria-pressed="false">Positions</button>
@@ -502,8 +639,10 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
          why its pressed state tracks the sheet and not `state.view`. -->
     <button class="vbtn" id="t-sheet" aria-pressed="false">Data</button>
   </nav>
-  <span class="spacer"></span>
-  <button class="tbtn" id="t-theme" aria-pressed="false">Dark</button>
+  <!-- Label and pressed state are both set by themeLabel() at boot, from what
+       is actually rendered. This text is only what shows if the script dies. -->
+  <button class="tbtn" id="t-theme" aria-pressed="false">Theme</button>
+  </div>
 </header>
 <div id="t-banner"></div>
 
@@ -597,6 +736,12 @@ const pct = (n, dp) => n == null ? '—' :
   (n > 0 ? '+' : '') + Number(n).toFixed(dp == null ? 2 : dp) + '%';
 const cls = (n) => n == null ? '' : (n > 0 ? 'up-t' : n < 0 ? 'dn-t' : '');
 const num = (n, dp) => n == null ? '—' : Number(n).toFixed(dp == null ? 2 : dp);
+// Share counts. Whole lots print whole - a holding of 240 was rendering as the
+// raw float "240" beside one that summed to "83.33333333333333", which is a
+// float artefact of adding lots together, not a number anybody holds. Grouped,
+// and cut at four places because fractional-share brokers do not quote more.
+const qty = (n) => n == null ? '—' : Number(n).toLocaleString('en-GB',
+  {maximumFractionDigits:4});
 // The analyser writes gaps as lowercase fragments ("no thesis on the Equity
 // Log") because they are also read mid-sentence in Telegram. Here they start a
 // sentence, so they get a capital - in the page, not in the payload.
@@ -706,15 +851,16 @@ let state = {sym: ROWS.length ? ROWS[0].sym : null, filter:'all', q:'', days:365
 
 function paintTape() {
   const t = D.totals || {}, s = D.sources || {}, hs = D.health || {};
+  // The tape is the ticker: it follows you to Positions, so it carries the two
+  // numbers that must be true everywhere and nothing else. It used to carry
+  // four - value, P/L in percent, P/L in euros and the IRR - and the Overview's
+  // headline band repeated three of them verbatim forty pixels below, at a
+  // larger size and with a subtitle. Each figure has one home now: the euro P/L
+  // and the annualised return live in the band, where there is room to say what
+  // they are measured against.
   $('#t-value').textContent = eur(t.value_eur);
-  $('#t-pl').innerHTML = `<b class="${cls(t.pl_pct)}">${pct(t.pl_pct)}</b>` +
-    `<span style="color:var(--muted)">${eur(t.pl_eur)}</span>` +
-    // How fast, next to how much. Absent rather than zero when the book is too
-    // young to annualise honestly.
-    (t.irr_pct == null ? '' :
-      `<span style="color:var(--muted)"> · </span><b class="${cls(t.irr_pct)}"
-        title="Money-weighted annual return over every lot since ${esc(t.irr_since || '')}"
-        >${pct(t.irr_pct, 1)}/yr</b>`);
+  $('#t-pl').innerHTML = `<b class="${cls(t.pl_pct)}"
+    title="Since purchase, against ${eur(t.cost_eur)} of cost">${pct(t.pl_pct)}</b>`;
 
   const live = s.equity_log_mode === 'live';
   const flags = (D.alerts || []).filter((a) => !a.health).length;
@@ -745,7 +891,8 @@ function paintTape() {
         : ' · full run'}">${esc((D.generated || '').slice(11, 16))}</b>`,
     `CSV <b class="${stale ? 'dn-t' : ''}">${s.nordnet_export_age_days}d</b>`,
     `Notion <b>${live ? 'live' : 'cached'}</b>`,
-  ].filter(Boolean).join('<span style="color:var(--axis);margin:0 8px">·</span>');
+  ].filter(Boolean).map((f) => `<span class="f">${f}</span>`)
+   .join('<span style="color:var(--axis);margin:0 8px">·</span>');
 
   const problems = (hs.problems || []);
   if (problems.length) {
@@ -798,7 +945,7 @@ function paintHead(r) {
     <span class="tk">${esc(r.label)}</span>
     <span class="co">${esc(r.company)}</span>
     ${wk && wk.verdict ? verdictBadge(wk.verdict) : ''}
-    <span class="px num">${px(r.price)}<span style="font-size:12px;
+    <span class="px num">${px(r.price)}<span style="font-size:var(--t-3);
       color:var(--muted);margin-left:5px">${esc(r.ccy)}</span></span>
     <span class="chg num ${cls(r.day_pct)}">${r.day_pct == null ? '' : pct(r.day_pct)}</span>`;
 }
@@ -841,12 +988,21 @@ function paintThesis(r) {
            ? '' : ` <span style="color:var(--muted)">${w.days_to_inflection}d</span>`}</dd>
          ${w.inflection_event ? `<dt>Event</dt><dd>${esc(w.inflection_event)}</dd>` : ''}
          </dl>` : '';
+    // The empty-thesis line used to assert "the board carries a target and a
+    // trigger for this name" unconditionally - for a name with neither, the
+    // page said so anyway. It is derived now: it lists what the board actually
+    // records, and says plainly when the answer is nothing.
+    const onBoard = [w.target != null && 'a target',
+                     w.trigger_level != null && 'a trigger'].filter(Boolean);
+    const noThesis = 'No thesis written. ' + (onBoard.length
+      ? `The board records ${onBoard.join(' and ')} for this name but never `
+        + 'why it is owned — so there is nothing here for the price to agree '
+        + 'or disagree with.'
+      : 'The board records no target, no trigger and no reason: this position '
+        + 'is held without a written view of any kind.');
     out.push(`<div class="tsec"><div class="tlabel">THE THESIS</div>
       <div class="prose"${w.thesis ? '' : ' style="color:var(--muted)"'}>${
-        w.thesis ? esc(w.thesis)
-                 : 'No thesis written. The board carries a target and a trigger '
-                   + 'for this name but never recorded why it is owned — so there '
-                   + 'is nothing here for the price to agree or disagree with.'
+        w.thesis ? esc(w.thesis) : noThesis
       }</div>${infl}</div>`);
 
     out.push(`<div class="tsec"><div class="tlabel">THE CALL</div><dl class="kv">
@@ -895,7 +1051,7 @@ function paintThesis(r) {
   out.push(paintMissing(r));
 
   if (h) out.push(`<div class="tsec"><div class="tlabel">THE POSITION</div><dl class="kv">
-    <dt>Units</dt><dd>${h.units}</dd>
+    <dt>Units</dt><dd>${qty(h.units)}</dd>
     <dt>Account${h.accounts.length > 1 ? 's' : ''}</dt><dd>${esc(h.accounts.join(', '))}</dd>
     <dt>Value</dt><dd>${eur(h.value_eur)}</dd>
     <dt>Cost</dt><dd>${eur(h.cost_eur)}</dd>
@@ -935,24 +1091,39 @@ function paintMultiples(w, r) {
   // on which direction is good news - which is the thesis's job, not this
   // table's. The sign and the size are the whole message.
   const drift = (d) => d == null ? '' : `<span class="drift">${pct(d, 0)}</span>`;
-  const row = (label, was, now, d, suffix) =>
-    (was == null && now == null) ? '' :
-    `<dt>${esc(label)}</dt><dd class="was">${was == null ? '—' : esc(was)}</dd>
-     <dd>${now == null ? '—' : now}${suffix || ''}${drift(d)}</dd>`;
 
-  const body = [
-    row('P/E', w.pe, num(L.pe, 1), w.pe_drift_pct),
-    row('Fwd P/E', w.fwd_pe, num(L.fwd_pe, 1), w.fwd_pe_drift_pct),
-    row('Net debt/EBITDA', w.net_debt_ebitda, num(L.net_debt_ebitda, 2)),
-    row('P/B', null, num(L.pb, 1)),
-    row('EPS', null, num(L.eps, 2), null, ` <span class="drift">${ccy}</span>`),
-    row('Return on equity', null, L.roe_pct == null ? null : num(L.roe_pct, 1) + '%'),
-    row('Net margin', null, L.margin_pct == null ? null : num(L.margin_pct, 1) + '%'),
-    row('Beta', null, num(L.beta, 2)),
-    row('Market cap', null, big(L.market_cap), null,
-        ` <span class="drift">${ccy}</span>`),
+  // Both helpers test the RAW value, not the formatted one. They used to test
+  // the output of num(), which returns '—' rather than null, so the guard was
+  // unreachable and every row rendered whether or not it had anything in it.
+  const row = (label, was, raw, fmt, d, suffix) =>
+    (was == null && raw == null) ? '' :
+    `<dt>${esc(label)}</dt><dd class="was">${was == null ? '—' : esc(was)}</dd>
+     <dd>${raw == null ? '—' : fmt}${suffix || ''}${drift(d)}</dd>`;
+  const live = (label, raw, fmt, suffix) => raw == null ? '' :
+    `<dt>${esc(label)}</dt><dd>${fmt}${suffix || ''}</dd>`;
+
+  // Three of these nine have two sides; six have one. The Equity Log has no
+  // field for P/B, EPS, ROE, margin, beta or market cap, so those rows were
+  // printing a dash under a "Board" heading that could never be filled - a
+  // column promising a comparison that does not exist. They are their own list
+  // now, with no second column to be empty in.
+  const compared = [
+    row('P/E', w.pe, L.pe, num(L.pe, 1), w.pe_drift_pct),
+    row('Fwd P/E', w.fwd_pe, L.fwd_pe, num(L.fwd_pe, 1), w.fwd_pe_drift_pct),
+    row('Net debt/EBITDA', w.net_debt_ebitda, L.net_debt_ebitda,
+        num(L.net_debt_ebitda, 2)),
   ].filter(Boolean).join('');
-  if (!body && L.street_target == null) return '';
+
+  const current = [
+    live('P/B', L.pb, num(L.pb, 1)),
+    live('EPS', L.eps, num(L.eps, 2), ` <span class="drift">${ccy}</span>`),
+    live('Return on equity', L.roe_pct, num(L.roe_pct, 1) + '%'),
+    live('Net margin', L.margin_pct, num(L.margin_pct, 1) + '%'),
+    live('Beta', L.beta, num(L.beta, 2)),
+    live('Market cap', L.market_cap, big(L.market_cap),
+         ` <span class="drift">${ccy}</span>`),
+  ].filter(Boolean).join('');
+  if (!compared && !current && L.street_target == null) return '';
 
   /* The street's target, deliberately without the street's verdict. A number
      you can hold your own target up against is evidence; a word telling you to
@@ -969,13 +1140,19 @@ function paintMultiples(w, r) {
     ? `<div class="prose" style="margin-top:9px;color:var(--muted)">${esc(L.sector)}${
         L.industry ? ' · ' + esc(L.industry) : ''}</div>` : '';
 
+  // "Now", not "Today". The Overview already spends that word on the day's
+  // move, and this column is a current level rather than a change over a day.
   return `<div class="tsec"><div class="tlabel">THE MULTIPLES</div>
-    <dl class="trio">
+    ${compared ? `<dl class="trio">
       <dt></dt>
       <dd class="hd">Board${w.last_eval ? ' ' + esc(String(w.last_eval).slice(5)) : ''}</dd>
-      <dd class="hd">Today</dd>
-      ${body}
-    </dl>${street}${sector}</div>`;
+      <dd class="hd">Now</dd>
+      ${compared}
+    </dl>` : ''}
+    ${current ? `<div class="lnote" style="margin:${compared ? '11px' : '0'} 0 5px"
+      >Not on the board — current values only.</div>
+      <dl class="kv">${current}</dl>` : ''}
+    ${street}${sector}</div>`;
 }
 
 /* Coverage, as money. The prose above already explains why an unexamined
@@ -1095,25 +1272,50 @@ function themeOpts() {
     // licence condition - Apache-2.0 asks that the notice be preserved, and it
     // is: the library is inlined verbatim, @license header and all, a few
     // hundred lines above this one.
-    layout: {background:{color:'transparent'}, textColor:cssVar('--muted','#898781'),
-             fontSize:11, fontFamily:'system-ui, sans-serif', attributionLogo:false},
+    // The fallbacks are the light-mode token values. They only apply if
+    // getComputedStyle throws, so they are a last resort rather than a second
+    // copy of the palette - but palette_check.py reads the :root block and
+    // would not see them, so keep them in step by hand when a token moves.
+    layout: {background:{color:'transparent'}, textColor:cssVar('--muted','#6f6d67'),
+             // 11 is --t-2 without the unit; the library wants a number. The
+             // family comes from the same token as the rest of the page, so
+             // the axis labels and the table beside them cannot drift apart.
+             fontSize:11.5,
+             fontFamily:cssVar('--font-ui', 'system-ui,-apple-system,sans-serif'),
+             attributionLogo:false},
     grid: {vertLines:{color:cssVar('--grid','#e1e0d9')},
            horzLines:{color:cssVar('--grid','#e1e0d9')}},
+    // The axis was on the library's default formatter and the tables were on
+    // px(), so the same close appeared as "1250.00" on the chart and "1,250.00"
+    // in the row beside it. One formatter, so a price is written one way on
+    // this page. The currency is not repeated per tick - it is stated once, in
+    // the pane head next to the ticker.
+    localization: {priceFormatter: px},
     rightPriceScale:{borderColor:cssVar('--axis','#c3c2b7')},
     timeScale:{borderColor:cssVar('--axis','#c3c2b7')},
     crosshair:{mode:0, vertLine:{color:cssVar('--axis','#c3c2b7'), labelBackgroundColor:
       cssVar('--ink-2','#52514e')}, horzLine:{color:cssVar('--axis','#c3c2b7'),
       labelBackgroundColor:cssVar('--ink-2','#52514e')}},
-    upColor:cssVar('--up','#2a78d6'), downColor:cssVar('--down','#e34948'),
-    target:cssVar('--target','#007a5c'), trigger:cssVar('--trigger','#a85400'),
-    // Deliberately achromatic. Four plotted hues is already the ceiling - a
-    // fifth failed the normal-vision floor against the up-candle blue (purple,
-    // dE 10.7) - and a moving average is context, not identity. Grey is also
-    // the only mark on the plot with no hue at all, which is the strongest
-    // colour-blind separation available and costs nothing.
+    upColor:cssVar('--up','#2f9e63'), downColor:cssVar('--down','#8c2a34'),
+    target:cssVar('--target','#4a55c8'), trigger:cssVar('--trigger','#8f6900'),
+    // Deliberately achromatic. Four plotted hues is the ceiling - a fifth was
+    // rejected at dE 10.7 against a candle body - and a moving average is
+    // context, not identity. Grey is also the only mark on the plot with no
+    // hue at all, which is the strongest colour-blind separation available and
+    // costs nothing.
     ma:cssVar('--ink-2','#52514e'),
   };
 }
+
+// Hollow up, filled down - the Western convention, and more usefully a second
+// channel. Green and red separate at dE 15.2 under deuteranopia, which is
+// enough but is not much; fill separates at any severity of anything, so a
+// reader who gets no hue at all still reads the chart from the body alone.
+const candleOpts = (T) => ({
+  upColor:'rgba(0,0,0,0)', downColor:T.downColor,
+  borderUpColor:T.upColor, borderDownColor:T.downColor,
+  wickUpColor:T.upColor, wickDownColor:T.downColor,
+});
 
 function paintChart(r) {
   const box = $('#chart'), miss = $('#nochart');
@@ -1156,11 +1358,7 @@ function paintChart(r) {
     chart = LightweightCharts.createChart(box, Object.assign({
       autoSize: true, handleScale:{axisPressedMouseMove:false},
     }, T));
-    candles = chart.addCandlestickSeries({
-      upColor:T.upColor, downColor:T.downColor,
-      borderUpColor:T.upColor, borderDownColor:T.downColor,
-      wickUpColor:T.upColor, wickDownColor:T.downColor,
-    });
+    candles = chart.addCandlestickSeries(candleOpts(T));
     // Same colour for both, told apart by weight and dash - so the pair is
     // never distinguished by colour alone, same contract as target/trigger.
     // No last value and no price line: an MA does not belong on the axis, and
@@ -1215,10 +1413,7 @@ function retheme() {
   if (!chart) return;
   const T = themeOpts();
   chart.applyOptions(T);
-  if (candles) candles.applyOptions({
-    upColor:T.upColor, downColor:T.downColor,
-    borderUpColor:T.upColor, borderDownColor:T.downColor,
-    wickUpColor:T.upColor, wickDownColor:T.downColor});
+  if (candles) candles.applyOptions(candleOpts(T));
   for (const p of [50, 200]) if (mas[p]) mas[p].applyOptions({color:T.ma});
   const r = ROWS.find((x) => x.sym === state.sym);
   if (r) paintChart(r);
@@ -1262,15 +1457,60 @@ function sortRows(rows, table, fallback) {
   });
 }
 
+// Sortable columns whose cells are words rather than figures. Numbers are
+// right-aligned so they stack on their last digit and can be compared down the
+// column; words need a predictable left margin instead, and without this list
+// every sector, verdict and account cell was right-ragged against a hard edge.
+//
+// Kept as an explicit list and NOT derived from d0, though it is tempting: d0
+// is which way a FIRST CLICK sorts, which merely correlates with text. 'Days
+// ago' sorts ascending and is a number; 'As of' sorts descending and is a
+// date. Deriving one from the other is this repo's own recurring bug - a
+// derived value quietly claiming to mean more than it does.
+const TEXTCOL = new Set([
+  'held.name', 'log.verdict', 'log.tier', 'log.last_eval', 'log.next_check',
+  'cov.covered', 'cov.gap', 'cov.klass', 'cov.name', 'names.name',
+  'funds.name', 'funds.symbol', 'latest.date', 'mult.live.asof',
+  'ind.ind.rsi_state',
+]);
+
 // A sortable header. `d0` is the direction a first click gives: -1 (biggest
 // first) for figures, 1 (A-Z, oldest-first) for names and dates.
 const th = (table, key, label, d0) => {
   const s = SS.sort[table];
   const on = s && s.k === key;
-  return `<th class="s" data-t="${table}" data-k="${esc(key)}"
+  const t = TEXTCOL.has(`${table}.${key}`) ? ' t' : '';
+  return `<th class="s${t}" data-t="${table}" data-k="${esc(key)}"
     data-d0="${d0 == null ? -1 : d0}"${on ? ` data-dir="${s.dir}"` : ''}
     >${esc(label)}</th>`;
 };
+
+/* Push each header's alignment down its own column.
+
+   The alternative was to write class="t" on every matching <td> by hand, in
+   nine tables, and keep those in step with the headers forever. They would not
+   have stayed in step: the cells and the headers are written hundreds of lines
+   apart, and the funds table had already drifted far enough to emit one fewer
+   cell than its header without anyone noticing.
+
+   So the header is the single declaration and the cells follow it. A row whose
+   cell count disagrees with the header is left untouched rather than aligned
+   against the wrong columns - if the two ever disagree again, the result is a
+   visibly unaligned table, which is the failure that gets reported, instead of
+   a neat one that is quietly describing the wrong numbers. */
+function alignColumns(root) {
+  for (const table of root.querySelectorAll('table')) {
+    const heads = [...table.querySelectorAll('thead th')];
+    if (!heads.length) continue;
+    const isText = heads.map((h) => h.classList.contains('t'));
+    for (const row of table.querySelectorAll('tbody tr')) {
+      const cells = row.children;
+      if (cells.length !== heads.length) continue;
+      for (let i = 0; i < cells.length; i++)
+        cells[i].classList.toggle('t', isText[i]);
+    }
+  }
+}
 
 function paintSheet() {
   // One search box over every table. Matching on symbol OR name means typing
@@ -1288,14 +1528,14 @@ function paintSheet() {
     <div class="sec" data-sec="hold">
     <div class="scroll"><table><thead><tr>
     ${th('held','ticker','Ticker',1)}${th('held','name','Company',1)}
-    <th>Acct</th>${th('held','units','Units')}${th('held','price','Price')}
+    <th class="t">Acct</th>${th('held','units','Units')}${th('held','price','Price')}
     ${th('held','day_pct','Day')}${th('held','value_eur','Value €')}
     ${th('held','cost_eur','Cost €')}${th('held','pl_eur','P/L €')}
     ${th('held','pl_pct','P/L %')}${th('held','weight','Weight')}
     ${th('held','off_high','Off high')}</tr></thead><tbody>${hr.map((p) => `<tr
       class="click" data-sym="${esc(p.sym)}">
       <td>${esc(p.ticker)}</td><td>${esc(p.name)}</td>
-      <td>${esc(p.accounts.join('/'))}</td><td>${p.units}</td>
+      <td class="t">${esc(p.accounts.join('/'))}</td><td>${qty(p.units)}</td>
       <td>${px(p.price)}</td><td class="${cls(p.day_pct)}">${pct(p.day_pct,1)}</td>
       <td>${eur(p.value_eur)}</td><td>${eur(p.cost_eur)}</td>
       <td class="${cls(p.pl_eur)}">${eur(p.pl_eur)}</td>
@@ -1312,7 +1552,7 @@ function paintSheet() {
     ${th('log','tier','Tier',1)}${th('log','price_now','Price')}
     ${th('log','target','Target')}${th('log','upside_now','Upside now')}
     ${th('log','upside_at_eval','At eval')}${th('log','upside_decay_pts','Decay pts')}
-    <th>Trigger</th>${th('log','trigger_gap_pct','Gap')}
+    <th class="t">Trigger</th>${th('log','trigger_gap_pct','Gap')}
     ${th('log','last_eval','Evaluated',1)}${th('log','next_check','Next',1)}
     </tr></thead><tbody>${wr.map((x)=>`<tr
       class="${ROWSYM.has(x.yahoo || x.ticker) ? 'click' : ''}"
@@ -1322,7 +1562,7 @@ function paintSheet() {
       <td class="${cls(x.upside_now)}">${pct(x.upside_now,1)}</td>
       <td>${pct(x.upside_at_eval,1)}</td>
       <td>${x.upside_decay_pts == null ? '—' : x.upside_decay_pts.toFixed(1)}</td>
-      <td>${x.trigger_level ? esc(x.trigger_kind)+' '+px(x.trigger_level) : '—'}</td>
+      <td class="t">${x.trigger_level ? esc(x.trigger_kind)+' '+px(x.trigger_level) : '—'}</td>
       <td>${pct(x.trigger_gap_pct,1)}</td><td>${esc(x.last_eval)}</td>
       <td>${esc(x.next_check)}</td></tr>`).join('')}</tbody></table></div></div>`;
 
@@ -1338,8 +1578,8 @@ function paintSheet() {
     ${th('cov','ticker','Ticker',1)}${th('cov','covered','Monitored',1)}
     ${th('cov','gap','Gap',1)}${th('cov','value_eur','Value €')}
     ${th('cov','weight_pct','Weight')}${th('cov','klass','Class',1)}
-    <th>Judged by</th>${th('cov','target_weight_pct','Target wt')}
-    ${th('cov','drift_pts','Drift pts')}<th>Acct</th>
+    <th class="t">Judged by</th>${th('cov','target_weight_pct','Target wt')}
+    ${th('cov','drift_pts','Drift pts')}<th class="t">Acct</th>
     ${th('cov','name','Name',1)}</tr></thead><tbody>${cr.map((c) => `<tr
       class="${ROWSYM.has(c.yahoo || c.ticker) ? 'click' : ''}"
       data-sym="${esc(c.yahoo || c.ticker)}">
@@ -1347,12 +1587,12 @@ function paintSheet() {
       <td>${esc(c.gap || '')}</td>
       <td>${eur(c.value_eur)}</td><td>${num(c.weight_pct,1)}%</td>
       <td>${esc(c.klass)}</td>
-      <td>${c.klass === 'stock' ? 'thesis' : 'allocation'}</td>
+      <td class="t">${c.klass === 'stock' ? 'thesis' : 'allocation'}</td>
       <td>${c.target_weight_pct == null ? '—' : num(c.target_weight_pct,1) + '%'
         + (c.target_basis === 'placeholder' ? ' <span class="est"'
           + ' title="Placeholder, not a policy">P</span>' : '')}</td>
       <td>${c.drift_pts == null ? '—' : num(c.drift_pts,1)}</td>
-      <td>${esc(c.account)}</td><td>${esc(c.name)}</td>
+      <td class="t">${esc(c.account)}</td><td>${esc(c.name)}</td>
       </tr>`).join('')}</tbody></table></div>
     ${cr.some((c) => c.target_basis === 'placeholder') ? `<div class="prose"
       style="margin-top:8px"><span class="est">P</span> — placeholder. Filled in
@@ -1476,14 +1716,14 @@ function paintSheet() {
     ${th('names','symbol','Symbol',1)}${th('names','name','Company',1)}
     ${th('names','pct','Total')}${th('names','direct_pct','Direct')}
     ${th('names','indirect_pct','Via funds')}${th('names','value_eur','Value €')}
-    <th>Reached through</th></tr></thead><tbody>${nameRows.map((r) => `<tr
+    <th class="t">Reached through</th></tr></thead><tbody>${nameRows.map((r) => `<tr
       class="${ROWSYM.has(r.symbol) ? 'click' : ''}" data-sym="${esc(r.symbol)}">
       <td>${esc(r.symbol)}</td><td>${esc(r.name)}</td>
       <td><b>${amt(r.pct, r.value_eur)}</b></td>
       <td>${r.direct_pct ? num(r.direct_pct,2)+'%' : '—'}</td>
       <td>${r.indirect_pct ? num(r.indirect_pct,2)+'%' : '—'}</td>
       <td>${eur(r.value_eur)}</td>
-      <td style="text-align:left;color:var(--muted)">${r.held_both_ways
+      <td class="t" style="color:var(--muted)">${r.held_both_ways
         ? 'held outright + ' : ''}${(r.via || []).map((v) =>
         esc(v.fund)+' '+num(v.pct,1)+'%').join(', ') || 'held outright'}</td>
       </tr>`).join('')}</tbody></table></div>`}
@@ -1502,18 +1742,18 @@ function paintSheet() {
     ${th('funds','weight_pct','Weight')}${th('funds','value_eur','Value €')}
     ${th('funds','ter_pct','TER')}<th>Cost €/yr</th>
     ${th('funds','disclosed_pct','Discloses')}${th('funds','n_disclosed','Rows')}
-    <th>Sectors</th></tr></thead><tbody>${
+    <th class="t">Sectors</th></tr></thead><tbody>${
       fundRows.map((f) => { const fee = ((XF.rows || [])
         .find((r) => r.symbol === f.symbol) || {});
       return `<tr class="click" data-fund="${esc(f.symbol || '')}"
-      data-on="${F && F.kind === 'fund' && F.key === f.symbol ? 1 : 0}"
-      <td>${esc(f.symbol || '—')}</td><td>${esc(f.name)}</td>
+      data-on="${F && F.kind === 'fund' && F.key === f.symbol ? 1 : 0}">
+      <td>${esc(f.symbol || '—')}</td><td class="t">${esc(f.name)}</td>
       <td>${num(f.weight_pct,2)}%</td><td>${eur(f.value_eur)}</td>
       <td>${f.ter_pct == null ? '<span style="color:var(--muted)">not published</span>'
         : num(f.ter_pct,2)+'%'}</td>
       <td>${fee.annual_eur == null ? '—' : eur(fee.annual_eur)}</td>
       <td>${num(f.disclosed_pct,1)}%</td><td>${f.n_disclosed}</td>
-      <td>${f.has_sectors ? 'yes' : '<b>no</b>'}</td></tr>`; }).join('')
+      <td class="t">${f.has_sectors ? 'yes' : '<b>no</b>'}</td></tr>`; }).join('')
     }</tbody></table></div>
     <div class="prose" style="margin-top:8px">The spread down the Discloses
       column is why every figure above carries a coverage percentage. A fund
@@ -1577,7 +1817,7 @@ function paintSheet() {
     ${th('latest','eps_reported','Actual')}${th('latest','surprise_pct','Surprise')}
     ${th('latest','record.median_surprise_pct','Record')}
     ${th('latest','growth.revenue_yoy_pct','Revenue YoY')}
-    <th>Quarter</th>${th('latest','weight_pct','Weight')}
+    <th class="t">Quarter</th>${th('latest','weight_pct','Weight')}
     </tr></thead><tbody>${landed.map((r) => { const g = r.growth || {},
       rec = r.record || {};
       return `<tr class="${ROWSYM.has(r.symbol) ? 'click' : ''}"
@@ -1589,7 +1829,7 @@ function paintSheet() {
         : r.surprise_pct < 0 ? 'miss' : ''}">${pct(r.surprise_pct,1)}</td>
       <td>${rec.n ? `${rec.beats}B / ${rec.misses}M of ${rec.n}` : '—'}</td>
       <td class="${cls(g.revenue_yoy_pct)}">${pct(g.revenue_yoy_pct,1)}</td>
-      <td>${esc(g.period || '—')}</td><td>${num(r.weight_pct,1)}%</td>
+      <td class="t">${esc(g.period || '—')}</td><td>${num(r.weight_pct,1)}%</td>
       </tr>`; }).join('')}</tbody></table></div>
     <div class="prose" style="margin-top:8px">Surprise is against analyst
       consensus, not against the thesis — a beat is a fact about expectations.
@@ -1650,7 +1890,7 @@ function paintSheet() {
     ${th('ind','ind.max_drawdown_pct','Max DD')}
     ${th('ind','ind.range.pct','In range')}
     ${th('ind','ind.volume.relative','Vol ×avg')}${th('ind','ind.bars','Bars')}
-    <th>As of</th></tr></thead><tbody>${ir.map((x) => { const i = x.ind;
+    <th class="t">As of</th></tr></thead><tbody>${ir.map((x) => { const i = x.ind;
       return `<tr class="click" data-sym="${esc(x.sym)}">
       <td>${esc(x.label)}</td><td>${px(i.close)}</td>
       <td>${num(i.rsi,1)}</td><td>${esc(i.rsi_state || '')}</td>
@@ -1664,7 +1904,7 @@ function paintSheet() {
       <td class="dn-t">${pct(i.max_drawdown_pct,1)}</td>
       <td>${i.range ? num(i.range.pct,0) : '—'}</td>
       <td>${i.volume ? num(i.volume.relative,2) : '—'}</td>
-      <td>${i.bars}</td><td>${esc(i.asof)}</td></tr>`; }).join('')}</tbody></table></div>
+      <td>${i.bars}</td><td class="t">${esc(i.asof)}</td></tr>`; }).join('')}</tbody></table></div>
     <div class="prose" style="margin-top:8px">Computed in Python off the same
       cached bars the chart draws. Descriptive only — no row here is a signal.</div>
     </div>`;
@@ -1674,10 +1914,10 @@ function paintSheet() {
   const a = `<h2 data-sec="flag">Flags — ${some(al.length,
       (D.alerts||[]).length, 'open')}</h2>
     <div class="sec" data-sec="flag">
-    <div class="scroll"><table><thead><tr><th>Level</th><th>What</th><th>Why</th>
+    <div class="scroll"><table><thead><tr><th>Level</th><th class="t">What</th><th class="t">Why</th>
     </tr></thead><tbody>${al.map((x) => `<tr>
-      <td>${esc(x.level)}</td><td>${esc(x.title)}</td>
-      <td class="wrap">${esc(x.detail)}</td></tr>`).join('')}</tbody></table></div>
+      <td>${esc(x.level)}</td><td class="t">${esc(x.title)}</td>
+      <td class="wrap t">${esc(x.detail)}</td></tr>`).join('')}</tbody></table></div>
     </div>`;
 
   const s = D.sources || {};
@@ -1713,6 +1953,7 @@ function paintSheet() {
     </tbody></table></div></div>`;
 
   $('#sheetbody').innerHTML = h + w + cov + exp + rep + mult + ind + a + src;
+  alignColumns($('#sheetbody'));
 
   // Collapse state is re-applied after the repaint rather than survived
   // through it. Every table above is rebuilt from the payload on every
@@ -1798,11 +2039,14 @@ function paintOverview() {
   const cal = (D.reporting || {}).calendar || {};
   const conc = X.concentration || {};
 
+  // Three, not four. The fourth was Book value, which was the tape's big number
+  // reprinted underneath the tape - the same euros twice on one screen. What it
+  // carried that the tape does not (the name count and the cost basis) moved
+  // into the P/L subtitle, which is where "against what it cost" belongs.
   $('#ovtop').innerHTML = [
-    stat('Book value', eur(t.value_eur),
-      `${OV.n || 0} names · cost ${eur(t.cost_eur)}`),
     stat('Total P/L', `<span class="${cls(t.pl_eur)}">${eur(t.pl_eur)}</span>`,
-      `${pct(t.pl_pct)} against what it cost`),
+      `${pct(t.pl_pct)} against ${eur(t.cost_eur)} of cost across ${
+        OV.n || 0} names`),
     stat('Annualised', t.irr_pct == null ? '—'
       : `<span class="${cls(t.irr_pct)}">${pct(t.irr_pct, 1)}</span>`,
       t.irr_since ? `money-weighted since ${esc(t.irr_since)}`
@@ -1817,10 +2061,12 @@ function paintOverview() {
           + (day.n_quiet ? ` · ${day.n_quiet} without a close` : '')),
   ].join('');
 
+  // No size class here. Which labels fit is a pixel question and this runs
+  // before the box has been laid out; fitTiles answers it afterwards, against
+  // the box's real width. See below.
   const tiles = (alloc.tiles || []).map((k) => {
-    const size = (k.w < 4.6 || k.h < 9) ? 'xs' : (k.h < 15 ? 'sm' : '');
     const clickable = k.sym && ROWSYM.has(k.sym);
-    return `<div class="tile ${size}" ${clickable
+    return `<div class="tile" ${clickable
         ? `data-sym="${esc(k.sym)}"` : ''}
       style="left:${k.x}%;top:${k.y}%;width:${k.w}%;height:${k.h}%;
              background:${tone(k.pl_pct)}"
@@ -1829,49 +2075,37 @@ function paintOverview() {
       <div class="tt">${esc(k.ticker)}</div>
       <div class="tw">${num(k.weight_pct, 1)}% · ${pct(k.pl_pct)}</div></div>`;
   }).join('');
-  const ramp = [-TONE_CAP, -15, -6, 0, 6, 15, TONE_CAP]
-    .map((v) => `<i style="background:${tone(v)}"></i>`).join('');
+  // Sampled from tone() rather than listed, so the key cannot drift from the
+  // function the tiles are actually painted with.
+  const ramp = Array.from({length: 17}, (_, i) => {
+    const f = i / 16;
+    return `${tone(-TONE_CAP + f * 2 * TONE_CAP)} ${(f * 100).toFixed(1)}%`;
+  }).join(',');
 
   const cards = [];
 
+  // An empty treemap used to render as a bare grey rectangle, which reads as a
+  // chart that failed rather than a book with nothing in it. The key goes with
+  // it: there is no colour scale to explain when there is nothing coloured.
   cards.push(card('Allocation', `${alloc.n || 0} positions`,
-    `<div class="tmap">${tiles || ''}</div>
+    tiles
+      ? `<div class="tmap">${tiles}</div>
      <div class="tmapkey"><span>Area is weight, colour is return since
-       purchase</span><span>−${TONE_CAP}%</span><span class="ramp">${ramp}
-       </span><span>+${TONE_CAP}%</span>
+       purchase</span><span>−${TONE_CAP}%</span><span class="ramp"
+       style="background:linear-gradient(90deg,${ramp})"></span
+       ><span>+${TONE_CAP}%</span>
        ${alloc.n_undrawn ? `<span>${alloc.n_undrawn} position${
-         alloc.n_undrawn === 1 ? '' : 's'} not drawn</span>` : ''}</div>`,
-    'ovwide'));
+         alloc.n_undrawn === 1 ? '' : 's'} not drawn</span>` : ''}</div>`
+      : `<div class="tmap empty">Nothing to draw${alloc.n_undrawn
+          ? `: ${alloc.n_undrawn} position${alloc.n_undrawn === 1 ? '' : 's'}
+             carry no market value` : '. No position carries a market value'}
+         .</div>`,
+    'ov-8'));
 
-  cards.push(card('What made the money',
-    con.n_unknown ? `${con.n_known} of ${con.n_known + con.n_unknown} priced`
-                  : `${con.n_known} positions`,
-    lrows((con.best || []).concat(con.worst || []), (r) => r.pl_eur,
-      (r) => eur(r.pl_eur), (r) => `${num(r.share_pct, 1)}% of gross movement`)
-    + `<div class="lnote">Attributed in euros, not percent. A 60% gain on the
-       smallest position is a rounding error; 12% on the largest one is the
-       year.${con.n_unknown ? ` ${con.n_unknown} position${
-         con.n_unknown === 1 ? ' has' : 's have'} no cost basis and cannot be
-       attributed.` : ''}</div>`,
-    'ovtall'));
-
-  cards.push(card('Today', mv.n_quiet ? `${mv.n_priced} priced, ${
-      mv.n_quiet} quiet` : `${mv.n_priced} priced`,
-    lrows((mv.up || []).concat(mv.down || []), (r) => r.day_pct,
-      (r) => pct(r.day_pct), (r) => eur(r.day_eur))));
-
-  cards.push(card('Sector', X.sectors
-      ? `${num(X.sectors.resolved_pct, 0)}% resolved` : '',
-    ovbars((X.sectors || {}).rows, 'sector', 8)
-    + `<div class="lnote">Look-through: a fund's sleeve is spread across its
-       disclosed constituents. Yahoo publishes ten per fund, so this names
-       ${num((X.sectors || {}).resolved_pct, 0)}% of the book.</div>`,
-    'ovtall'));
-
-  cards.push(card('Geography', X.geography
-      ? `${num(X.geography.resolved_pct, 0)}% resolved` : '',
-    ovbars((X.geography || {}).rows, 'country', 8)));
-
+  // Beside the treemap, not below it. The picture shows how the book is spread
+  // and these four numbers say how spread that actually is - read together or
+  // not at all. Flags follows because an exception is worth more than a
+  // breakdown, and it used to sit last, alone, under the calendar.
   cards.push(card('Concentration', `${conc.n || 0} names`,
     `<dl class="kv">
       <dt>Largest position</dt><dd>${num(conc.top1_pct, 1)}%</dd>
@@ -1883,23 +2117,6 @@ function paintOverview() {
       sized holdings that would concentrate the book as much as this one is.
       ${num(conc.effective_n, 1)} against ${conc.n || 0} held.</div>`));
 
-  cards.push(card('Next prints', cal.n
-      ? `${cal.n} in ${cal.horizon_days} days · ${num(cal.pct_ahead, 0)}% of book`
-      : 'none scheduled',
-    ((cal.rows || []).length
-      ? `<div class="cstrip">${(cal.rows || []).slice(0, 12).map((r) =>
-          `<div class="cpill ${r.soon ? 'soon' : ''}"
-             title="${esc(r.name || '')}${r.estimated ? ' · date estimated' : ''}">
-            <div class="d">${esc(String(r.date).slice(5))}${
-              r.estimated ? ' ~' : ''}</div>
-            <div class="t">${esc(r.symbol)}</div>
-            <div class="w">${num(r.weight_pct, 1)}%</div></div>`).join('')}</div>`
-      : '<div class="lnote">No dated results in the horizon.</div>')
-    + (cal.n_unknown ? `<div class="lnote">${cal.n_unknown} stock${
-        cal.n_unknown === 1 ? ' has' : 's have'} no date from Yahoo. A missing
-        date is missing, not "nothing due".</div>` : ''),
-    'ovwide'));
-
   const flags = (D.alerts || []);
   cards.push(card('Flags', `${flags.length}`,
     flags.length
@@ -1907,12 +2124,128 @@ function paintOverview() {
           <span class="dot" style="background:${
             LEVEL[a.level] || 'var(--muted)'}"></span>
           <span><div class="t">${esc(a.title)}</div>
-          <div class="d">${esc(a.detail)}</div></span></div>`).join('')
+          <div class="d" title="${esc(a.detail)}">${esc(a.detail)}</div>
+          </span></div>`).join('')
         + (flags.length > 8
           ? `<div class="lnote">${flags.length - 8} more.</div>` : '')
       : '<div class="lnote">Nothing tripped a threshold.</div>'));
 
+  cards.push(card('What made the money',
+    con.n_unknown ? `${con.n_known} of ${con.n_known + con.n_unknown} priced`
+                  : `${con.n_known} positions`,
+    lrows((con.best || []).concat(con.worst || []), (r) => r.pl_eur,
+      (r) => eur(r.pl_eur), (r) => `${num(r.share_pct, 1)}% of gross movement`)
+    + `<div class="lnote">Attributed in euros, not percent. A 60% gain on the
+       smallest position is a rounding error; 12% on the largest one is the
+       year.${con.n_unknown ? ` ${con.n_unknown} position${
+         con.n_unknown === 1 ? ' has' : 's have'} no cost basis and cannot be
+       attributed.` : ''}</div>`));
+
+  // "Today's movers", not "Today" - the headline stat two rows above is
+  // already called Today and is the book's single day number. Two things on
+  // one screen under one word, meaning different things.
+  cards.push(card("Today's movers", mv.n_quiet ? `${mv.n_priced} priced, ${
+      mv.n_quiet} quiet` : `${mv.n_priced} priced`,
+    lrows((mv.up || []).concat(mv.down || []), (r) => r.day_pct,
+      (r) => pct(r.day_pct), (r) => eur(r.day_eur))));
+
+  cards.push(card('Sector', X.sectors
+      ? `${num(X.sectors.resolved_pct, 0)}% resolved` : '',
+    ovbars((X.sectors || {}).rows, 'sector', 8)
+    + `<div class="lnote">Look-through: a fund's sleeve is spread across its
+       disclosed constituents. Yahoo publishes ten per fund, so this names
+       ${num((X.sectors || {}).resolved_pct, 0)}% of the book.</div>`,
+    'ov-6'));
+
+  cards.push(card('Geography', X.geography
+      ? `${num(X.geography.resolved_pct, 0)}% resolved` : '',
+    ovbars((X.geography || {}).rows, 'country', 8),
+    'ov-6'));
+
+  // The legend is derived from the pills actually rendered, not from cal.rows.
+  // The strip is capped at twelve, and a legend naming a year that only appears
+  // in row thirteen would be describing something nobody can see.
+  const shown = (cal.rows || []).slice(0, 12);
+  const years = [...new Set(shown.map((r) => String(r.date).slice(0, 4)))].sort();
+  cards.push(card('Next prints', cal.n
+      ? `${cal.n} in ${cal.horizon_days} days · ${num(cal.pct_ahead, 0)}% of book`
+      : 'none scheduled',
+    (shown.length
+      ? `<div class="cstrip">${shown.map((r) =>
+          `<div class="cpill ${r.soon ? 'soon' : ''}"
+             title="${esc(r.name || '')} · ${esc(String(r.date))}${
+               r.estimated ? ' (estimated by Yahoo, not confirmed by the company)'
+                           : ''}">
+            <div class="d">${esc(String(r.date).slice(5))}${
+              r.estimated ? ' ~' : ''}</div>
+            <div class="t">${esc(r.symbol)}</div>
+            <div class="w">${num(r.weight_pct, 1)}%</div></div>`).join('')}</div>`
+        // The pills are MM-DD, so the year has to be stated once or a date in
+        // January is ambiguous inside a horizon that crosses one. And a tilde
+        // that nothing explains is just a typo the reader has to forgive.
+        + `<div class="lnote">Dates are ${esc(years.join('–'))}, shown as
+           month-day.${shown.some((r) => r.estimated)
+            ? ' A ~ marks a date Yahoo estimated rather than one the company has'
+              + ' confirmed.' : ''}${shown.length < (cal.rows || []).length
+            ? ` ${(cal.rows || []).length - shown.length} further date${
+                (cal.rows || []).length - shown.length === 1 ? '' : 's'} in the
+              horizon are not drawn.` : ''}</div>`
+      : '<div class="lnote">No dated results in the horizon.</div>')
+    + (cal.n_unknown ? `<div class="lnote">${cal.n_unknown} stock${
+        cal.n_unknown === 1 ? ' has' : 's have'} no date from Yahoo. A missing
+        date is missing, not "nothing due".</div>` : ''),
+    'ov-12'));
+
   $('#ovgrid').innerHTML = cards.join('');
+  watchTiles($('#ovgrid').querySelector('.tmap'));
+}
+
+// Decide which tile labels fit, in pixels, against the box as it was actually
+// laid out. This used to be decided at build time from the tile's percentage
+// of the treemap - but a percentage is not a size. The same 4.5%-wide tile is
+// 54px across in a 1210px box and 33px in a 728px one, and the build-time rule
+// gave both of them the same label because it could only see the 4.5.
+//
+// Nothing here is a chosen threshold: a hidden probe tile carrying the longest
+// label a real tile could carry is measured through the live CSS, so the
+// numbers come from the type scale rather than from an estimate of it.
+function fitTiles(box) {
+  const tiles = box ? [...box.querySelectorAll('.tile')] : [];
+  if (!tiles.length || !box.clientWidth || !box.clientHeight) return;
+
+  const probe = document.createElement('div');
+  probe.className = 'tile';
+  probe.style.cssText = 'visibility:hidden;left:0;top:0;width:auto;height:auto';
+  probe.innerHTML = '<div class="tt">MMMM</div>'
+    + '<div class="tw">88.8% · −88.8%</div>';
+  box.appendChild(probe);
+  const hBoth = probe.offsetHeight, wBoth = probe.offsetWidth;
+  probe.querySelector('.tw').remove();
+  const hOne = probe.offsetHeight, wOne = probe.offsetWidth;
+  probe.remove();
+
+  for (const t of tiles) {
+    const w = t.offsetWidth, h = t.offsetHeight;
+    const one = h < hBoth || w < wBoth;   // no room for the weight line
+    const none = h < hOne || w < wOne;    // no room for the ticker either
+    t.classList.toggle('sm', one && !none);
+    t.classList.toggle('xs', none);
+  }
+}
+
+// Measure now, and again on every resize. Now, because a ResizeObserver's
+// first delivery is a frame away and frames are throttled in a background tab
+// - the same trap paintChart documents, and it bites here too: observed with
+// the box at 880x377, the initial callback never arrived and every tile kept
+// the full label it had no room for. The observer is for what happens after.
+let TILEOBS = null;
+function watchTiles(box) {
+  if (TILEOBS) { TILEOBS.disconnect(); TILEOBS = null; }
+  if (!box) return;
+  fitTiles(box);
+  if (typeof ResizeObserver === 'undefined') return;
+  TILEOBS = new ResizeObserver(() => fitTiles(box));
+  TILEOBS.observe(box);
 }
 
 /* ---------------------------------------------------------------- wiring */
@@ -2108,17 +2441,49 @@ on('#xall', 'click', (e) => {
   paintSheet();
 });
 
-on('#t-theme', 'click', () => {
-  let dark = false;
+// The label said "Dark" and the markup hardcoded it, which was wrong twice
+// over. On a machine whose OS prefers dark the page opened dark under a button
+// offering to make it dark; and a one-word label never said whether it named
+// the current state or the one click away. It names the action now, and it
+// reads the state off what is actually rendered rather than off a default.
+function isDark() {
   try {
-    const root = document.documentElement;
-    dark = root.getAttribute('data-theme') !== 'dark';
-    root.setAttribute('data-theme', dark ? 'dark' : 'light');
-  } catch (e) {}
+    const set = document.documentElement.getAttribute('data-theme');
+    if (set) return set === 'dark';
+    return !!(window.matchMedia
+      && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  } catch (e) { return false; }
+}
+function themeLabel() {
   const b = $('#t-theme');
-  if (b) { b.setAttribute('aria-pressed', String(dark)); b.textContent = dark ? 'Light' : 'Dark'; }
+  if (!b) return;
+  const dark = isDark();
+  b.setAttribute('aria-pressed', String(dark));
+  b.textContent = dark ? 'Switch to light' : 'Switch to dark';
+}
+
+on('#t-theme', 'click', () => {
+  try {
+    document.documentElement.setAttribute('data-theme',
+      isDark() ? 'light' : 'dark');
+  } catch (e) {}
+  themeLabel();
   retheme();
 });
+
+// Until the button is pressed the page follows the OS, so the OS changing mid
+// session changes the page - and would leave the label describing the theme
+// that was up when it loaded.
+try {
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const onFlip = () => {
+    if (document.documentElement.getAttribute('data-theme')) return;
+    themeLabel();
+    retheme();
+  };
+  if (mq.addEventListener) mq.addEventListener('change', onFlip);
+  else if (mq.addListener) mq.addListener(onFlip);
+} catch (e) {}
 
 // Arrow keys walk the rail. It is a terminal; hands should not have to leave
 // the keyboard to step through twenty-three names.
@@ -2134,6 +2499,7 @@ try {
   });
 } catch (e) {}
 
+themeLabel();
 paintTape();
 paintOverview();
 paintSheet();

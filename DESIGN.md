@@ -123,15 +123,39 @@ one cache, not five more fetches.
 ### 5b. The plotted colours are computed, not chosen
 
 Four colours are drawn: candle up, candle down, target line, trigger line. Each
-pair was run through the dataviz validator in **both** light and dark mode —
+is run through `py tools/palette_check.py` in **both** light and dark mode —
 lightness band, chroma floor, CVD separation, normal-vision floor, contrast
-against that mode's surface. All pass; the values are recorded in a comment at
-the top of the template. Do not hand-tune them, and re-run the validator if you
-change one.
+against every surface it lands on, and WCAG AA for anything used as text. Do
+not hand-tune them, and re-run the checker if you change one.
 
-Target and trigger also differ by **line style** (solid vs dashed) and both
-carry an axis label with the word on it, so the two are never told apart by
-colour alone.
+That last sentence used to be unenforceable. The validator was an external tool
+that never landed here, so the only thing between an edit and a quietly worse
+palette was a comment asking nicely — and the palette had in fact drifted. The
+checker is now in the repo, reads the tokens out of the template so it can
+never hold a stale copy of them, and runs inside `run.ps1 selftest`.
+
+Its thresholds are not recalled numbers. Each floor is the weakest value
+achieved by the palette recorded as passing, measured by the checker itself and
+rounded down, so the bar is "no worse than what was already accepted" and the
+repo can re-derive it from its own history. The one exception is the WCAG AA
+4.5:1 text threshold, which is published rather than derived, and is labelled
+as such in the source.
+
+**Green is gain and red is loss everywhere** — text, treemap tiles, composition
+bars and candle bodies. That was not true before 2026-09-20: signed numbers
+were green/red while the bar next to them was blue/red, so one row asserted
+both systems at once. Green/red is the weaker choice under deuteranopia and the
+checker says so out loud (worst pair 19.7 light / 20.5 dark, against blue/red's
+43–49). It is accepted because nothing on this page is separated by hue alone:
+down-candles are hollow, the treemap keeps its sign glyph, the diverging bars
+have a real zero axis, and every signed number carries a `+` or `−`.
+
+Moving the candles onto green put a green body and a green target line on the
+same plot, so the check is now **all six pairs** among the four plotted hues,
+not the two it started as. Target and trigger also differ by **line style**
+(solid vs dashed) and both carry an axis label with the word on it, so that one
+pair is the only one exempt from the CVD floor — and the checker names the
+exemption in its output rather than silently skipping it.
 
 ### 5c. The repo is publishable; the book is not
 
