@@ -20,7 +20,8 @@ CHARTLIB = C.ROOT / "assets" / "lightweight-charts.standalone.production.js"
 
 
 def payload(positions_valued, watchlist, alerts, health, fx, sources,
-            history=None, coverage=None, book_return=None, indicators=None):
+            history=None, coverage=None, book_return=None, indicators=None,
+            exposure=None, reporting=None):
     """The single object the page renders. Nothing is computed in the browser
     that could have been computed here - the page displays, it does not decide."""
     total_value = round(sum(h["value_eur"] or 0 for h in positions_valued), 2)
@@ -47,6 +48,18 @@ def payload(positions_valued, watchlist, alerts, health, fx, sources,
         # only: numbers and words like "overbought", never a buy or a sell. The
         # thesis decides; this is the weather report it decides in.
         "indicators": indicators or {},
+        # The book seen through its wrappers: sector, industry, geography,
+        # single-name, concentration, fee drag and blended multiples. Every one
+        # of those tables carries its own `resolved_pct`, because Yahoo
+        # discloses ten constituents per fund and ten rows is most of a defence
+        # thematic and almost none of a world tracker. The page must print that
+        # figure beside the chart it qualifies - see exposure.py's header.
+        "exposure": exposure or {},
+        # The reporting calendar ahead and the record behind it. The upcoming
+        # quarter arrives from Yahoo with a NaN result and is carried here as
+        # null, never as zero - see reporting.py's header for why that is the
+        # single rule that module exists to enforce.
+        "reporting": reporting or {},
         "alerts": alerts,
         "health": health,
         "fx": fx,

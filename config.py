@@ -119,6 +119,51 @@ FUNDAMENTALS_CACHE = STATE / "fundamentals.json"
 # not about a day's move.
 MULTIPLE_DRIFT_PCT = 25.0
 
+# --- Fund composition (the look-through) ---
+# What a fund is actually made of, so the book can be read by sector and by
+# underlying name rather than by the ticker that happens to wrap it. Separate
+# cache from fundamentals because it is the exact inverse population: funds
+# only, and fetched through yfinance's `.funds_data` rather than `.info`.
+#
+# Measured 2026-09-20 across all eight exchange-traded funds in the book, not
+# assumed:
+#   sector_weightings  8/8, and in the SAME 11-sector taxonomy `.info` returns
+#                      for a stock - so the two compose with no mapping layer
+#   top_holdings       8/8, but capped at TEN ROWS by Yahoo, which is the whole
+#                      reason RESOLVED_* below exist. Ten rows is 82.8% of
+#                      WDEF.MI and 12.2% of EXUS.DE. A look-through that did not
+#                      publish that spread would quietly read a concentrated
+#                      thematic as the whole market.
+#   fund_operations    7/8 carry a TER (WDEF.MI returns NA)
+#
+# Two traps found in the same measurement, both this repo's signature bug class:
+#   - The `equity_holdings` valuation rows are YIELDS, not ratios. Yahoo returns
+#     P/E 0.04437 for XAIX.DE, which is 22.5x inverted. Rendered raw it is a
+#     multiple off by three orders of magnitude that still looks like a number.
+#   - `Annual Holdings Turnover` reads 0.0 for seven of the eight, including a
+#     defence thematic that certainly trades. That is "not reported" served as
+#     zero. It is NOT read here, and it should not be added later without a
+#     source that distinguishes absent from nil.
+FUND_COMPOSITION_CACHE = STATE / "fund-composition.json"
+
+# Reporting record and the next scheduled date, per directly-held stock.
+# Funds are excluded at the caller: Yahoo answers a fund with a 404 for this
+# endpoint, measured, so asking would buy eleven guaranteed failures a run.
+EARNINGS_CACHE = STATE / "earnings.json"
+
+# How far ahead the reporting calendar looks. Set to a full quarter after 28
+# days was tried and measured: on 2026-09-20 it showed ZERO prints across
+# thirteen holdings, because Q3 season had not started and the nearest date was
+# 33 days out. A calendar that is empty for six weeks of every quarter is a
+# calendar nobody opens. The estimated-date flag is what guards the far end,
+# not a short horizon.
+EARNINGS_HORIZON_DAYS = 120
+# A report inside this window is worth a line on the board. Seven days is the
+# span in which a position can still be trimmed before the print.
+EARNINGS_SOON_DAYS = 7
+# Below this, a beat or a miss is rounding and consensus noise, not news.
+EARNINGS_SURPRISE_PTS = 10.0
+
 # Property names we read out of the Equity Log, exactly as Notion spells them.
 # If Notion renames one of these, selftest fails loudly and by name rather than
 # silently returning None forever. (Verified against the live board 2026-09-13:

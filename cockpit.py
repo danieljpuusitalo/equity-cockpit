@@ -22,6 +22,8 @@ import datetime as dt
 import config as C
 import sources
 import analyse
+import exposure
+import reporting
 import indicators
 import render
 import notify
@@ -217,6 +219,33 @@ def _cycle(mode, quiet=False, verbose=True):
         f"multiples ({funda_pulled} pulled from Yahoo, "
         f"{len(funda)-funda_pulled} from cache)")
 
+    # The exact inverse population to the one above: funds only. Asked through
+    # a different yfinance accessor, cached in a different file, and asked at
+    # all only because the ticker on a position row says nothing about what is
+    # inside it - two of these trackers hold a name that is also held outright.
+    comp_symbols = sorted({p["yahoo"] for p in positions
+                           if p["yahoo"] and p["yahoo"] != "MISSING"
+                           and C.ASSET_CLASS.get(p["isin"], "stock") == "fund"})
+    comp, comp_problems, comp_pulled = sources.fund_composition(
+        comp_symbols, cached_only=cached)
+    with_comp = sum(1 for v in comp.values() if v.get("fields"))
+    say(f"  Composition: {with_comp}/{len(comp_symbols)} funds broken out "
+        f"({comp_pulled} pulled from Yahoo, {len(comp)-comp_pulled} from cache)")
+
+    # Held stocks only, and deliberately not the whole Equity Log: this feeds a
+    # calendar of what is coming against money actually at risk, and a name
+    # being researched has no position to be exposed through. Funds are absent
+    # because the endpoint 404s for them - measured, not assumed.
+    earn_symbols = sorted({p["yahoo"] for p in positions
+                           if p["yahoo"] and p["yahoo"] != "MISSING"
+                           and C.ASSET_CLASS.get(p["isin"], "stock") == "stock"})
+    earn, earn_problems, earn_pulled = sources.earnings(
+        earn_symbols, cached_only=cached)
+    with_earn = sum(1 for v in earn.values() if v.get("fields"))
+    say(f"  Earnings: {with_earn}/{len(earn_symbols)} stocks have a reporting "
+        f"record ({earn_pulled} pulled from Yahoo, "
+        f"{len(earn)-earn_pulled} from cache)")
+
     holdings = analyse.value_holdings(positions, quotes, fx)
     # Money-weighted return off the live price, not the export-date figure
     # Nordnet ships in columns the parser asserts and then ignores.
@@ -248,7 +277,25 @@ def _cycle(mode, quiet=False, verbose=True):
         f"weight); EUR {cover['value_uncovered_eur']:,.0f} "
         f"({cover['pct_uncovered']:.0f}%) uncovered")
 
+    exposures = exposure.look_through(holdings, funda, comp)
+    say(f"  Exposure: {exposures['sectors']['n']} sectors covering "
+        f"{exposures['sectors']['resolved_pct']:.0f}% of the book; "
+        f"{exposures['names']['n']} names resolved "
+        f"({exposures['names']['resolved_pct']:.0f}%), "
+        f"{exposures['concentration']['effective_n']:g} effective positions")
+
+    reports = reporting.book(holdings, earn, dt.date.today())
+    cal = reports["calendar"]
+    say(f"  Reporting: {cal['n']} prints in the next {cal['horizon_days']} days "
+        f"({cal['n_soon']} inside a week, {cal['pct_ahead']:.0f}% of the book); "
+        f"{cal['n_unknown']} without a scheduled date")
+
     alerts = analyse.alerts(watchlist, holdings, state, cover)
+    # Appended rather than merged into analyse.alerts: those read the Equity
+    # Log and the position file, this reads a vendor calendar. Keeping the two
+    # sources of judgement apart is why a broken feed here cannot silence a
+    # thesis alert there.
+    alerts = alerts + reporting.alerts(reports)
     data = render.payload(holdings, watchlist, alerts, state, fx, {
         "nordnet_export_date": csv_date,
         "nordnet_export_age_days": csv_age,
@@ -265,13 +312,22 @@ def _cycle(mode, quiet=False, verbose=True):
         "fundamentals_asked": len(funda_symbols),
         "fundamentals_priced": priced_funda,
         "fundamentals_problems": len(funda_problems),
+        # Same reasoning again: a fund Yahoo will not break out is a coverage
+        # figure on the exposure tables, not a broken feed.
+        "composition_asked": len(comp_symbols),
+        "composition_resolved": with_comp,
+        "composition_problems": len(comp_problems),
+        "earnings_asked": len(earn_symbols),
+        "earnings_resolved": with_earn,
+        "earnings_problems": len(earn_problems),
         # 'full' read every source; 'refresh' re-priced and served the rest off
         # disk. The page shows which, because an intraday page is fresher in
         # exactly one respect and a reader has no way to tell from the numbers.
         "run_mode": mode,
         "last_full_run": (last_run or {}).get("at"),
     }, history=history, coverage=cover, book_return=book_return,
-       indicators=indicators.snapshot_all(history))
+       indicators=indicators.snapshot_all(history), exposure=exposures,
+       reporting=reports)
 
     html_path, json_path = render.write(data)
     say(f"  Rendered: {html_path}")
@@ -427,6 +483,17 @@ def selftest():
     # Without this the euro sign renders as "a-hat-euro" the moment the file is
     # opened over http rather than from disk. Caught by eye, not by the tests.
     check("config: template declares utf-8", 'charset="utf-8"' in tmpl[:1024])
+    # The sheet's interactive layer has no test that can fail - a template
+    # edited back into flat tables still renders, still smoke-tests clean, and
+    # just quietly stops being drivable. These are the three hooks the whole
+    # thing hangs off: the section nav container, the per-section marker the
+    # nav and the collapse are built from, and the state object the tables
+    # read. Losing any one of them is silent everywhere else.
+    hooks = [h for h in ('id="sheetnav"', 'data-sec=', 'const SS =')
+             if h not in tmpl]
+    check("assets: sheet is still interactive", not hooks,
+          f"template lost: {', '.join(hooks)}" if hooks
+          else "nav, collapsible sections and shared filter state all present")
 
     check("privacy: holdings file is gitignored", *_leak_scan())
 
@@ -441,6 +508,22 @@ def selftest():
     unbucketed = [p for p in positions if p["bucket"] == "Unclassified"]
     check("config: every ISIN has a bucket", not unbucketed,
           ", ".join(p["tunnus"] for p in unbucketed))
+
+    # Yahoo 404s a fund on the earnings endpoint, so a fund that slipped into
+    # this cache means the caller's class filter has broken and every run is
+    # buying guaranteed failures. Reads the cache rather than the network:
+    # selftest is offline.
+    if C.EARNINGS_CACHE.exists():
+        try:
+            cached = json.loads(C.EARNINGS_CACHE.read_text(encoding="utf-8"))
+        except ValueError:
+            cached = {}
+        funds = {C.YAHOO[i] for i, k in C.ASSET_CLASS.items()
+                 if k == "fund" and C.YAHOO.get(i)}
+        leaked = sorted(set(cached) & funds)
+        check("earnings: funds are not asked", not leaked,
+              f"in the cache: {', '.join(leaked)}" if leaked
+              else f"{len(cached)} stocks cached, no funds")
 
     level, kind = analyse.parse_trigger("Price below USD 285 does the same")
     check("analyse: trigger parser", (level, kind) == (285.0, "below"),

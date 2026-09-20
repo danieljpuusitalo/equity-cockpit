@@ -322,9 +322,23 @@ def price_history(symbols, today=None, cached_only=False):
 # and a percentage across versions, and a yield of "0.79" that might be 0.79%
 # or 79% is worse than no yield at all. If it is wanted later, verify the unit
 # against a known payer first - do not infer it from the magnitude.
-_INFO_FIELDS = ("trailingPE", "forwardPE", "priceToBook", "marketCap",
+#
+# `country` is kept for the geography split, and it is worth being precise
+# about what it is: the company's stated domicile, NOT where its revenue comes
+# from. Ahold Delhaize returns "Netherlands" while most of the money is
+# American. Every surface that shows it has to say so, because a geography
+# chart is exactly the kind of thing a reader assumes means revenue.
+#
+# `priceToSalesTrailing12Months` is kept only because the book-level multiple
+# needs it: a fund reports P/S and a stock has to answer on the same axis, or
+# the blended figure silently covers the tracker half of the book and nothing
+# else. Verified live on four listings 2026-09-20 before being added - Yahoo
+# spells it with the `TrailingTwelveMonths` suffix and returns nothing for the
+# shorter name.
+_INFO_FIELDS = ("trailingPE", "forwardPE", "priceToBook",
+                "priceToSalesTrailing12Months", "marketCap",
                 "trailingEps", "forwardEps", "totalDebt", "totalCash",
-                "ebitda", "sector", "industry", "targetMeanPrice",
+                "ebitda", "sector", "industry", "country", "targetMeanPrice",
                 "numberOfAnalystOpinions", "returnOnEquity", "profitMargins",
                 "beta")
 
@@ -370,6 +384,7 @@ def _shape_info(info):
         "pe": num("trailingPE"),
         "fwd_pe": num("forwardPE"),
         "pb": num("priceToBook"),
+        "ps": num("priceToSalesTrailing12Months"),
         "market_cap": num("marketCap"),
         "eps": num("trailingEps"),
         "fwd_eps": num("forwardEps"),
@@ -381,6 +396,7 @@ def _shape_info(info):
         "beta": num("beta"),
         "sector": info.get("sector") or None,
         "industry": info.get("industry") or None,
+        "country": info.get("country") or None,
     }
     # A lone trailing P/E on an accumulating ETF is a portfolio-weighted
     # aggregate wearing a company's clothes - IMAE.AS returns exactly that and
@@ -464,6 +480,384 @@ def fundamentals(symbols, today=None, cached_only=False):
     if not cached_only:
         C.FUNDAMENTALS_CACHE.parent.mkdir(parents=True, exist_ok=True)
         C.FUNDAMENTALS_CACHE.write_text(json.dumps(
+            {"fetched": str(today), "symbols": out}, separators=(",", ":")),
+            encoding="utf-8")
+    return out, problems, pulled
+
+
+# --------------------------------------------------------- fund composition
+
+def _pct(value):
+    """A weight as a float in 0..1, or None. Never raises, never returns NaN."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if value != value:                                          # NaN
+        return None
+    return value
+
+
+def _funds_data(symbol, retries=2, pause=0.5):
+    """One symbol's `.funds_data`, or None. Never raises."""
+    import yfinance as yf
+    for attempt in range(retries):
+        try:
+            data = yf.Ticker(symbol).funds_data
+            if data is not None:
+                return data
+        except Exception:
+            pass
+        if attempt < retries - 1:
+            time.sleep(pause)
+    return None
+
+
+def _shape_funds_data(data):
+    """What a fund is made of, in the shape the look-through wants.
+
+    Returns None when nothing usable came back. Every branch is defensive
+    because `.funds_data` is a set of lazy pandas accessors, each of which can
+    raise independently - a fund can answer with sectors and refuse holdings.
+
+    The valuation block is INVERTED on the way through. Yahoo ships those four
+    rows as yields (P/E 0.04437), and the only thing standing between that and
+    a page claiming a market-wide P/E of 0.04 is this function.
+    """
+    out = {"top_holdings": [], "sectors": {}, "asset_classes": {},
+           "ter": None, "valuation": {}}
+
+    try:
+        table = data.top_holdings
+        if table is not None and len(table):
+            for symbol, row in table.iterrows():
+                weight = _pct(row.get("Holding Percent"))
+                if weight is None:
+                    continue
+                out["top_holdings"].append({
+                    "symbol": str(symbol),
+                    "name": str(row.get("Name") or "").strip() or None,
+                    "pct": round(weight * 100, 4)})
+    except Exception:
+        pass
+
+    try:
+        sectors = data.sector_weightings or {}
+        for key, weight in sectors.items():
+            weight = _pct(weight)
+            if weight:                          # drop the explicit zeroes
+                out["sectors"][str(key)] = round(weight * 100, 4)
+    except Exception:
+        pass
+
+    try:
+        classes = data.asset_classes or {}
+        for key, weight in classes.items():
+            weight = _pct(weight)
+            if weight:
+                out["asset_classes"][str(key)] = round(weight * 100, 4)
+    except Exception:
+        pass
+
+    try:
+        ops = data.fund_operations
+        # Column is named for the symbol; take the first, not by label, because
+        # the second column is a category average that is NA for every European
+        # UCITS fund in this book.
+        ter = _pct(ops.iloc[:, 0].get("Annual Report Expense Ratio"))
+        out["ter"] = round(ter * 100, 4) if ter is not None else None
+    except Exception:
+        pass
+
+    try:
+        rows = data.equity_holdings.iloc[:, 0]
+        for label, key in (("Price/Earnings", "pe"), ("Price/Book", "pb"),
+                           ("Price/Sales", "ps"), ("Price/Cashflow", "pcf")):
+            yield_ = _pct(rows.get(label))
+            # Invert. A zero would divide, and a yield of zero is not a
+            # multiple of infinity - it is an absent figure wearing a number.
+            if yield_:
+                out["valuation"][key] = round(1.0 / yield_, 2)
+    except Exception:
+        pass
+
+    # Sectors are the load-bearing field: they are what makes the split cover
+    # 100% of the book. Holdings are capped at ten rows and are always partial,
+    # so they cannot be the test of whether the fetch worked.
+    if not out["sectors"] and not out["top_holdings"]:
+        return None
+    return out
+
+
+def fund_composition(symbols, today=None, cached_only=False):
+    """What each fund holds, cached on disk and refetched once a day.
+
+    Same contract and the same degradation ladder as `fundamentals`, for the
+    same reasons - including keeping the last good answer when a fetch comes
+    back thin rather than writing the blank over it. The failure this guards is
+    the one already on the record twice in this codebase: a vendor answering
+    with LESS than it should, and the system recording that as the fund having
+    become empty.
+
+    `cached_only` serves the disk and asks nothing. A fund's sector weights do
+    not move intraday in any way this board acts on, and the refresh runs 26
+    times a day.
+
+    Returns (data, problems, pulled).
+    """
+    today = today or dt.date.today()
+    cache = {}
+    if C.FUND_COMPOSITION_CACHE.exists():
+        try:
+            cache = json.loads(C.FUND_COMPOSITION_CACHE.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            cache = {}
+    series = cache.get("symbols", {})
+
+    out, problems, pulled = {}, {}, 0
+    for symbol in symbols:
+        if not symbol or symbol == "MISSING":
+            continue
+        held = series.get(symbol)
+        if held and held.get("fetched") == str(today):
+            out[symbol] = held
+            continue
+        if cached_only:
+            if held:
+                out[symbol] = held
+            else:
+                problems[symbol] = "no cached composition"
+            continue
+        data = _funds_data(symbol)
+        shaped = _shape_funds_data(data) if data is not None else None
+        if shaped:
+            out[symbol] = {"fetched": str(today), "fields": shaped}
+            pulled += 1
+        elif (held or {}).get("fields"):
+            out[symbol] = held
+            problems[symbol] = (f"composition came back empty; showing "
+                                f"{held.get('fetched')}")
+        else:
+            out[symbol] = {"fetched": str(today), "fields": None}
+            pulled += 1
+            problems[symbol] = "no composition from Yahoo"
+
+    if not cached_only:
+        C.FUND_COMPOSITION_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        C.FUND_COMPOSITION_CACHE.write_text(json.dumps(
+            {"fetched": str(today), "symbols": out}, separators=(",", ":")),
+            encoding="utf-8")
+    return out, problems, pulled
+
+
+# ------------------------------------------------------------------- earnings
+
+# Measured on 2026-09-20 across eleven symbols before a line of this was
+# written, because the failure modes are not in the documentation:
+#
+#   .get_earnings_dates()   answered for 10/10 stocks, EMPTY for the fund.
+#                           Carries past and future in one frame. 25 rows for
+#                           an established name, 4 for a recent listing.
+#   .calendar               forward consensus. 'Earnings Date' is a LIST and
+#                           that list can be EMPTY while earnings_dates still
+#                           has rows - Admicom had no scheduled next date at
+#                           all. An empty list means unknown, not today.
+#   .quarterly_income_stmt  5-6 quarters of revenue and net income. Some
+#                           European names skip a quarter (half-year lines
+#                           only); the gap is real and is left as a gap.
+#   isEarningsDateEstimate  True means Yahoo guessed the date off last year's
+#                           pattern. Microsoft and Amazon were guesses; the
+#                           seven European names were confirmed. A page that
+#                           prints a guessed date without saying so claims
+#                           more than it knows.
+#
+# THE TRAP, and it is the same one this codebase has now hit three times: the
+# upcoming quarter arrives as a row whose Reported EPS is NaN. Coerced to zero
+# it becomes a company that earned nothing and missed consensus by 100%. NaN
+# means not yet reported. It is carried as None and never as a number.
+
+_EARNINGS_ROWS = (("Total Revenue", "revenue"), ("Net Income", "net_income"),
+                  ("Operating Income", "operating_income"),
+                  ("Gross Profit", "gross_profit"), ("Diluted EPS", "eps"))
+
+
+def _fin(value):
+    """A figure or None. NaN, NaT and pandas-NA all collapse to None."""
+    if value is None:
+        return None
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if value != value or value in (float("inf"), float("-inf")):
+        return None
+    return value
+
+
+def _day(value):
+    """Anything date-like as an ISO day string, or None.
+
+    Yahoo indexes the earnings frame in America/New_York even for Helsinki
+    and Copenhagen names, so the clock time on a European row is fiction.
+    Only the date is kept; nothing downstream is entitled to the hour.
+    """
+    if value is None:
+        return None
+    try:
+        if value != value:                                          # NaT
+            return None
+    except (TypeError, ValueError):
+        pass
+    for attr in ("date",):
+        if hasattr(value, attr):
+            try:
+                return str(getattr(value, attr)())
+            except (TypeError, ValueError):
+                pass
+    text = str(value)[:10]
+    return text if len(text) == 10 and text[4] == "-" else None
+
+
+def _shape_earnings(ticker, today):
+    """One company's reporting record and its next date, or None.
+
+    Every accessor is wrapped separately: a name can answer with a calendar
+    and refuse the income statement, and half an answer is worth keeping.
+    """
+    out = {"history": [], "quarters": [], "next": None, "currency": None}
+
+    try:
+        frame = ticker.get_earnings_dates(limit=24)
+        if frame is not None and len(frame):
+            for stamp, row in frame.iterrows():
+                day = _day(stamp)
+                if not day:
+                    continue
+                reported = _fin(row.get("Reported EPS"))
+                entry = {"date": day,
+                         "eps_estimate": _fin(row.get("EPS Estimate")),
+                         "eps_reported": reported,
+                         "surprise_pct": _fin(row.get("Surprise(%)"))}
+                # Reported or not is the split, NOT date against today. A row
+                # can sit in the past with nothing filed against it, and that
+                # is an absent result rather than a future one.
+                if reported is not None:
+                    out["history"].append(entry)
+                elif day > str(today):
+                    out["next"] = {"date": day, "estimated": None,
+                                   "eps_estimate": entry["eps_estimate"],
+                                   "eps_high": None, "eps_low": None,
+                                   "revenue_estimate": None}
+            out["history"].sort(key=lambda r: r["date"], reverse=True)
+    except Exception:
+        pass
+
+    try:
+        cal = ticker.calendar or {}
+        dates = cal.get("Earnings Date") or []
+        day = _day(dates[0]) if dates else None
+        if day:
+            out["next"] = out["next"] or {"date": day, "estimated": None,
+                                          "eps_estimate": None}
+            out["next"]["date"] = day
+        if out["next"]:
+            out["next"]["eps_estimate"] = (out["next"].get("eps_estimate")
+                                           or _fin(cal.get("Earnings Average")))
+            out["next"]["eps_high"] = _fin(cal.get("Earnings High"))
+            out["next"]["eps_low"] = _fin(cal.get("Earnings Low"))
+            out["next"]["revenue_estimate"] = _fin(cal.get("Revenue Average"))
+    except Exception:
+        pass
+
+    try:
+        info = ticker.info or {}
+        out["currency"] = info.get("financialCurrency") or info.get("currency")
+        if out["next"] is not None:
+            flag = info.get("isEarningsDateEstimate")
+            out["next"]["estimated"] = bool(flag) if flag is not None else None
+    except Exception:
+        pass
+
+    try:
+        frame = ticker.quarterly_income_stmt
+        if frame is not None and not frame.empty:
+            for column in frame.columns:
+                day = _day(column)
+                if not day:
+                    continue
+                quarter = {"period": day}
+                for label, key in _EARNINGS_ROWS:
+                    quarter[key] = (_fin(frame.at[label, column])
+                                    if label in frame.index else None)
+                if any(quarter[k] is not None for _, k in _EARNINGS_ROWS):
+                    out["quarters"].append(quarter)
+            out["quarters"].sort(key=lambda q: q["period"], reverse=True)
+    except Exception:
+        pass
+
+    if not out["history"] and not out["quarters"] and not out["next"]:
+        return None
+    return out
+
+
+def earnings(symbols, today=None, cached_only=False):
+    """When each company reported, what it did, and when it reports next.
+
+    Stocks only. Funds were measured and answer with a 404 - asking eleven of
+    them on every run would be eleven guaranteed failures a run, and the
+    caller filters before it gets here.
+
+    Same degradation ladder as `fundamentals` and `fund_composition`: a thin
+    answer never overwrites a good cached one, and `cached_only` serves disk
+    and asks nothing. An earnings date does not move intraday and the refresh
+    runs 26 times a day.
+
+    Returns (data, problems, pulled).
+    """
+    today = today or dt.date.today()
+    cache = {}
+    if C.EARNINGS_CACHE.exists():
+        try:
+            cache = json.loads(C.EARNINGS_CACHE.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            cache = {}
+    series = cache.get("symbols", {})
+
+    out, problems, pulled = {}, {}, 0
+    for symbol in symbols:
+        if not symbol or symbol == "MISSING":
+            continue
+        held = series.get(symbol)
+        if held and held.get("fetched") == str(today):
+            out[symbol] = held
+            continue
+        if cached_only:
+            if held:
+                out[symbol] = held
+            else:
+                problems[symbol] = "no cached earnings"
+            continue
+        shaped = None
+        try:
+            import yfinance as yf
+            shaped = _shape_earnings(yf.Ticker(symbol), today)
+        except Exception:
+            shaped = None
+        if shaped:
+            out[symbol] = {"fetched": str(today), "fields": shaped}
+            pulled += 1
+        elif (held or {}).get("fields"):
+            out[symbol] = held
+            problems[symbol] = (f"earnings came back empty; showing "
+                                f"{held.get('fetched')}")
+        else:
+            out[symbol] = {"fetched": str(today), "fields": None}
+            pulled += 1
+            problems[symbol] = "no earnings from Yahoo"
+
+    if not cached_only:
+        C.EARNINGS_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        C.EARNINGS_CACHE.write_text(json.dumps(
             {"fetched": str(today), "symbols": out}, separators=(",", ":")),
             encoding="utf-8")
     return out, problems, pulled

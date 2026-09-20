@@ -24,6 +24,12 @@ const el = () => {
     classList: { add() {}, remove() {} },
     appendChild() {}, insertBefore() {}, addEventListener() {},
     setAttribute() {}, removeAttribute() {}, getAttribute: () => null,
+    // The shim stores innerHTML as a string and never parses it, so a node can
+    // honestly report that it contains nothing. The page reads its own output
+    // back to build the sheet's section nav; an empty list has to be a valid
+    // answer here or this test fails on the shim's limits rather than the
+    // page's. What the nav actually renders is checked in a browser.
+    querySelectorAll: () => [], scrollIntoView() {},
     closest: () => null, value: '',
     getBoundingClientRect: () => ({ width: 10, height: 10 }),
   };

@@ -204,8 +204,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .sheet h2{font-size:12px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--muted);margin:26px 0 10px}
 .sheet h2:first-of-type{margin-top:14px}
-.sheethead{display:flex;align-items:center;gap:14px}
-.sheethead h1{font-size:18px;font-weight:650;margin:0}
+.sheethead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sheethead h1{font-size:18px;font-weight:650;margin:0;margin-right:auto}
 table{width:100%;border-collapse:collapse;font-size:12.5px;
   font-variant-numeric:tabular-nums}
 th{text-align:right;font-weight:600;color:var(--muted);font-size:10.5px;
@@ -216,6 +216,120 @@ td{padding:7px 8px;border-bottom:1px solid var(--grid);text-align:right;
   white-space:nowrap}
 td.wrap{white-space:normal;min-width:260px}
 .scroll{overflow-x:auto}
+
+/* ------------------------------------------------------------- exposure */
+/* Composition answers a share-of-whole question, so every bar is drawn
+   against a fixed 100% track rather than scaled to the largest row. A bar
+   normalised to its biggest neighbour turns 31% and 16% into 100% and 52%,
+   which is the one distortion a composition chart must not introduce. */
+.xgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
+  gap:10px;margin-bottom:4px}
+.xcard{border:1px solid var(--border);border-radius:8px;padding:10px 12px;
+  background:var(--surface-1)}
+.xcard .k{font-size:10.5px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted)}
+.xcard .v{font-size:21px;font-weight:620;font-variant-numeric:tabular-nums;
+  margin:4px 0 2px;line-height:1.1}
+.xcard .s{font-size:11.5px;color:var(--ink-2);line-height:1.4}
+/* Namespaced .xrow, not .bar: the weight strip up at line 154 already owns
+   .bar, and a second rule on that name silently reflowed it to a grid. */
+.xrow{display:grid;grid-template-columns:168px 1fr 66px;gap:10px;
+  align-items:center;padding:3px 0;font-size:12.5px;cursor:default;
+  border-radius:4px}
+/* Only a row that can actually filter something offers to be clicked. The
+   unresolved bar looks identical and is inert, so the cursor is the only
+   honest warning the reader gets before the click that does nothing. */
+.xrow[data-fk]{cursor:pointer}
+.xrow[data-fk]:hover{background:var(--surface-2)}
+.xrow[data-on="1"]{background:color-mix(in srgb,var(--accent) 13%,transparent)}
+.xrow .n{color:var(--ink-2);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;padding-left:5px}
+.xrow[data-on="1"] .n{color:var(--ink);font-weight:600}
+.xrow .t{height:11px;border-radius:3px;background:var(--grid);overflow:hidden;
+  display:flex}
+.xrow .f{height:100%;background:var(--accent)}
+/* A second tone, deliberately not a second hue. Direct and indirect are the
+   same exposure reached two ways; a contrasting colour would read as two
+   opposed things rather than one thing counted twice over. */
+.xrow .f2{height:100%;background:color-mix(in srgb,var(--accent) 38%,transparent)}
+.xrow .p{text-align:right;font-variant-numeric:tabular-nums;font-weight:560;
+  padding-right:5px}
+/* The mass no source could place, drawn rather than footnoted. A composition
+   chart that silently omits what it could not resolve is the chart most
+   likely to be believed and least entitled to be. */
+.xrow.un{cursor:default}
+.xrow.un:hover{background:none}
+.xrow.un .n,.xrow.un .p{color:var(--muted)}
+.xrow.un .f{background:repeating-linear-gradient(135deg,var(--axis) 0 3px,
+  transparent 3px 7px)}
+.xkey{font-size:11.5px;color:var(--muted);margin:1px 0 10px}
+.xcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+  gap:0 26px}
+
+/* ------------------------------------------------------ sheet as a surface */
+/* The sheet used to be one long scroll of everything. A table you cannot
+   collapse, sort or filter is a printout, and a printout goes stale the
+   moment you want a different question answered. */
+.sheetnav{position:sticky;top:-20px;z-index:3;background:var(--plane);
+  padding:8px 0 9px;margin:0 0 4px;border-bottom:1px solid var(--grid);
+  display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.navb{font-size:11.5px;padding:4px 11px;border-radius:999px;
+  border:1px solid var(--border);color:var(--ink-2);background:var(--surface-1)}
+.navb:hover{border-color:var(--axis);color:var(--ink)}
+.sheet h2{cursor:pointer;user-select:none;display:flex;align-items:center;gap:7px}
+.sheet h2::before{content:"▾";font-size:9px;color:var(--axis);
+  transition:transform .12s}
+.sheet h2[data-shut="1"]::before{transform:rotate(-90deg)}
+.sec[data-shut="1"]{display:none}
+/* One live filter, stated in words, clearable, and applied to every table it
+   can touch. A filter that is not visible is a lie the page tells quietly. */
+.xchip{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;
+  padding:3px 6px 3px 11px;border-radius:999px;margin-left:auto;
+  background:color-mix(in srgb,var(--accent) 15%,transparent);
+  color:var(--ink);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent)}
+.xchip b{font-weight:640}
+.xchip button{font-size:14px;line-height:1;padding:0 4px;color:var(--ink-2)}
+.xchip button:hover{color:var(--ink)}
+.xsearch{font:inherit;font-size:11.5px;padding:4px 9px;border-radius:999px;
+  border:1px solid var(--border);background:var(--surface-1);color:var(--ink);
+  width:170px;outline:none}
+.xsearch:focus{border-color:var(--accent)}
+.xtog{font-size:11.5px;padding:4px 10px;border-radius:999px;
+  border:1px solid var(--border);color:var(--muted);background:var(--surface-1)}
+.xtog[aria-pressed="true"]{color:var(--ink);border-color:var(--axis);
+  background:var(--surface-2)}
+/* Sortable headers. The arrow marks the column actually in force, because a
+   table sorted by something other than what you last clicked is how a reader
+   ends up reading the wrong row as the biggest. */
+th.s{cursor:pointer;user-select:none}
+th.s:hover{color:var(--ink)}
+th.s[data-dir]::after{content:"▾";margin-left:4px;font-size:8px}
+th.s[data-dir="1"]::after{content:"▴"}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--surface-2)}
+tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
+.sheet .empty{font-size:12.5px;color:var(--muted);padding:10px 0}
+/* ------------------------------------------------------------- reporting */
+.cal{display:grid;grid-template-columns:70px 1fr;gap:0 14px;align-items:start}
+.calwk{font-size:10.5px;font-weight:700;letter-spacing:.09em;color:var(--muted);
+  text-transform:uppercase;padding:9px 0 0}
+.calbox{border-left:2px solid var(--grid);padding:0 0 12px 14px}
+.calbox.soon{border-left-color:var(--warn)}
+.calrow{display:flex;align-items:baseline;gap:9px;padding:5px 0;
+  font-size:12.5px;cursor:pointer;border-radius:4px}
+.calrow:hover{background:var(--surface-2)}
+.calrow .d{color:var(--muted);font-size:11.5px;width:52px;flex:none}
+.calrow .sym{font-weight:640;width:88px;flex:none}
+.calrow .co{color:var(--ink-2);flex:1;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.calrow .wt{font-variant-numeric:tabular-nums;color:var(--ink-2)}
+/* Yahoo's own "this date is extrapolated" flag, carried to the surface. A
+   guessed date printed beside a confirmed one with no mark is the
+   derived-status bug this repo keeps finding in its own display layer. */
+.est{font-size:10px;color:var(--muted);border:1px solid var(--border);
+  border-radius:3px;padding:0 4px;font-weight:600}
+.beat{color:var(--good-ink);font-weight:620}
+.miss{color:var(--neg);font-weight:620}
 
 @media (max-width:1180px){
   body{overflow:auto;display:block}
@@ -291,7 +405,15 @@ td.wrap{white-space:normal;min-width:260px}
 
 <div class="sheet" id="sheet">
   <div class="sheethead"><h1>Every number on this page</h1>
+    <!-- The search box lives in static markup rather than being re-rendered
+         with the tables, because a repaint on every keystroke would take the
+         caret with it. -->
+    <input class="xsearch" id="xq" type="search" autocomplete="off"
+      placeholder="Search any table">
+    <button class="xtog" id="xunits" aria-pressed="false">Show €</button>
+    <button class="xtog" id="xall" aria-pressed="false">Collapse all</button>
     <button class="tbtn" id="t-close">Close</button></div>
+  <div class="sheetnav" id="sheetnav"></div>
   <div id="sheetbody"></div>
 </div>
 
@@ -407,6 +529,13 @@ const ROWS = [...new Set([...held.keys(), ...watch.keys()])].map((sym) => {
   };
 }).sort((a, b) => (b.value_eur || 0) - (a.value_eur || 0) ||
                   a.label.localeCompare(b.label));
+
+// What `select()` can actually open. The sheet's tables reach further than the
+// rail does - the look-through names companies that are only inside a fund and
+// have no chart of their own - so a row is offered as a click only when there
+// is somewhere for the click to go. Marking every row clickable and having
+// most of them do nothing teaches you to stop clicking.
+const ROWSYM = new Set(ROWS.map((r) => r.sym));
 
 let state = {sym: ROWS.length ? ROWS[0].sym : null, filter:'all', q:'', days:365,
              ma:{50:true, 200:true}};
@@ -914,13 +1043,74 @@ function retheme() {
 
 /* ------------------------------------------------------------ data sheet */
 
+/* The sheet is one surface with one state, and every table on it reads that
+   state. A sector bar, a fund row and the search box all write to the same
+   object, so a click in one section changes what the sections below it say -
+   which is the difference between a dashboard and a stack of printouts.
+
+   State is deliberately NOT persisted. Reopening the sheet on the next run
+   should show the whole book, not last week's question still applied to this
+   week's numbers with no sign that it is. */
+const SS = {
+  filter: null,      // {kind:'sector'|'country'|'industry'|'fund', key, label}
+  q: '',
+  units: 'pct',      // 'pct' | 'eur'
+  sort: {},          // table name -> {k, dir}
+  shut: {},          // section id -> true when collapsed
+};
+
+// Reads 'growth.revenue_yoy_pct' as well as 'pct', so a sort key can point at
+// a nested figure without the row being flattened first.
+const dig = (o, path) => String(path).split('.')
+  .reduce((v, k) => (v == null ? v : v[k]), o);
+
+function sortRows(rows, table, fallback) {
+  const s = SS.sort[table] || {k: fallback, dir: -1};
+  return rows.slice().sort((a, b) => {
+    const x = dig(a, s.k), y = dig(b, s.k);
+    // A missing value sinks in BOTH directions. Sorting ascending by surprise
+    // must not put the six names that never reported one above the worst miss
+    // in the book - absent is not the smallest number, it is not a number.
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    return (typeof x === 'number' && typeof y === 'number'
+      ? (x - y) : String(x).localeCompare(String(y))) * s.dir;
+  });
+}
+
+// A sortable header. `d0` is the direction a first click gives: -1 (biggest
+// first) for figures, 1 (A-Z, oldest-first) for names and dates.
+const th = (table, key, label, d0) => {
+  const s = SS.sort[table];
+  const on = s && s.k === key;
+  return `<th class="s" data-t="${table}" data-k="${esc(key)}"
+    data-d0="${d0 == null ? -1 : d0}"${on ? ` data-dir="${s.dir}"` : ''}
+    >${esc(label)}</th>`;
+};
+
 function paintSheet() {
-  const rows = [...held.values()].sort((a, b) => b.value_eur - a.value_eur);
-  const h = `<h2>Holdings — ${rows.length} companies, ${(D.sources||{}).lots} lots</h2>
-    <div class="scroll"><table><thead><tr><th>Ticker</th><th>Company</th>
-    <th>Acct</th><th>Units</th><th>Price</th><th>Day</th><th>Value €</th>
-    <th>Cost €</th><th>P/L €</th><th>P/L %</th><th>Weight</th>
-    <th>Off high</th></tr></thead><tbody>${rows.map((p) => `<tr>
+  // One search box over every table. Matching on symbol OR name means typing
+  // "micro" and typing "MSFT" find the same rows, and the sheet stops being
+  // somewhere you scroll to find a ticker.
+  const q = (SS.q || '').trim().toLowerCase();
+  const hits = (r) => !q || [r.symbol, r.sym, r.yahoo, r.ticker, r.name,
+    r.company, r.label].some((v) => v && String(v).toLowerCase().includes(q));
+  const some = (n, all, what) => n === all ? `${all} ${what}`
+    : `${n} of ${all} ${what}`;
+
+  const hr = sortRows([...held.values()].filter(hits), 'held', 'value_eur');
+  const h = `<h2 data-sec="hold">Holdings — ${some(hr.length, held.size,
+      'companies')}, ${(D.sources||{}).lots} lots</h2>
+    <div class="sec" data-sec="hold">
+    <div class="scroll"><table><thead><tr>
+    ${th('held','ticker','Ticker',1)}${th('held','name','Company',1)}
+    <th>Acct</th>${th('held','units','Units')}${th('held','price','Price')}
+    ${th('held','day_pct','Day')}${th('held','value_eur','Value €')}
+    ${th('held','cost_eur','Cost €')}${th('held','pl_eur','P/L €')}
+    ${th('held','pl_pct','P/L %')}${th('held','weight','Weight')}
+    ${th('held','off_high','Off high')}</tr></thead><tbody>${hr.map((p) => `<tr
+      class="click" data-sym="${esc(p.sym)}">
       <td>${esc(p.ticker)}</td><td>${esc(p.name)}</td>
       <td>${esc(p.accounts.join('/'))}</td><td>${p.units}</td>
       <td>${px(p.price)}</td><td class="${cls(p.day_pct)}">${pct(p.day_pct,1)}</td>
@@ -928,14 +1118,22 @@ function paintSheet() {
       <td class="${cls(p.pl_eur)}">${eur(p.pl_eur)}</td>
       <td class="${cls(p.pl_pct)}">${pct(p.pl_pct,1)}</td>
       <td>${p.weight.toFixed(1)}%</td><td>${pct(p.off_high,1)}</td></tr>`).join('')}
-    </tbody></table></div>`;
+    </tbody></table></div></div>`;
 
-  const w = `<h2>Equity Log — ${(D.watchlist||[]).length} rows,
-    ${(D.sources||{}).equity_log_mode}</h2>
-    <div class="scroll"><table><thead><tr><th>Ticker</th><th>Verdict</th>
-    <th>Tier</th><th>Price</th><th>Target</th><th>Upside now</th>
-    <th>At eval</th><th>Decay pts</th><th>Trigger</th><th>Gap</th>
-    <th>Evaluated</th><th>Next</th></tr></thead><tbody>${(D.watchlist||[]).map((x)=>`<tr>
+  const wr = sortRows((D.watchlist||[]).filter(hits), 'log', 'upside_now');
+  const w = `<h2 data-sec="log">Equity Log — ${some(wr.length,
+      (D.watchlist||[]).length, 'rows')}, ${(D.sources||{}).equity_log_mode}</h2>
+    <div class="sec" data-sec="log">
+    <div class="scroll"><table><thead><tr>
+    ${th('log','ticker','Ticker',1)}${th('log','verdict','Verdict',1)}
+    ${th('log','tier','Tier',1)}${th('log','price_now','Price')}
+    ${th('log','target','Target')}${th('log','upside_now','Upside now')}
+    ${th('log','upside_at_eval','At eval')}${th('log','upside_decay_pts','Decay pts')}
+    <th>Trigger</th>${th('log','trigger_gap_pct','Gap')}
+    ${th('log','last_eval','Evaluated',1)}${th('log','next_check','Next',1)}
+    </tr></thead><tbody>${wr.map((x)=>`<tr
+      class="${ROWSYM.has(x.yahoo || x.ticker) ? 'click' : ''}"
+      data-sym="${esc(x.yahoo || x.ticker)}">
       <td>${esc(x.ticker)}</td><td>${esc(x.verdict)}</td><td>${esc(x.tier)}</td>
       <td>${px(x.price_now)}</td><td>${px(x.target)}</td>
       <td class="${cls(x.upside_now)}">${pct(x.upside_now,1)}</td>
@@ -943,19 +1141,25 @@ function paintSheet() {
       <td>${x.upside_decay_pts == null ? '—' : x.upside_decay_pts.toFixed(1)}</td>
       <td>${x.trigger_level ? esc(x.trigger_kind)+' '+px(x.trigger_level) : '—'}</td>
       <td>${pct(x.trigger_gap_pct,1)}</td><td>${esc(x.last_eval)}</td>
-      <td>${esc(x.next_check)}</td></tr>`).join('')}</tbody></table></div>`;
+      <td>${esc(x.next_check)}</td></tr>`).join('')}</tbody></table></div></div>`;
 
   // Ordered by money at risk, not alphabetically: the question the table
   // answers is "how much of the book is nobody watching", and the answer is
   // read off the top rows.
-  const cr = [...(COV.rows || [])].sort((a, b) => b.value_eur - a.value_eur);
-  const cov = !cr.length ? '' : `<h2>Coverage —
-    ${cr.length - (COV.n_uncovered||0)}/${cr.length} monitored,
+  const cr = sortRows((COV.rows || []).filter(hits), 'cov', 'value_eur');
+  const cov = !(COV.rows || []).length ? '' : `<h2 data-sec="cov">Coverage —
+    ${(COV.rows||[]).length - (COV.n_uncovered||0)}/${(COV.rows||[]).length} monitored,
     ${eur(COV.value_uncovered_eur)} (${(COV.pct_uncovered||0).toFixed(0)}%) unwatched</h2>
-    <div class="scroll"><table><thead><tr><th>Ticker</th><th>Monitored</th>
-    <th>Gap</th><th>Value €</th><th>Weight</th><th>Class</th><th>Judged by</th>
-    <th>Target wt</th><th>Drift pts</th><th>Acct</th><th>Name</th>
-    </tr></thead><tbody>${cr.map((c) => `<tr>
+    <div class="sec" data-sec="cov">
+    <div class="scroll"><table><thead><tr>
+    ${th('cov','ticker','Ticker',1)}${th('cov','covered','Monitored',1)}
+    ${th('cov','gap','Gap',1)}${th('cov','value_eur','Value €')}
+    ${th('cov','weight_pct','Weight')}${th('cov','klass','Class',1)}
+    <th>Judged by</th>${th('cov','target_weight_pct','Target wt')}
+    ${th('cov','drift_pts','Drift pts')}<th>Acct</th>
+    ${th('cov','name','Name',1)}</tr></thead><tbody>${cr.map((c) => `<tr
+      class="${ROWSYM.has(c.yahoo || c.ticker) ? 'click' : ''}"
+      data-sym="${esc(c.yahoo || c.ticker)}">
       <td>${esc(c.ticker)}</td><td>${c.covered ? 'yes' : '<b>no</b>'}</td>
       <td>${esc(c.gap || '')}</td>
       <td>${eur(c.value_eur)}</td><td>${num(c.weight_pct,1)}%</td>
@@ -967,21 +1171,265 @@ function paintSheet() {
       </tr>`).join('')}</tbody></table></div>
     ${(COV.researched_not_held||[]).length ? `<div class="prose"
       style="margin-top:8px">Researched but not owned — ${(COV.researched_not_held||[])
-      .map(esc).join(', ')}.</div>` : ''}`;
+      .map(esc).join(', ')}.</div>` : ''}</div>`;
+
+  // The book seen through its wrappers. Two rules hold across everything
+  // below. Bars are drawn against a full 100% track, so a row's width is its
+  // share of the whole book and not its share of the largest row. And every
+  // breakdown draws the mass it could not place as its own bar, because
+  // Yahoo discloses ten constituents per fund - most of a thematic, almost
+  // none of a world tracker - so coverage varies six-fold inside one
+  // portfolio and a chart that hid that would be the most misleading thing
+  // on this page. See exposure.py's header.
+  const X = D.exposure || {};
+  const XT = X.total_eur || 0;
+  const share = (v) => XT ? (v / XT) * 100 : 0;
+  const w100 = (v) => Math.max(0, Math.min(100, v || 0)).toFixed(3);
+  // % or € on the same bars. Not decoration: a 0.30% real-estate sliver and a
+  // €120 real-estate sliver are answers to different questions, and which one
+  // you want changes with what you are about to do.
+  const amt = (p, v) => SS.units === 'eur' ? eur(v) : num(p, 2) + '%';
+
+  const xbar = (o) => `<div class="xrow ${o.un ? 'un' : ''}"
+    ${o.kind ? `data-fk="${esc(o.kind)}" data-fv="${esc(o.key)}"
+      data-fl="${esc(o.label)}"` : ''}
+    data-on="${SS.filter && SS.filter.kind === o.kind
+      && SS.filter.key === o.key ? 1 : 0}">
+    <div class="n" title="${esc(o.label)}">${esc(o.label)}</div>
+    <div class="t">${o.direct == null
+      ? `<i class="f" style="width:${w100(o.pct)}%"></i>`
+      : `<i class="f" style="width:${w100(o.direct)}%"></i>` +
+        `<i class="f2" style="width:${w100(o.indirect)}%"></i>`}</div>
+    <div class="p">${amt(o.pct, o.value)}</div></div>`;
+
+  // One breakdown - sector, geography or industry - as a ranked stack. Rows
+  // are click targets: picking one filters every table below to the names it
+  // contains, which is the whole point of having both on one surface. The
+  // unresolved bar is appended whenever there is anything to append and is
+  // deliberately NOT clickable - it is the answer to "and the rest", not a
+  // bucket you can look inside.
+  const xstack = (t, title, kind, note) => {
+    if (!t || !(t.rows || []).length) return '';
+    const un = share(t.unresolved_eur || 0);
+    return `<div><div class="tlabel" style="margin:16px 0 7px">${esc(title)} —
+      ${num(t.resolved_pct, 1)}% placed</div>
+      ${t.rows.map((r) => xbar({label: r.label, key: r.key, kind: kind,
+        pct: r.pct, value: r.value_eur,
+        direct: r.direct_eur == null ? null : share(r.direct_eur),
+        indirect: r.indirect_eur == null ? null : share(r.indirect_eur)})).join('')}
+      ${un > 0.005 ? xbar({label: 'Not resolved', pct: un,
+        value: t.unresolved_eur, un: true}) : ''}
+      <div class="xkey">${esc(note)}</div></div>`;
+  };
+
+  const XC = X.concentration || {}, XM = X.multiples || {},
+        XF = X.fees || {}, XN = X.names || {};
+  const xcard = (k, v, s) => `<div class="xcard"><div class="k">${esc(k)}</div>
+    <div class="v">${v}</div><div class="s">${s}</div></div>`;
+
+  // Both tables below read the one live filter and the one search box, so a
+  // click on a sector bar and a typed ticker compose instead of competing.
+  const F = SS.filter;
+  const inFilter = (r) => {
+    if (!F) return true;
+    if (F.kind === 'fund') return (r.via || []).some((v) => v.fund === F.key);
+    return r[F.kind] === F.key;
+  };
+  // How many rows the filter could not judge either way, kept separate from
+  // how many it excluded. A name Yahoo gave only a ticker for has no sector,
+  // and counting it as "not Technology" would be an answer the data cannot
+  // support. It is reported as unclassified and left out.
+  const blind = !F || F.kind === 'fund' ? 0
+    : (XN.rows || []).filter((r) => r[F.kind] == null).length;
+
+  const nameRows = sortRows((XN.rows || []).filter((r) => inFilter(r) && hits(r)),
+                            'names', 'pct');
+  const fundRows = sortRows((X.funds || []).filter((f) => hits(f)
+    && (!F || F.kind !== 'fund' || f.symbol === F.key)), 'funds', 'value_eur');
+
+  const exp = !XT ? '' : `<h2 data-sec="exp">Exposure — ${eur(XT)} across
+    ${X.n_positions} positions, looked through</h2>
+    <div class="sec" data-sec="exp">
+    <div class="xgrid">
+      ${xcard('Effective positions', num(XC.effective_n, 1),
+        `of ${XC.n} held · top 5 ${num(XC.top5_pct,1)}% ·
+         top 10 ${num(XC.top10_pct,1)}% · HHI ${num(XC.hhi,4)}`)}
+      ${xcard('Blended P/E', num(XM.pe, 1),
+        `P/B ${num(XM.pb,1)} · P/S ${num(XM.ps,2)} ·
+         ${num(XM.pe_resolved_pct,1)}% of the book priced · harmonic, not averaged`)}
+      ${xcard('Fund fee drag', eur(XF.annual_eur) + '/yr',
+        `${num(XF.sleeve_ter_pct,3)}% of the fund sleeve ·
+         ${num(XF.book_ter_pct,3)}% of the book ·
+         ${num(XF.resolved_pct,0)}% of fund value has a published TER`)}
+      ${xcard('Names reached', XN.n || 0,
+        `${num(XN.resolved_pct,1)}% of the book named ·
+         ${XN.n_both_ways || 0} held directly and inside a fund ·
+         the rest is inside undisclosed fund tails`)}
+    </div>
+    <div class="xcols">
+      ${xstack(X.sectors, 'Sector', 'sector',
+        'Solid is held directly, pale is reached through a fund. Fund cash is ' +
+        'left unresolved rather than scaled away. Click a row to filter below.')}
+      ${xstack(X.geography, 'Geography', 'country',
+        (X.geography || {}).basis || '')}
+    </div>
+    ${xstack(X.industries, 'Industry', 'industry',
+      'Directly-held stocks only. A fund reports sectors and never industries, ' +
+      'so the fund sleeve is unresolved here by construction, not by failure.')}
+    </div>
+    <h2 data-sec="look">Look-through — ${nameRows.length}${
+      nameRows.length === (XN.rows || []).length ? '' :
+      ' of ' + (XN.rows || []).length} companies the book touches</h2>
+    <div class="sec" data-sec="look">
+    ${!nameRows.length ? '<div class="empty">No company matches that filter.</div>'
+    : `<div class="scroll"><table><thead><tr>
+    ${th('names','symbol','Symbol',1)}${th('names','name','Company',1)}
+    ${th('names','pct','Total')}${th('names','direct_pct','Direct')}
+    ${th('names','indirect_pct','Via funds')}${th('names','value_eur','Value €')}
+    <th>Reached through</th></tr></thead><tbody>${nameRows.map((r) => `<tr
+      class="${ROWSYM.has(r.symbol) ? 'click' : ''}" data-sym="${esc(r.symbol)}">
+      <td>${esc(r.symbol)}</td><td>${esc(r.name)}</td>
+      <td><b>${amt(r.pct, r.value_eur)}</b></td>
+      <td>${r.direct_pct ? num(r.direct_pct,2)+'%' : '—'}</td>
+      <td>${r.indirect_pct ? num(r.indirect_pct,2)+'%' : '—'}</td>
+      <td>${eur(r.value_eur)}</td>
+      <td style="text-align:left;color:var(--muted)">${r.held_both_ways
+        ? 'held outright + ' : ''}${(r.via || []).map((v) =>
+        esc(v.fund)+' '+num(v.pct,1)+'%').join(', ') || 'held outright'}</td>
+      </tr>`).join('')}</tbody></table></div>`}
+    <div class="prose" style="margin-top:8px">A name absent from this table is
+      not absent from the book — it is absent from a fund's disclosed top ten.
+      The indirect column is a floor.${blind ? ` ${blind} of these companies
+      have no ${esc(F.kind === 'country' ? 'domicile' : F.kind)} on record and
+      are excluded from this filter rather than assumed out of it.` : ''}
+      ${nameRows.some((r) => ROWSYM.has(r.symbol))
+        ? ' Rows with a chart of their own open it.' : ''}</div>
+    </div>
+    <h2 data-sec="funds">Funds — what each one tells you</h2>
+    <div class="sec" data-sec="funds">
+    <div class="scroll"><table><thead><tr>
+    ${th('funds','symbol','Symbol',1)}${th('funds','name','Name',1)}
+    ${th('funds','weight_pct','Weight')}${th('funds','value_eur','Value €')}
+    ${th('funds','ter_pct','TER')}<th>Cost €/yr</th>
+    ${th('funds','disclosed_pct','Discloses')}${th('funds','n_disclosed','Rows')}
+    <th>Sectors</th></tr></thead><tbody>${
+      fundRows.map((f) => { const fee = ((XF.rows || [])
+        .find((r) => r.symbol === f.symbol) || {});
+      return `<tr class="click" data-fund="${esc(f.symbol || '')}"
+      data-on="${F && F.kind === 'fund' && F.key === f.symbol ? 1 : 0}"
+      <td>${esc(f.symbol || '—')}</td><td>${esc(f.name)}</td>
+      <td>${num(f.weight_pct,2)}%</td><td>${eur(f.value_eur)}</td>
+      <td>${f.ter_pct == null ? '<span style="color:var(--muted)">not published</span>'
+        : num(f.ter_pct,2)+'%'}</td>
+      <td>${fee.annual_eur == null ? '—' : eur(fee.annual_eur)}</td>
+      <td>${num(f.disclosed_pct,1)}%</td><td>${f.n_disclosed}</td>
+      <td>${f.has_sectors ? 'yes' : '<b>no</b>'}</td></tr>`; }).join('')
+    }</tbody></table></div>
+    <div class="prose" style="margin-top:8px">The spread down the Discloses
+      column is why every figure above carries a coverage percentage. A fund
+      with no published TER is not free — it is counted against coverage, so
+      the fee figure reads as a floor. Click a fund to see only what it
+      reaches.</div>
+    </div>`;
+
+  /* ----------------------------------------------------------- reporting */
+  // What is coming and what landed. Grouped by month rather than by a
+  // days-until bucket: a bucket boundary moves under you overnight, a month
+  // does not, and the horizon is a quarter wide because a four-week one was
+  // measured empty for six weeks of every quarter.
+  const R = D.reporting || {}, RC = R.calendar || {};
+  const months = [];
+  for (const row of RC.rows || []) {
+    const key = row.date.slice(0, 7);
+    let bucket = months.find((m) => m.key === key);
+    if (!bucket) months.push(bucket = {key, rows: []});
+    bucket.rows.push(row);
+  }
+  const monthName = (key) => {
+    const d = new Date(key + '-01T00:00:00');
+    return isNaN(d) ? key : d.toLocaleDateString('en-GB',
+      {month: 'short', year: 'numeric'});
+  };
+  const dayName = (iso) => {
+    const d = new Date(iso + 'T00:00:00');
+    return isNaN(d) ? iso : d.toLocaleDateString('en-GB',
+      {day: 'numeric', month: 'short'});
+  };
+  const landed = sortRows((R.latest || []).filter(hits), 'latest', 'date');
+
+  const rep = !(RC.rows || []).length && !(R.latest || []).length ? '' :
+   `<h2 data-sec="rep">Reporting — ${RC.n || 0} prints in the next
+    ${RC.horizon_days} days, ${num(RC.pct_ahead,0)}% of the book</h2>
+    <div class="sec" data-sec="rep">
+    ${!months.length ? `<div class="empty">Nothing scheduled inside
+      ${RC.horizon_days} days.</div>` : `<div class="cal">${months.map((m) => `
+      <div class="calwk">${esc(monthName(m.key))}</div>
+      <div class="calbox ${m.rows.some((r) => r.soon) ? 'soon' : ''}">
+        ${m.rows.map((r) => `<div class="calrow" data-sym="${esc(r.symbol)}">
+          <span class="d">${esc(dayName(r.date))}</span>
+          <span class="sym">${esc(r.symbol)}</span>
+          <span class="co">${esc(r.name)}${r.estimated
+            ? ' <span class="est">est. date</span>' : ''}</span>
+          <span class="wt">${r.eps_estimate == null ? ''
+            : 'cons. ' + num(r.eps_estimate, 2) + ' · '}${num(r.weight_pct,1)}%
+            of book</span></div>`).join('')}
+      </div>`).join('')}</div>`}
+    ${(RC.unknown || []).length ? `<div class="xkey" style="margin-top:10px">
+      No scheduled date from Yahoo for ${(RC.unknown || []).map((u) =>
+      esc(u.symbol)).join(', ')} — ${(RC.unknown || []).some((u) => u.has_history)
+      ? 'the reporting history is there, the next date is not.'
+      : 'nothing on record at all.'} Absence of a date is not absence of a
+      quarter.</div>` : ''}
+    <div class="tlabel" style="margin:18px 0 7px">Last reported</div>
+    <div class="scroll"><table><thead><tr>
+    ${th('latest','symbol','Symbol',1)}${th('latest','date','Reported')}
+    ${th('latest','days_ago','Days ago',1)}${th('latest','eps_estimate','Expected')}
+    ${th('latest','eps_reported','Actual')}${th('latest','surprise_pct','Surprise')}
+    ${th('latest','record.median_surprise_pct','Record')}
+    ${th('latest','growth.revenue_yoy_pct','Revenue YoY')}
+    <th>Quarter</th>${th('latest','weight_pct','Weight')}
+    </tr></thead><tbody>${landed.map((r) => { const g = r.growth || {},
+      rec = r.record || {};
+      return `<tr class="${ROWSYM.has(r.symbol) ? 'click' : ''}"
+      data-sym="${esc(r.symbol)}">
+      <td>${esc(r.symbol)}</td><td>${esc(r.date)}</td>
+      <td>${r.days_ago == null ? '—' : r.days_ago}</td>
+      <td>${num(r.eps_estimate,2)}</td><td>${num(r.eps_reported,2)}</td>
+      <td class="${r.surprise_pct == null ? '' : r.beat ? 'beat'
+        : r.surprise_pct < 0 ? 'miss' : ''}">${pct(r.surprise_pct,1)}</td>
+      <td>${rec.n ? `${rec.beats}B / ${rec.misses}M of ${rec.n}` : '—'}</td>
+      <td class="${cls(g.revenue_yoy_pct)}">${pct(g.revenue_yoy_pct,1)}</td>
+      <td>${esc(g.period || '—')}</td><td>${num(r.weight_pct,1)}%</td>
+      </tr>`; }).join('')}</tbody></table></div>
+    <div class="prose" style="margin-top:8px">Surprise is against analyst
+      consensus, not against the thesis — a beat is a fact about expectations.
+      Revenue is compared with the same quarter a year earlier, never with last
+      quarter. A quarter that has not been reported is absent from this table
+      rather than present at zero.</div>
+    </div>`;
 
   // The board's figures beside today's, for every name that has either. Two
   // columns per multiple rather than one reconciled number: the gap IS the
   // reading, and a merged figure would be the one thing this cannot show.
-  const fw = (D.watchlist||[]).filter((x) => x.live || x.pe != null || x.fwd_pe != null);
-  const mult = !fw.length ? '' : `<h2>Multiples — board vs today,
-    ${fw.filter((x) => x.live).length} live</h2>
-    <div class="scroll"><table><thead><tr><th>Ticker</th>
-    <th>P/E board</th><th>P/E now</th><th>Drift</th>
-    <th>Fwd board</th><th>Fwd now</th><th>Drift</th>
-    <th>P/B</th><th>ND/EBITDA</th><th>ROE</th><th>Margin</th><th>Beta</th>
-    <th>Mkt cap</th><th>Street tgt</th><th>Street</th><th>Yours</th><th>Analysts</th>
-    <th>As of</th></tr></thead><tbody>${fw.map((x) => { const L = x.live || {};
-      return `<tr><td>${esc(x.ticker)}</td>
+  const fa = (D.watchlist||[]).filter((x) => x.live || x.pe != null || x.fwd_pe != null);
+  const fw = sortRows(fa.filter(hits), 'mult', 'live.pe');
+  const mult = !fa.length ? '' : `<h2 data-sec="mult">Multiples — board vs today,
+    ${fa.filter((x) => x.live).length} live</h2>
+    <div class="sec" data-sec="mult">
+    <div class="scroll"><table><thead><tr>${th('mult','ticker','Ticker',1)}
+    ${th('mult','pe','P/E board')}${th('mult','live.pe','P/E now')}
+    ${th('mult','pe_drift_pct','Drift')}
+    ${th('mult','fwd_pe','Fwd board')}${th('mult','live.fwd_pe','Fwd now')}
+    ${th('mult','fwd_pe_drift_pct','Drift')}
+    ${th('mult','live.pb','P/B')}${th('mult','live.net_debt_ebitda','ND/EBITDA')}
+    ${th('mult','live.roe_pct','ROE')}${th('mult','live.margin_pct','Margin')}
+    ${th('mult','live.beta','Beta')}${th('mult','live.market_cap','Mkt cap')}
+    <th>Street tgt</th>${th('mult','street_upside_pct','Street')}
+    ${th('mult','upside_now','Yours')}${th('mult','live.street_analysts','Analysts')}
+    ${th('mult','live.asof','As of')}</tr></thead><tbody>${fw.map((x) => {
+      const L = x.live || {};
+      return `<tr class="${ROWSYM.has(x.yahoo || x.ticker) ? 'click' : ''}"
+      data-sym="${esc(x.yahoo || x.ticker)}"><td>${esc(x.ticker)}</td>
       <td>${num(x.pe,1)}</td><td>${num(L.pe,1)}</td>
       <td>${pct(x.pe_drift_pct,0)}</td>
       <td>${num(x.fwd_pe,1)}</td><td>${num(L.fwd_pe,1)}</td>
@@ -994,16 +1442,27 @@ function paintSheet() {
       <td class="${cls(x.street_upside_pct)}">${pct(x.street_upside_pct,1)}</td>
       <td class="${cls(x.upside_now)}">${pct(x.upside_now,1)}</td>
       <td>${L.street_analysts == null ? '—' : num(L.street_analysts,0)}</td>
-      <td>${esc(L.asof || '—')}</td></tr>`; }).join('')}</tbody></table></div>`;
+      <td>${esc(L.asof || '—')}</td></tr>`; }).join('')}</tbody></table></div></div>`;
 
-  const ir = ROWS.filter((x) => x.ind);
-  const ind = !ir.length ? '' : `<h2>The chart, in numbers — ${ir.length} symbols</h2>
-    <div class="scroll"><table><thead><tr><th>Ticker</th><th>Close</th><th>RSI</th>
-    <th>State</th><th>%B</th><th>Band w</th><th>MACD h</th><th>MA50</th><th>MA200</th>
-    <th>Spread</th><th>vs MA200</th><th>ATR %</th><th>Vol 30d</th><th>Max DD</th>
-    <th>In range</th><th>Vol ×avg</th><th>Bars</th><th>As of</th>
-    </tr></thead><tbody>${ir.map((x) => { const i = x.ind;
-      return `<tr><td>${esc(x.label)}</td><td>${px(i.close)}</td>
+  const ia = ROWS.filter((x) => x.ind);
+  const ir = sortRows(ia.filter(hits), 'ind', 'ind.rsi');
+  const ind = !ia.length ? '' : `<h2 data-sec="ind">The chart, in numbers —
+    ${some(ir.length, ia.length, 'symbols')}</h2>
+    <div class="sec" data-sec="ind">
+    <div class="scroll"><table><thead><tr>${th('ind','label','Ticker',1)}
+    ${th('ind','ind.close','Close')}${th('ind','ind.rsi','RSI')}
+    ${th('ind','ind.rsi_state','State',1)}${th('ind','ind.bb_pct_b','%B')}
+    ${th('ind','ind.bb_width','Band w')}${th('ind','ind.macd_hist','MACD h')}
+    ${th('ind','ind.sma50','MA50')}${th('ind','ind.sma200','MA200')}
+    ${th('ind','ind.ma_spread_pct','Spread')}
+    ${th('ind','ind.above_sma200_pct','vs MA200')}
+    ${th('ind','ind.atr_pct','ATR %')}${th('ind','ind.vol_30d','Vol 30d')}
+    ${th('ind','ind.max_drawdown_pct','Max DD')}
+    ${th('ind','ind.range.pct','In range')}
+    ${th('ind','ind.volume.relative','Vol ×avg')}${th('ind','ind.bars','Bars')}
+    <th>As of</th></tr></thead><tbody>${ir.map((x) => { const i = x.ind;
+      return `<tr class="click" data-sym="${esc(x.sym)}">
+      <td>${esc(x.label)}</td><td>${px(i.close)}</td>
       <td>${num(i.rsi,1)}</td><td>${esc(i.rsi_state || '')}</td>
       <td>${i.bb_pct_b == null ? '—' : num(i.bb_pct_b,2)}</td>
       <td>${i.bb_width == null ? '—' : num(i.bb_width*100,1)+'%'}</td>
@@ -1017,16 +1476,23 @@ function paintSheet() {
       <td>${i.volume ? num(i.volume.relative,2) : '—'}</td>
       <td>${i.bars}</td><td>${esc(i.asof)}</td></tr>`; }).join('')}</tbody></table></div>
     <div class="prose" style="margin-top:8px">Computed in Python off the same
-      cached bars the chart draws. Descriptive only — no row here is a signal.</div>`;
+      cached bars the chart draws. Descriptive only — no row here is a signal.</div>
+    </div>`;
 
-  const a = `<h2>Flags — ${(D.alerts||[]).length}</h2>
+  const al = (D.alerts||[]).filter((x) => !q ||
+    (x.title + ' ' + x.detail).toLowerCase().includes(q));
+  const a = `<h2 data-sec="flag">Flags — ${some(al.length,
+      (D.alerts||[]).length, 'open')}</h2>
+    <div class="sec" data-sec="flag">
     <div class="scroll"><table><thead><tr><th>Level</th><th>What</th><th>Why</th>
-    </tr></thead><tbody>${(D.alerts||[]).map((x) => `<tr>
+    </tr></thead><tbody>${al.map((x) => `<tr>
       <td>${esc(x.level)}</td><td>${esc(x.title)}</td>
-      <td class="wrap">${esc(x.detail)}</td></tr>`).join('')}</tbody></table></div>`;
+      <td class="wrap">${esc(x.detail)}</td></tr>`).join('')}</tbody></table></div>
+    </div>`;
 
   const s = D.sources || {};
-  const src = `<h2>Provenance</h2><div class="scroll"><table><tbody>
+  const src = `<h2 data-sec="prov">Provenance</h2>
+    <div class="sec" data-sec="prov"><div class="scroll"><table><tbody>
     <tr><td>Generated</td><td>${esc(D.generated)}</td></tr>
     <tr><td>Run</td><td>${s.run_mode === 'refresh'
       ? `intraday refresh · prices and FX re-fetched, everything else served from
@@ -1044,9 +1510,37 @@ function paintSheet() {
       }</td></tr>
     <tr><td>Indicators</td><td>${Object.keys(D.indicators || {}).length} symbols ·
       derived from the cached bars, no separate fetch</td></tr>
-    </tbody></table></div>`;
+    <tr><td>Fund composition</td><td>${s.composition_asked == null ? 'not fetched'
+      : `${s.composition_resolved}/${s.composition_asked} funds broken out ·
+         ${s.composition_problems} problem${s.composition_problems === 1 ? '' : 's'} ·
+         ten constituents per fund is Yahoo's limit, not a setting`}</td></tr>
+    <tr><td>Reporting</td><td>${s.earnings_asked == null ? 'not fetched'
+      : `${s.earnings_resolved}/${s.earnings_asked} stocks carry a reporting
+         record · ${s.earnings_problems}
+         problem${s.earnings_problems === 1 ? '' : 's'} ·
+         ${(R.calendar||{}).n_unknown || 0} with no scheduled next date ·
+         funds are not asked, Yahoo answers them with a 404`}</td></tr>
+    </tbody></table></div></div>`;
 
-  $('#sheetbody').innerHTML = h + w + cov + mult + ind + a + src;
+  $('#sheetbody').innerHTML = h + w + cov + exp + rep + mult + ind + a + src;
+
+  // Collapse state is re-applied after the repaint rather than survived
+  // through it. Every table above is rebuilt from the payload on every
+  // interaction, which is the point - none of it can be a stale render of an
+  // older answer - so the only things that persist are in SS.
+  for (const node of $('#sheetbody').querySelectorAll('[data-sec]'))
+    node.setAttribute('data-shut', SS.shut[node.getAttribute('data-sec')] ? '1' : '0');
+
+  // The nav is built from the sections that actually rendered, not from a list
+  // kept alongside them. A hand-maintained list would keep offering a jump to
+  // Reporting on a run where Yahoo returned nothing and the section is absent.
+  const heads = [...$('#sheetbody').querySelectorAll('h2[data-sec]')];
+  $('#sheetnav').innerHTML = heads.map((n) => `<button class="navb"
+      data-go="${esc(n.getAttribute('data-sec'))}"
+      >${esc(n.textContent.split('—')[0].trim())}</button>`).join('')
+    + (SS.filter ? `<span class="xchip">${esc(SS.filter.kindLabel)}
+        <b>${esc(SS.filter.label)}</b>
+        <button id="xclear" title="Clear filter">×</button></span>` : '');
 }
 
 /* ---------------------------------------------------------------- wiring */
@@ -1096,8 +1590,101 @@ on('#ranges', 'click', (e) => {
 });
 on('#q', 'input', (e) => { state.q = e.target.value || ''; paintRail(); });
 
-on('#t-sheet', 'click', () => { const s = $('#sheet'); if (s) s.setAttribute('data-open','1'); });
-on('#t-close', 'click', () => { const s = $('#sheet'); if (s) s.removeAttribute('data-open'); });
+const sheetOpen = (open) => { const s = $('#sheet'); if (!s) return;
+  if (open) s.setAttribute('data-open','1'); else s.removeAttribute('data-open'); };
+on('#t-sheet', 'click', () => sheetOpen(true));
+on('#t-close', 'click', () => sheetOpen(false));
+
+/* -------------------------------------------------- the sheet, as a surface */
+
+// Picking up a bucket from a bar or a fund row. The same key is written for
+// every kind so the tables can filter on one rule; `kindLabel` is what the
+// chip says, because "Sector Technology" reads and "sector technology" does
+// not. Clicking the live filter again clears it - a toggle, not a trap.
+const setFilter = (kind, key, label, kindLabel) => {
+  const cur = SS.filter;
+  SS.filter = (cur && cur.kind === kind && cur.key === key)
+    ? null : {kind, key, label, kindLabel};
+  paintSheet();
+};
+
+// Open a symbol in the main view. The sheet closes, because leaving it up
+// would hide the chart the click just asked for.
+const jump = (sym) => {
+  if (!sym || !ROWSYM.has(sym)) return;
+  sheetOpen(false);
+  select(sym);
+};
+
+on('#sheetnav', 'click', (e) => {
+  if (!e.target || !e.target.closest) return;
+  if (e.target.closest('#xclear')) { SS.filter = null; return paintSheet(); }
+  const b = e.target.closest('.navb');
+  if (!b) return;
+  const id = b.getAttribute('data-go');
+  // Jumping to a collapsed section opens it. Scrolling someone to a heading
+  // with nothing under it is the navigation equivalent of a dead link.
+  SS.shut[id] = false;
+  paintSheet();
+  const head = $(`#sheetbody h2[data-sec="${id}"]`);
+  if (head) head.scrollIntoView({block: 'start', behavior: 'smooth'});
+});
+
+on('#sheetbody', 'click', (e) => {
+  const t = e.target;
+  if (!t || !t.closest) return;
+
+  const head = t.closest('th.s');
+  if (head) {
+    const table = head.getAttribute('data-t'), k = head.getAttribute('data-k');
+    const cur = SS.sort[table];
+    SS.sort[table] = (cur && cur.k === k)
+      ? {k, dir: -cur.dir}
+      : {k, dir: Number(head.getAttribute('data-d0')) || -1};
+    return paintSheet();
+  }
+
+  const h2 = t.closest('h2[data-sec]');
+  if (h2) {
+    const id = h2.getAttribute('data-sec');
+    SS.shut[id] = !SS.shut[id];
+    return paintSheet();
+  }
+
+  const bar = t.closest('.xrow[data-fk]');
+  if (bar) return setFilter(bar.getAttribute('data-fk'),
+    bar.getAttribute('data-fv'), bar.getAttribute('data-fl'),
+    {sector: 'Sector', country: 'Geography', industry: 'Industry'}[
+      bar.getAttribute('data-fk')] || '');
+
+  const fund = t.closest('tr[data-fund]');
+  if (fund) {
+    const sym = fund.getAttribute('data-fund');
+    return setFilter('fund', sym, sym, 'Inside');
+  }
+
+  const row = t.closest('[data-sym]');
+  if (row) jump(row.getAttribute('data-sym'));
+});
+
+on('#xq', 'input', (e) => { SS.q = e.target.value || ''; paintSheet(); });
+
+on('#xunits', 'click', (e) => {
+  SS.units = SS.units === 'eur' ? 'pct' : 'eur';
+  e.currentTarget.setAttribute('aria-pressed', String(SS.units === 'eur'));
+  e.currentTarget.textContent = SS.units === 'eur' ? 'Show %' : 'Show €';
+  paintSheet();
+});
+
+on('#xall', 'click', (e) => {
+  const ids = [...document.querySelectorAll('#sheetbody h2[data-sec]')]
+    .map((n) => n.getAttribute('data-sec'));
+  const shutting = ids.some((id) => !SS.shut[id]);
+  for (const id of ids) SS.shut[id] = shutting;
+  e.currentTarget.setAttribute('aria-pressed', String(shutting));
+  e.currentTarget.textContent = shutting ? 'Expand all' : 'Collapse all';
+  paintSheet();
+});
 
 on('#t-theme', 'click', () => {
   let dark = false;
