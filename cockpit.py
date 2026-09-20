@@ -283,6 +283,17 @@ def _cycle(mode, quiet=False, verbose=True):
         f"{exposures['names']['n']} names resolved "
         f"({exposures['names']['resolved_pct']:.0f}%), "
         f"{exposures['concentration']['effective_n']:g} effective positions")
+    # Said out loud because it is the input to a decision nobody can make from
+    # the position list: two funds filed under different themes can be drawing
+    # on one pot of names, and a target weight argued from the bucket labels
+    # would size two sleeves that are partly the same sleeve.
+    ov = exposures["overlap"]
+    if ov["pairs"]:
+        worst = ov["pairs"][0]
+        say(f"  Overlap: {ov['n_pairs']} fund pairs share a disclosed name, "
+            f"{ov['n_substantial']} substantially; widest is {worst['a']} x "
+            f"{worst['b']} on {worst['n_shared']} names, EUR "
+            f"{worst['value_eur']:,.0f} ({worst['pct']:.1f}% of the book)")
 
     reports = reporting.book(holdings, earn, dt.date.today())
     cal = reports["calendar"]
@@ -516,6 +527,32 @@ def selftest():
     check("assets: overview is still built", not ov,
           f"template lost: {', '.join(ov)}" if ov
           else "grid, view switch and treemap container all present")
+
+    # The chart is the only element on the page that measures its own container,
+    # and with autoSize on it gets exactly one chance - the vendored library
+    # makes resize() a no-op for as long as the observer is installed. The
+    # zero-size guard in paintChart is what keeps construction out of a hidden
+    # container. Delete it and the page still opens, still smoke-tests clean,
+    # and builds a zero-wide chart on every cold load; whether it ever recovers
+    # is then the ResizeObserver's business rather than this repo's.
+    guard = [h for h in ('const rect = box.getBoundingClientRect();',
+                         'if (!rect.width || !rect.height) return;')
+             if h not in tmpl]
+    check("assets: chart refuses a box it cannot measure", not guard,
+          f"template lost: {', '.join(guard)}" if guard
+          else "paintChart still defers on a zero-size container")
+
+    # Two narrow tiers, not one. The single stacked fallback this replaced was
+    # measured at a 1000px canvas: 2589px of page, the thesis 1077px below the
+    # fold, and the rail a 320px box over 2019px of names nested inside a page
+    # that also scrolled. Collapsing the tiers back into one breakpoint is the
+    # obvious tidy-up and it restores exactly that.
+    tiers = [t for t in ('(max-width:1180px) and (min-width:761px)',
+                         'grid-template-areas:"rail mid" "rail thesis"',
+                         '(max-width:760px)') if t not in tmpl]
+    check("assets: narrow layout keeps both tiers", not tiers,
+          f"template lost: {', '.join(tiers)}" if tiers
+          else "two-column tier and one-column fallback both present")
 
     check("privacy: holdings file is gitignored", *_leak_scan())
 

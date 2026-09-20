@@ -291,6 +291,98 @@ def test_a_constituent_with_no_sector_is_none_not_a_guess(fake_book):
     assert row["country"] == "United States"
 
 
+# -------------------------------------------------------------------- overlap
+
+def _two_funds(a_lines, b_lines, a_value=1000.0, b_value=1000.0):
+    book = [holding(FUND_A, "FA", a_value), holding(FUND_B, "FB", b_value)]
+    boards = comp(FA={"top_holdings": [{"symbol": s, "pct": p} for s, p in a_lines]},
+                  FB={"top_holdings": [{"symbol": s, "pct": p} for s, p in b_lines]})
+    return exposure.overlap(exposure._positions(book), boards, a_value + b_value)
+
+
+def test_two_funds_holding_nothing_in_common_produce_no_pair(fake_book):
+    out = _two_funds([("AAA", 50.0)], [("BBB", 50.0)])
+    assert out["pairs"] == [] and out["n_pairs"] == 0
+
+
+def test_a_shared_name_is_found_and_priced(fake_book):
+    """500 of AAA through FA (50% of 1000) plus 250 through FB (25% of 1000).
+    One bet, arrived at twice, worth 750 of a 2000 book."""
+    [pair] = _two_funds([("AAA", 50.0), ("CCC", 10.0)],
+                        [("AAA", 25.0), ("DDD", 10.0)])["pairs"]
+    assert pair["shared"] == ["AAA"]
+    assert pair["value_eur"] == 750.0
+    assert pair["pct"] == 37.5
+
+
+def test_the_shared_share_is_asymmetric(fake_book):
+    """A small fund can sit wholly inside a big one. Averaging the two sides
+    into a single number is exactly how that disappears."""
+    [pair] = _two_funds([("AAA", 10.0), ("BBB", 10.0), ("CCC", 80.0)],
+                        [("AAA", 60.0), ("BBB", 40.0)])["pairs"]
+    assert pair["a_disclosed_in_shared_pct"] == 20.0     # 20 of 100 disclosed
+    assert pair["b_disclosed_in_shared_pct"] == 100.0    # all of it
+
+
+def test_shared_names_lead_with_the_biggest(fake_book):
+    [pair] = _two_funds([("AAA", 5.0), ("BBB", 30.0)],
+                        [("AAA", 5.0), ("BBB", 30.0)])["pairs"]
+    assert pair["shared"] == ["BBB", "AAA"]
+
+
+def test_each_side_reports_how_much_it_disclosed(fake_book):
+    """The load-bearing caveat. A pair built from 12% of one fund is a floor,
+    and the reader cannot tell unless the coverage travels with the pair."""
+    [pair] = _two_funds([("AAA", 6.0), ("BBB", 6.0)], [("AAA", 40.0)])["pairs"]
+    assert pair["a_disclosed_pct"] == 12.0
+    assert pair["b_disclosed_pct"] == 40.0
+
+
+def test_a_substantial_pair_is_counted_and_a_coincidental_one_is_not(fake_book):
+    """Two broad trackers brushing against each other on one name is noise.
+    A pair that is mostly the same fund is the finding."""
+    noise = _two_funds([("AAA", 2.0), ("XXX", 90.0)], [("AAA", 2.0), ("YYY", 90.0)])
+    assert noise["n_pairs"] == 1 and noise["n_substantial"] == 0
+    real = _two_funds([("AAA", 60.0), ("BBB", 30.0)], [("AAA", 55.0), ("BBB", 35.0)])
+    assert real["n_substantial"] == 1
+
+
+def test_a_stock_is_not_a_fund_and_never_forms_a_pair(fake_book):
+    book = [holding(STOCK_A, "AAA", 1000.0), holding(FUND_A, "FA", 1000.0)]
+    boards = comp(FA={"top_holdings": [{"symbol": "AAA", "pct": 50.0}]})
+    out = exposure.overlap(exposure._positions(book), boards, 2000.0)
+    assert out["n_funds"] == 1 and out["pairs"] == []
+
+
+def test_a_fund_the_board_knows_nothing_about_is_left_out_not_zeroed(fake_book):
+    """Absent disclosure is not evidence of no overlap, so the fund does not
+    appear as a pair sharing nothing - it does not appear at all."""
+    book = [holding(FUND_A, "FA", 1000.0), holding(FUND_B, "FB", 1000.0)]
+    boards = comp(FA={"top_holdings": [{"symbol": "AAA", "pct": 50.0}]})
+    out = exposure.overlap(exposure._positions(book), boards, 2000.0)
+    assert out["n_funds"] == 1 and out["pairs"] == []
+
+
+def test_overlap_survives_an_empty_book(fake_book):
+    assert exposure.overlap([], {}, 0.0) == {
+        "pairs": [], "n_pairs": 0, "n_funds": 0, "n_substantial": 0}
+
+
+def test_three_funds_make_three_pairs(fake_book, monkeypatch):
+    """Pairwise, not a single blended blob - which fund to trim is a question
+    about a pair."""
+    FUND_C = "XX0000000103"
+    book = [holding(FUND_A, "FA", 1000.0), holding(FUND_B, "FB", 1000.0),
+            holding(FUND_C, "FC", 1000.0)]
+    monkeypatch.setitem(C.ASSET_CLASS, FUND_C, "fund")
+    line = {"top_holdings": [{"symbol": "AAA", "pct": 50.0}]}
+    out = exposure.overlap(exposure._positions(book),
+                           comp(FA=line, FB=line, FC=line), 3000.0)
+    assert out["n_pairs"] == 3
+    assert {(p["a"], p["b"]) for p in out["pairs"]} == {
+        ("FA", "FB"), ("FA", "FC"), ("FB", "FC")}
+
+
 # ------------------------------------------------------------- concentration
 
 def test_equal_positions_give_an_effective_count_of_themselves(fake_book):

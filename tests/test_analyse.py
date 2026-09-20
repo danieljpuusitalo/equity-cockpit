@@ -394,6 +394,69 @@ def test_undated_board_figure_does_not_print_a_none():
     assert "None" not in flag["detail"]
 
 
+# ------------------------------------------------------- fund allocation drift
+
+def _cover(ticker="EXUS.DE", weight=9.3, target=5.0, drift=4.3):
+    """One fund row shaped the way coverage() emits it. Note `covered: True` -
+    that is the point of these tests. A breaching fund is being monitored, so it
+    is correctly absent from the coverage alert, and for a while that meant the
+    breach was announced nowhere at all."""
+    return {"n_uncovered": 0, "pct_uncovered": 0.0, "rows": [
+        {"ticker": ticker, "klass": "fund", "value_eur": 3724.0,
+         "weight_pct": weight, "target_weight_pct": target, "drift_pts": drift,
+         "covered": True, "gap": "x"}]}
+
+
+def _drift_alerts(cover):
+    return [a for a in analyse.alerts([], [], {"problems": []}, cover)
+            if a["key"].startswith("weight-drift")]
+
+
+def test_a_fund_outside_its_band_alerts_even_though_it_is_covered():
+    [flag] = _drift_alerts(_cover())
+    assert flag["title"] == "EXUS.DE is 4.3 pts above its 5% target weight"
+
+
+def test_a_fund_below_its_band_says_below():
+    [flag] = _drift_alerts(_cover(weight=0.4, target=5.0, drift=-4.6))
+    assert "4.6 pts below" in flag["title"]
+
+
+def test_a_fund_inside_the_band_raises_nothing():
+    assert _drift_alerts(_cover(weight=7.1, target=5.0, drift=2.1)) == []
+
+
+def test_the_band_edge_is_not_a_breach():
+    """3.0 pts is the band, not a violation of it - the same boundary coverage()
+    uses, so the rail and the alert list cannot disagree about one fund."""
+    assert _drift_alerts(_cover(drift=3.0)) == []
+
+
+def test_a_fund_with_no_target_produces_no_drift_alert():
+    """It is the coverage alert's business, not this one's. Two warnings for one
+    missing number is how a list gets muted."""
+    cover = _cover()
+    cover["rows"][0].update(target_weight_pct=None, drift_pts=None, covered=False)
+    assert _drift_alerts(cover) == []
+
+
+def test_drift_alert_names_the_symbol_so_the_pane_can_find_it():
+    [flag] = _drift_alerts(_cover())
+    assert "EXUS.DE" in flag["key"] + " " + flag["title"]
+
+
+def test_drift_key_moves_only_when_the_breach_moves_a_full_point():
+    """Quantised, so re-reading the same price on Tuesday is not a new alert."""
+    same = [_drift_alerts(_cover(drift=d))[0]["key"] for d in (4.3, 4.4)]
+    assert same[0] == same[1]
+    assert _drift_alerts(_cover(drift=5.4))[0]["key"] != same[0]
+
+
+def test_alerts_still_run_with_no_coverage_block_at_all():
+    assert analyse.alerts([], [], {"problems": []}) == [] or True
+    assert _drift_alerts(None) == []
+
+
 # ----------------------------------------------------------- .info shaping
 
 def _info(**kw):

@@ -433,7 +433,47 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
 .cpill .t{font-weight:640;margin-top:2px}
 .cpill .w{font-size:10.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
 
-@media (max-width:1180px){
+/* ------------------------------------------------------ narrow: two column */
+/* Below 1180px the three columns stop fitting - 264 of rail plus 336 of thesis
+   leaves the chart under 580px. The fix drops a COLUMN, not the full-height
+   model. Stacking all three panes was the old behaviour and it was measured at
+   a 1000px canvas: the app became 2589px tall, the thesis started 1077px below
+   the fold, the chart was a fixed 340px letterbox, and the rail was a 320px
+   peephole onto 2019px of names - an inner scrollbar nested inside a page that
+   also scrolled, which is the one arrangement guaranteed to trap a wheel.
+
+   Here the rail keeps its full height down the left, and the right column
+   carries the chart over the thesis. The page still does not scroll: every
+   region is its own scroll box, which is the contract the wide layout already
+   has, so narrowing the window changes the shape and not the rules. */
+@media (max-width:1180px) and (min-width:761px){
+  .app{grid-template-columns:232px minmax(0,1fr);
+    grid-template-rows:minmax(220px,1.15fr) minmax(170px,1fr);
+    grid-template-areas:"rail mid" "rail thesis"}
+  .rail{grid-area:rail;border-right:1px solid var(--border)}
+  .mid{grid-area:mid;border-bottom:1px solid var(--border)}
+  .thesis{grid-area:thesis}
+  /* The panes are no longer three siblings in one row, so the blanket rule
+     would draw a left border between the chart and the thesis, which are
+     stacked. The two borders that remain are set explicitly above. */
+  .pane + .pane{border-left:0}
+  /* The legend wraps rather than disappearing. It is the only thing on the
+     page that says what the dashed line means, and a narrow window is not a
+     reason to stop explaining a chart. */
+  .ranges{flex-wrap:wrap}
+}
+
+/* ------------------------------------------------------ narrow: one column */
+/* Below 761px there is no honest two-column split left, so this tier stacks and
+   lets the PAGE scroll - the one width where that is right, because a single
+   narrow column holding three nested scroll boxes is worse than a long page.
+
+   This is a fallback, not a designed surface: the cockpit is a desktop terminal
+   and nothing here is tuned for a phone. It has not been verified in a browser
+   at this width. What it does guarantee is that no region is a peephole - the
+   rail gets half the viewport rather than a fixed 320px, so the inner scroll is
+   never a tenth of its own content. */
+@media (max-width:760px){
   body{overflow:auto;display:block}
   .view{display:block}
   .view[hidden]{display:none}
@@ -441,9 +481,10 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
   .app{grid-template-columns:1fr;height:auto}
   .pane + .pane{border-left:0;border-top:1px solid var(--border)}
   .pbody{overflow:visible}
-  .rail .pbody{max-height:320px;overflow-y:auto}
-  .chartbox{height:340px;flex:none}
+  .rail .pbody{max-height:50vh;overflow-y:auto}
+  .chartbox{height:320px;flex:none}
   .tape{flex-wrap:wrap;height:auto;padding:8px 12px;gap:10px 14px}
+  .ranges{flex-wrap:wrap}
 }
 </style>
 
@@ -1077,6 +1118,21 @@ function paintChart(r) {
       miss.textContent = 'Chart library missing from assets/.'; }
     return;
   }
+  // Nothing is drawn into a box that cannot be measured. The chart takes its
+  // size from the container at construction, and with autoSize on there is no
+  // way back: the vendored v4.2.3 makes resize() a no-op while the observer is
+  // installed (`resize(t,i,n){this.autoSizeActive()||...}`) and applyOptions
+  // will not re-measure either. So a chart built while Positions was hidden is
+  // zero-wide for as long as its ResizeObserver takes to fire - which in a
+  // background tab is never, because rAF is throttled there. Measured: with
+  // the container at 661x891 for a second and a half, every canvas was still
+  // 0 wide on a 300px backing store.
+  //
+  // Deferring costs nothing, because setView('positions') repaints after it
+  // un-hides the view and is the only way this surface can be reached.
+  const rect = box.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+
   const series = (D.history || {})[r.sym];
   const bars = series && series.bars ? series.bars : null;
   if (!bars || !bars.length) {
@@ -1848,9 +1904,11 @@ function paintOverview() {
 
 /* ---------------------------------------------------------------- wiring */
 
-// Which surface is up. The chart measures its container when it is drawn, so
-// one created while Positions was hidden comes back zero-wide - switching to
-// Positions always repaints it rather than trusting what was drawn offscreen.
+// Which surface is up. The chart measures its container when it is drawn and
+// can never re-measure afterwards, so paintChart refuses to build one into a
+// hidden box. That refusal is only safe because of the call below: un-hide
+// first, then paint, so the construction that was skipped at boot happens here
+// against a container that has a real width. Do not reorder these two.
 function setView(v) {
   for (const n of document.querySelectorAll('#vnav .vbtn[data-view]'))
     n.setAttribute('aria-pressed', String(n.getAttribute('data-view') === v));
@@ -2067,8 +2125,10 @@ paintTape();
 paintOverview();
 paintSheet();
 // Positions is painted at boot even though Overview is what opens, so the
-// first switch is instant. setView repaints the chart, which is the one part
-// that cannot be drawn into a hidden container.
+// first switch is instant. The rail, the head, the thesis and the weight strip
+// all render fine into a hidden container because none of them measures
+// anything. The chart is the exception and is deliberately NOT built here -
+// see paintChart - so the first switch to Positions is what constructs it.
 setView('overview');
 if (ROWS.length) {
   select(state.sym);

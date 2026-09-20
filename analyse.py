@@ -596,6 +596,34 @@ def alerts(watchlist, holdings, health, cover=None):
             "detail": "; ".join(f"{r['ticker']} EUR {r['value_eur']:,.0f} - {r['gap']}"
                                 for r in biggest)})
 
+    # The other half of the fund contract. Coverage asks whether a policy exists;
+    # this asks whether the book still obeys it, and until it was added the answer
+    # went nowhere. A breaching fund is `covered`, correctly - it IS being
+    # monitored - so it drops out of the alert above, and the breach existed only
+    # as the `gap` string in the rail. Writing the eleven targets would therefore
+    # have made the cockpit quieter and watched less: eleven holdings out of the
+    # coverage warning, and drift firing nothing at all.
+    #
+    # Per fund rather than one aggregate, like multiple-stale below and unlike
+    # coverage above: "EXUS is 4 points heavy" is a finding about EXUS and the
+    # thesis pane attaches flags to a symbol by matching the key. The band is
+    # already 3 points wide, so the count stays small on its own.
+    for row in (cover or {}).get("rows", []):
+        drift = row.get("drift_pts")
+        if drift is None or abs(drift) <= C.WEIGHT_DRIFT_PCT:
+            continue
+        side = "above" if drift > 0 else "below"
+        found.append({
+            "level": "warning",
+            # Quantised to the point, so it re-fires when the breach actually
+            # moves rather than on every run that re-reads the same price.
+            "key": f"weight-drift:{row['ticker']}:{round(drift)}",
+            "title": f"{row['ticker']} is {abs(drift):.1f} pts {side} its "
+                     f"{row['target_weight_pct']:g}% target weight",
+            "detail": f"EUR {row['value_eur']:,.0f}, {row['weight_pct']:.1f}% of "
+                      f"the book against a {row['target_weight_pct']:g}% target. "
+                      f"The band is {C.WEIGHT_DRIFT_PCT:g} pts."})
+
     for item in watchlist:
         if item.get("trigger_hit"):
             found.append({

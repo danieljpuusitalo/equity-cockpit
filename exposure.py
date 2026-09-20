@@ -334,6 +334,79 @@ def names(positions, comp, funda, total):
             "n_both_ways": sum(1 for r in out if r["held_both_ways"])}
 
 
+# ------------------------------------------------------------------- overlap
+
+def overlap(positions, comp, total):
+    """Which funds are buying the same companies as each other.
+
+    `names` above answers "how much Microsoft do I own", which is the question
+    you ask about a company. This answers "are two of these funds the same
+    fund", which is the question you ask about an allocation - and it is the one
+    the cockpit could not answer. A bucket label is an intention, not evidence:
+    a tracker filed under one theme and a tracker filed under another can still
+    be drawing from one pot of names, and nothing in this repo would have said
+    so. Deciding a target weight off the labels alone means sizing two sleeves
+    that are partly the same sleeve.
+
+    Every figure here is a FLOOR, for the same reason the tables above carry a
+    coverage percentage: ten constituents are disclosed per fund. Two funds
+    could be identical from the eleventh line down and this would report them as
+    sharing nothing. `disclosed_pct` per side is what says how much of each fund
+    was actually visible - read a low pair as "unknown", never as "unrelated".
+    """
+    funds, sizes = {}, {}
+    for pos in positions:
+        if pos["klass"] != "fund" or not pos["symbol"] or not pos["value_eur"]:
+            continue
+        lines = {}
+        for line in (_fields(comp, pos["symbol"]) or {}).get("top_holdings") or []:
+            child, pct = line.get("symbol"), line.get("pct") or 0.0
+            if child and pct:
+                lines[child] = lines.get(child, 0.0) + pct
+        if lines:
+            funds[pos["symbol"]] = lines
+            sizes[pos["symbol"]] = pos["value_eur"]
+
+    pairs = []
+    keys = sorted(funds)
+    for i, a in enumerate(keys):
+        for b in keys[i + 1:]:
+            shared = sorted(set(funds[a]) & set(funds[b]),
+                            key=lambda c: -(funds[a][c] + funds[b][c]))
+            if not shared:
+                continue
+            # The EUR that reaches these companies through BOTH funds. Not
+            # "double counted" - the money is real and counted once - but it is
+            # one bet arrived at twice, which is what a target weight set from
+            # two separate bucket labels would fail to price.
+            eur = sum(sizes[a] * funds[a][c] / 100.0 +
+                      sizes[b] * funds[b][c] / 100.0 for c in shared)
+            share = lambda f, s: (round(sum(funds[f][c] for c in s) /
+                                        sum(funds[f].values()) * 100, 1)
+                                  if sum(funds[f].values()) else 0.0)
+            pairs.append({
+                "a": a, "b": b,
+                "shared": shared, "n_shared": len(shared),
+                "n_a": len(funds[a]), "n_b": len(funds[b]),
+                # Of what each fund disclosed, how much sits in common ground.
+                # Asymmetric on purpose: a small fund can be wholly contained in
+                # a large one, and one averaged number would hide exactly that.
+                "a_disclosed_in_shared_pct": share(a, shared),
+                "b_disclosed_in_shared_pct": share(b, shared),
+                "a_disclosed_pct": round(sum(funds[a].values()), 1),
+                "b_disclosed_pct": round(sum(funds[b].values()), 1),
+                "value_eur": round(eur, 2),
+                "pct": round(eur / total * 100, 2) if total else 0.0})
+
+    pairs.sort(key=lambda p: -p["value_eur"])
+    return {"pairs": pairs, "n_pairs": len(pairs), "n_funds": len(funds),
+            # A pair sharing most of what it disclosed is the finding; the long
+            # tail of two-name coincidences between broad trackers is not.
+            "n_substantial": sum(1 for p in pairs
+                                 if max(p["a_disclosed_in_shared_pct"],
+                                        p["b_disclosed_in_shared_pct"]) >= 50.0)}
+
+
 # ------------------------------------------------------------- concentration
 
 def concentration(positions, total):
@@ -480,6 +553,7 @@ def look_through(holdings, funda, comp):
         "industries": industries(positions, funda, total),
         "geography": geography(positions, funda, comp, total),
         "names": names(positions, comp, funda, total),
+        "overlap": overlap(positions, comp, total),
         "concentration": concentration(positions, total),
         "fees": fees(positions, comp, total),
         "multiples": multiples(positions, funda, comp, total),
