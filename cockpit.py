@@ -75,10 +75,25 @@ def append_history(record):
         fh.write(json.dumps(record, default=str) + "\n")
 
 
+def earnings_cache_leaks(cached, funds):
+    """Which funds ended up in the earnings cache, and how many stocks are in it.
+
+    A function rather than four lines inside selftest, because inline it was
+    unfalsifiable and nobody noticed. It read the whole file, whose keys are
+    `{"fetched", "symbols"}` - so the intersection with a set of tickers was
+    empty by construction and the detail line said "2 stocks cached" on every
+    run no matter what the cache held. Same shape as the bug class this repo
+    keeps meeting: a check that always passes reads exactly like a check that
+    found nothing wrong.
+    """
+    symbols = (cached or {}).get("symbols", {})
+    return len(symbols), sorted(set(symbols) & set(funds))
+
+
 # ------------------------------------------------------------------- health
 
 def health(csv_age, csv_date, source_problems, mapping_findings,
-           log_meta, last_run, mismatches=(), today=None):
+           log_meta, last_run, mismatches=(), feeds=(), today=None):
     """One honest status for the whole machine.
 
     'ok' means every input is fresh and every mapping checks out. Anything
@@ -86,6 +101,24 @@ def health(csv_age, csv_date, source_problems, mapping_findings,
     """
     today = today or dt.date.today()
     problems = []
+
+    # Composition, earnings and multiples are counted onto the page and kept
+    # out of here on purpose: one fund Yahoo will not break out is a coverage
+    # figure, not a fault, and raising it would make the board permanently
+    # amber over a vendor's ordinary gaps. That reasoning holds right up to
+    # zero. A feed asked about eight funds that answers for none of them is not
+    # thin, it is not answering - and on 2026-09-20 that exact state existed
+    # (an emptied cache, read back in refresh mode) while the page printed
+    # "All sources fresh". The difference between some and none is the whole
+    # signal, so it is the only threshold here.
+    for feed in feeds:
+        if not feed["asked"] or feed["resolved"]:
+            continue
+        problems.append({
+            "level": "critical", "key": f"feed-silent-{feed['name']}",
+            "title": f"{feed['label']} answered for none of "
+                     f"{feed['asked']} symbols",
+            "detail": feed["detail"]})
 
     for problem in source_problems:
         problems.append({"level": "critical", "key": f"source-{hash(problem) & 0xffff}",
@@ -267,8 +300,30 @@ def _cycle(mode, quiet=False, verbose=True):
     # Read once and used twice: health checks it for staleness, and the page
     # prints it so a refreshed price is never mistaken for a refreshed board.
     last_run = read_heartbeat()
+    # Asked-versus-answered for the three feeds whose ordinary gaps are a
+    # coverage figure rather than a fault. health() only speaks when a feed
+    # answers for nothing at all; the counts themselves still go to the page.
+    feeds = [
+        {"name": "composition", "label": "Fund composition",
+         "asked": len(comp_symbols), "resolved": with_comp,
+         "detail": "Every fund came back without a breakdown. The sector and "
+                   "look-through tables are running on the positions alone, so "
+                   f"read them as the book's {len(comp_symbols)} fund lines "
+                   "rather than what is inside them. Check state/"
+                   "fund-composition.json, then run a full pass."},
+        {"name": "earnings", "label": "The reporting calendar",
+         "asked": len(earn_symbols), "resolved": with_earn,
+         "detail": "No held stock has a reporting date. The calendar is empty "
+                   "because nothing answered, not because nothing is due. "
+                   "Check state/earnings.json, then run a full pass."},
+        {"name": "fundamentals", "label": "Multiples",
+         "asked": len(funda_symbols), "resolved": priced_funda,
+         "detail": "Nothing on the Equity Log or in the book carries a P/E. "
+                   "Every valuation figure on the page is the recorded one. "
+                   "Check state/fundamentals.json, then run a full pass."},
+    ]
     state = health(csv_age, csv_date, problems, mapping, log_meta,
-                   last_run, mismatches)
+                   last_run, mismatches, feeds)
 
     cover = analyse.coverage(holdings, watchlist)
     say(f"  Coverage: {len(cover['rows']) - cover['n_uncovered']}/"
@@ -579,10 +634,10 @@ def selftest():
             cached = {}
         funds = {C.YAHOO[i] for i, k in C.ASSET_CLASS.items()
                  if k == "fund" and C.YAHOO.get(i)}
-        leaked = sorted(set(cached) & funds)
+        n, leaked = earnings_cache_leaks(cached, funds)
         check("earnings: funds are not asked", not leaked,
               f"in the cache: {', '.join(leaked)}" if leaked
-              else f"{len(cached)} stocks cached, no funds")
+              else f"{n} stocks cached, no funds")
 
     level, kind = analyse.parse_trigger("Price below USD 285 does the same")
     check("analyse: trigger parser", (level, kind) == (285.0, "below"),

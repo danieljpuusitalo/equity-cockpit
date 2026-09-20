@@ -716,12 +716,181 @@ def test_a_refresh_with_no_cached_log_says_so(tmp_path, monkeypatch):
     assert "no Equity Log cache" in meta["problem"]
 
 
+# ------------------------------------------- a feed that answers for nothing
+
+def _health(feeds=()):
+    return cockpit.health(0, "2026-09-19", [], [], {"mode": "cache"},
+                          None, (), feeds, today=dt.date(2026, 9, 20))
+
+
+def _feed(asked, resolved, name="composition"):
+    return {"name": name, "label": "Fund composition", "asked": asked,
+            "resolved": resolved, "detail": "d"}
+
+
+def test_a_feed_that_answers_for_none_of_them_breaks_the_board():
+    """The state the emptied cache produced: read back in refresh mode, every
+    fund resolved to nothing, and the page said "All sources fresh"."""
+    state = _health([_feed(8, 0)])
+    assert state["status"] == "broken"
+    assert state["headline"] == "This page may be wrong"
+    assert "none of 8" in state["problems"][0]["title"]
+
+
+def test_one_fund_yahoo_will_not_break_out_is_still_ok():
+    """The documented intent this must not overturn: an ordinary vendor gap is
+    a coverage figure on the exposure tables, not a fault on the board."""
+    assert _health([_feed(8, 7)])["status"] == "ok"
+    assert _health([_feed(8, 1)])["status"] == "ok"
+
+
+def test_a_feed_with_nothing_to_ask_is_not_a_failure():
+    """A book with no funds in it asks about none. Zero of zero is silence
+    from the caller, not from Yahoo - the same distinction the cache merge
+    turns on."""
+    assert _health([_feed(0, 0)])["status"] == "ok"
+
+
+def test_each_silent_feed_is_named_separately():
+    state = _health([_feed(8, 0, "composition"), _feed(13, 0, "earnings")])
+    assert {p["key"] for p in state["problems"]} == {
+        "feed-silent-composition", "feed-silent-earnings"}
+
+
+def test_the_run_hands_health_every_feed_it_counts_onto_the_page():
+    """The defect was not the rule, it was that nothing was wired to it: the
+    counts existed in the payload and went nowhere else."""
+    import inspect
+    body = inspect.getsource(cockpit._cycle)
+    assert "mismatches, feeds)" in body
+    for name in ('"name": "composition"', '"name": "earnings"',
+                 '"name": "fundamentals"'):
+        assert name in body, f"{name} is counted but not handed to health"
+
+
+def test_the_earnings_guard_can_actually_fail():
+    """The mutation that exposed it: reading the file instead of its symbols.
+    That version returns no leak for any input, which is what it did in
+    production while printing a confident 'no funds'."""
+    cache = {"fetched": "2026-09-20",
+             "symbols": {"MSFT": {}, "XAIX.DE": {}, "NOKIA.HE": {}}}
+    assert cockpit.earnings_cache_leaks(cache, {"XAIX.DE", "EXUS.DE"}) == (
+        3, ["XAIX.DE"])
+
+
+def test_the_earnings_guard_counts_symbols_not_envelope_keys():
+    cache = {"fetched": "2026-09-20", "symbols": {"MSFT": {}, "AMZN": {}}}
+    n, leaked = cockpit.earnings_cache_leaks(cache, {"XAIX.DE"})
+    assert (n, leaked) == (2, [])       # not 2-because-fetched-and-symbols
+
+
+def test_the_earnings_guard_survives_a_cache_that_is_not_there_yet():
+    assert cockpit.earnings_cache_leaks({}, {"XAIX.DE"}) == (0, [])
+    assert cockpit.earnings_cache_leaks(None, {"XAIX.DE"}) == (0, [])
+
+
+# --------------------------------------------- caches merge, never replace
+
+def _cache_file(tmp_path, symbols):
+    path = tmp_path / "cache.json"
+    path.write_text(json.dumps({"fetched": "2026-09-19", "symbols": symbols}),
+                    encoding="utf-8")
+    return path
+
+
+def _symbols(path):
+    return json.loads(path.read_text(encoding="utf-8"))["symbols"]
+
+
+def test_a_narrower_call_does_not_delete_what_it_did_not_ask_about(tmp_path):
+    """The defect this exists for: `out` is built from the symbols the caller
+    named, and writing it as the whole file made the question the contents."""
+    path = _cache_file(tmp_path, {"AAA": {"fields": 1}, "BBB": {"fields": 2}})
+    sources._write_symbol_cache(path, _symbols(path), {"AAA": {"fields": 9}},
+                                "2026-09-20")
+    assert _symbols(path) == {"AAA": {"fields": 9}, "BBB": {"fields": 2}}
+
+
+def test_an_empty_result_does_not_write_at_all(tmp_path):
+    """A one-stock fake book asks for no funds. That is a question with no
+    symbols in it, not a discovery that the funds are gone."""
+    path = _cache_file(tmp_path, {"AAA": {"fields": 1}})
+    before = path.read_text(encoding="utf-8")
+    assert sources._write_symbol_cache(path, {"AAA": {"fields": 1}}, {},
+                                       "2026-09-20") is False
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_fresh_wins_over_stale_for_the_same_symbol(tmp_path):
+    path = _cache_file(tmp_path, {"AAA": {"fetched": "old"}})
+    sources._write_symbol_cache(path, _symbols(path),
+                                {"AAA": {"fetched": "new"}}, "2026-09-20")
+    assert _symbols(path)["AAA"]["fetched"] == "new"
+
+
+def test_the_write_restamps_the_file_date(tmp_path):
+    path = _cache_file(tmp_path, {"AAA": {"fields": 1}})
+    sources._write_symbol_cache(path, _symbols(path), {"BBB": {"fields": 2}},
+                                "2026-09-20")
+    assert json.loads(path.read_text(encoding="utf-8"))["fetched"] == "2026-09-20"
+
+
+def test_a_first_write_needs_no_previous_cache(tmp_path):
+    path = tmp_path / "nested" / "cache.json"
+    assert sources._write_symbol_cache(path, None, {"AAA": {"fields": 1}},
+                                       "2026-09-20") is True
+    assert _symbols(path) == {"AAA": {"fields": 1}}
+
+
+def test_every_symbol_cache_goes_through_the_merge(tmp_path, monkeypatch):
+    """Named individually elsewhere; checked as a set here so a fifth cache
+    added later cannot quietly reintroduce a full replace."""
+    import inspect
+    src = inspect.getsource(sources)
+    for cache in ("PRICE_HISTORY_CACHE", "FUNDAMENTALS_CACHE",
+                  "FUND_COMPOSITION_CACHE", "EARNINGS_CACHE"):
+        assert f"_write_symbol_cache(C.{cache}" in src, f"{cache} writes raw"
+    # The old shape, verbatim. If it comes back anywhere, this fails.
+    assert '"symbols": out}, separators' not in src
+
+
 # ------------------------------ ...and leaves the daily record alone
 
 @pytest.fixture
 def one_position_book(tmp_path, monkeypatch):
     """Every boundary `_cycle` touches, replaced. Nothing here reaches disk or
-    network, so what the test observes is purely which side effects fired."""
+    network, so what the test observes is purely which side effects fired.
+
+    That sentence was false for a while, and the cost was real. This fixture
+    stubs boundaries by NAME, so when the pipeline grew `fund_composition` and
+    `earnings` the list silently fell behind, and running `pytest` drove the
+    full production run against the production cache files: the fake book has
+    no funds, so `fund_composition` was handed an empty symbol list and wrote a
+    37-byte `{"symbols":{}}` over the real one. The board lost 48 points of
+    sector resolution and its whole reporting calendar, and said it was fresh.
+
+    So the stubs below are no longer the only defence. Every path that points
+    into the live state directory is redirected into tmp_path first, which does
+    not need to know what the pipeline touches: a fetcher nobody remembered to
+    stub can still only write into a directory pytest throws away. Add stubs
+    for speed; the redirect is what makes the test safe.
+
+    The redirect found a second leak the moment it was written. It was scoped
+    to `config` at first, which missed `cockpit.HEARTBEAT` - so a test run was
+    also overwriting `last_run.json`, the file the "hasn't run in N days" check
+    reads. Hence the scan below is over modules, not over one module."""
+    # Must come before anything imports or calls a fetcher. Found by scanning
+    # for Paths that live under C.STATE rather than by listing names, because
+    # the failure mode both times was a list that fell behind the code.
+    redirected = []
+    for mod in (C, cockpit, notify, sources, analyse, render):
+        for name in dir(mod):
+            path = getattr(mod, name, None)
+            if not isinstance(path, pathlib.Path) or C.STATE not in path.parents:
+                continue
+            monkeypatch.setattr(mod, name, tmp_path / path.name)
+            redirected.append(f"{mod.__name__}.{name}")
+    assert len(redirected) >= 7, f"state paths not found - guard is dead: {redirected}"
     lot = {"isin": "FI0009000681", "account_no": "1", "name": "Nokia",
            "tunnus": "NOKIA", "ccy": "EUR", "units": 100.0, "cost_eur": 400.0,
            "nordnet_mv_eur": 420.0, "bought": "2024-01-15",
@@ -745,9 +914,40 @@ def one_position_book(tmp_path, monkeypatch):
                         lambda syms, today=None, cached_only=False: ({}, {}, 0))
     monkeypatch.setattr(sources, "fundamentals",
                         lambda syms, today=None, cached_only=False: ({}, {}, 0))
+    monkeypatch.setattr(sources, "fund_composition",
+                        lambda syms, today=None, cached_only=False: ({}, {}, 0))
+    monkeypatch.setattr(sources, "earnings",
+                        lambda syms, today=None, cached_only=False: ({}, {}, 0))
     monkeypatch.setattr(render, "write", lambda data, out_dir=None: ("a", "b"))
-    monkeypatch.setattr(cockpit, "REFRESH_BEAT", tmp_path / "last_refresh.json")
     return tmp_path
+
+
+def test_the_fixture_puts_every_cache_somewhere_pytest_can_throw_away(
+        one_position_book):
+    """The redirect is the guard; this is the guard on the guard. Deleting the
+    loop in the fixture leaves every stub in place and every test still green,
+    which is exactly how the first version of this fixture looked."""
+    caches = {n: getattr(C, n) for n in dir(C) if n.endswith("_CACHE")
+              and isinstance(getattr(C, n), pathlib.Path)}
+    assert set(caches) >= {"PRICE_HISTORY_CACHE", "FUNDAMENTALS_CACHE",
+                           "FUND_COMPOSITION_CACHE", "EARNINGS_CACHE"}
+    for name, path in caches.items():
+        assert one_position_book in path.parents, f"{name} still points at {path}"
+
+
+def test_a_full_run_leaves_the_real_state_directory_untouched(one_position_book):
+    """The incident itself, as a test. Stubs are a list somebody maintains, so
+    this asserts the outcome instead: drive the whole pipeline and require that
+    nothing in the repo's own state directory moved. A fetcher added later and
+    forgotten fails here rather than on Daniel's cache."""
+    if not C.STATE.is_dir():
+        pytest.skip("no live state directory on this machine")
+    snap = lambda: {p.name: (p.stat().st_size, p.stat().st_mtime_ns)
+                    for p in C.STATE.glob("*.json")}
+    before = snap()
+    cockpit.run(quiet=True, verbose=False)
+    after = snap()
+    assert after == before, "a full test run wrote into the live state directory"
 
 
 def test_a_refresh_writes_no_heartbeat_and_no_history_line(one_position_book,

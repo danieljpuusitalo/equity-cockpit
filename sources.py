@@ -237,6 +237,41 @@ def _bars_have_volume(bars):
     return bool(bars) and len(bars[-1]) >= 6
 
 
+def _write_symbol_cache(path, previous, fresh, today):
+    """Write previous-plus-fresh. Never fresh alone, never nothing at all.
+
+    Every fetcher below builds its result from the symbols it was ASKED about,
+    so writing that result as the whole file makes the caller's question the
+    file's new contents. A narrower call then deletes every symbol it did not
+    mention, and a call with no symbols empties the file outright.
+
+    That is not hypothetical. On 2026-09-20 the test suite drove the full
+    pipeline against a one-stock fake book; `fund_composition` was handed an
+    empty fund list, wrote `{"symbols":{}}` over a populated cache, and the
+    board dropped from 99% sector resolution to 51% and lost its whole
+    reporting calendar while printing "All sources fresh".
+
+    The per-symbol ladders already refuse to let a THIN vendor answer overwrite
+    a good one. This is that same rule one level up, and it is the rule this
+    codebase keeps having to relearn: **a source answering with less than it
+    should is not the same as it saying nothing.** Here the source is the
+    caller, and a symbol absent from the question is unasked, not gone.
+
+    Entries for symbols nobody asks about any more are kept, not pruned. They
+    cost bytes; the alternative is a delete rule that has to be sure a holding
+    is really sold, and this function cannot be sure of that.
+
+    Returns True if it wrote.
+    """
+    if not fresh:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"fetched": str(today),
+                                "symbols": {**(previous or {}), **fresh}},
+                               separators=(",", ":")), encoding="utf-8")
+    return True
+
+
 def price_history(symbols, today=None, cached_only=False):
     """Daily bars per symbol, cached on disk and refetched once per day.
 
@@ -297,10 +332,7 @@ def price_history(symbols, today=None, cached_only=False):
             problems[symbol] = "no history from Yahoo"
 
     if not cached_only:
-        C.PRICE_HISTORY_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        C.PRICE_HISTORY_CACHE.write_text(json.dumps(
-            {"fetched": str(today), "symbols": out}, separators=(",", ":")),
-            encoding="utf-8")
+        _write_symbol_cache(C.PRICE_HISTORY_CACHE, series, out, today)
     return out, problems, pulled
 
 
@@ -478,10 +510,7 @@ def fundamentals(symbols, today=None, cached_only=False):
             problems[symbol] = "no fundamentals from Yahoo"
 
     if not cached_only:
-        C.FUNDAMENTALS_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        C.FUNDAMENTALS_CACHE.write_text(json.dumps(
-            {"fetched": str(today), "symbols": out}, separators=(",", ":")),
-            encoding="utf-8")
+        _write_symbol_cache(C.FUNDAMENTALS_CACHE, series, out, today)
     return out, problems, pulled
 
 
@@ -643,10 +672,7 @@ def fund_composition(symbols, today=None, cached_only=False):
             problems[symbol] = "no composition from Yahoo"
 
     if not cached_only:
-        C.FUND_COMPOSITION_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        C.FUND_COMPOSITION_CACHE.write_text(json.dumps(
-            {"fetched": str(today), "symbols": out}, separators=(",", ":")),
-            encoding="utf-8")
+        _write_symbol_cache(C.FUND_COMPOSITION_CACHE, series, out, today)
     return out, problems, pulled
 
 
@@ -856,10 +882,7 @@ def earnings(symbols, today=None, cached_only=False):
             problems[symbol] = "no earnings from Yahoo"
 
     if not cached_only:
-        C.EARNINGS_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        C.EARNINGS_CACHE.write_text(json.dumps(
-            {"fetched": str(today), "symbols": out}, separators=(",", ":")),
-            encoding="utf-8")
+        _write_symbol_cache(C.EARNINGS_CACHE, series, out, today)
     return out, problems, pulled
 
 
