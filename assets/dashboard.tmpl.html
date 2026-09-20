@@ -331,8 +331,113 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
 .beat{color:var(--good-ink);font-weight:620}
 .miss{color:var(--neg);font-weight:620}
 
+/* ------------------------------------------------------------------ views */
+/* Two top-level views, one surface each. The cockpit used to open on a single
+   position, which meant the first thing it showed you was one name out of
+   twenty-four and nothing about the book. Overview is the altitude above the
+   rail; Positions is the rail. The data sheet stays an overlay on both,
+   because it is an appendix to whichever one you are reading. */
+.view{display:flex;flex-direction:column;flex:1;min-height:0}
+.view[hidden]{display:none}
+.vnav{display:flex;gap:3px;margin-left:14px}
+.vbtn{padding:4px 11px;border-radius:7px;font-size:12px;font-weight:600;
+  color:var(--muted);border:1px solid transparent;background:none}
+.vbtn:hover{color:var(--ink-2)}
+.vbtn[aria-pressed="true"]{background:var(--surface-2);color:var(--ink);
+  border-color:var(--border)}
+
+.ov{overflow-y:auto;flex:1;padding:14px 16px 28px;background:var(--surface-1)}
+.ovgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));
+  gap:13px;align-items:start}
+.ovwide{grid-column:1/-1}
+@media (min-width:1100px){ .ovtall{grid-column:span 2} }
+.card{border:1px solid var(--border);border-radius:9px;padding:11px 13px;
+  background:var(--surface-1);min-width:0}
+.card h3{font-size:10.5px;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 9px;
+  display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.card h3 .rt{font-weight:600;letter-spacing:.02em;text-transform:none;
+  font-size:11px}
+
+/* The headline band. Four numbers that describe the whole book, at a size that
+   says they are the headline - not a 12px strip in the chrome. */
+.ovtop{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
+  gap:13px;margin-bottom:13px}
+.stat{border:1px solid var(--border);border-radius:9px;padding:11px 13px;
+  background:var(--surface-1)}
+.stat .k{font-size:10.5px;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted)}
+.stat .v{font-size:25px;font-weight:660;letter-spacing:-.02em;margin:5px 0 1px;
+  font-variant-numeric:tabular-nums;line-height:1.05}
+.stat .s{font-size:11.5px;color:var(--ink-2);line-height:1.35}
+
+/* ---------------------------------------------------------------- treemap */
+/* Rectangles arrive from Python already placed (see treemap.py). The page
+   positions them in percent and does no layout arithmetic of its own, so the
+   picture cannot drift from the numbers beside it. */
+.tmap{position:relative;width:100%;aspect-ratio:21/9;min-height:230px;
+  background:var(--plane);border-radius:7px;overflow:hidden}
+.tile{position:absolute;overflow:hidden;padding:4px 6px;cursor:default;
+  border:1px solid var(--surface-1);border-radius:2px;
+  display:flex;flex-direction:column;justify-content:flex-start}
+.tile[data-sym]{cursor:pointer}
+.tile[data-sym]:hover{outline:2px solid var(--ink);outline-offset:-2px;z-index:2}
+.tile .tt{font-size:11.5px;font-weight:680;color:var(--ink);line-height:1.15;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .tw{font-size:10.5px;color:var(--ink-2);font-variant-numeric:tabular-nums;
+  line-height:1.3;white-space:nowrap}
+/* Below roughly 46x30 there is no room for a second line and barely room for
+   the first. Hiding the label beats overlapping text that reads as corruption. */
+.tile.sm .tw{display:none}
+.tile.xs .tt{display:none}
+.tmapkey{display:flex;gap:12px;align-items:center;flex-wrap:wrap;
+  font-size:11px;color:var(--muted);margin-top:7px}
+.ramp{display:inline-flex;height:9px;width:112px;border-radius:2px;
+  overflow:hidden;border:1px solid var(--border)}
+.ramp i{flex:1}
+
+/* ------------------------------------------------------------- list cards */
+/* A ranked list with a magnitude bar. The bar is scaled to the largest row in
+   the card, which is legitimate here because the question is "which of these
+   is biggest", not "what share of the whole is this" - the opposite of the
+   composition bars up at .xrow, and the reason they are different classes. */
+.lrow{display:grid;grid-template-columns:62px 1fr 74px;gap:9px;
+  align-items:center;padding:3px 0;font-size:12.5px;border-radius:4px}
+.lrow.click{cursor:pointer}
+.lrow.click:hover{background:var(--surface-2)}
+.lrow .t{font-weight:620;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.lrow .track{position:relative;height:13px;background:var(--surface-2);
+  border-radius:3px;overflow:hidden}
+.lrow .track i{position:absolute;top:0;bottom:0;border-radius:3px}
+.lrow .track i.p{left:50%;background:var(--pos)}
+.lrow .track i.n{right:50%;background:var(--neg)}
+.lrow .track .mid{position:absolute;left:50%;top:0;bottom:0;width:1px;
+  background:var(--axis)}
+.lrow .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:560}
+.lnote{font-size:11px;color:var(--muted);margin-top:7px;line-height:1.4}
+/* The sheet's composition bars reused at a third of the width. The 168px label
+   column there would leave a card here with a 30px track, so the label gives
+   way to the bar - the bar is the thing being read. */
+.card .xrow{grid-template-columns:minmax(64px,1.15fr) minmax(56px,1fr) 44px;
+  gap:8px;font-size:12px}
+.card .xrow .n,.card .xrow .p{padding:0}
+
+/* --------------------------------------------------------- calendar strip */
+.cstrip{display:flex;gap:7px;flex-wrap:wrap}
+.cpill{border:1px solid var(--border);border-radius:7px;padding:6px 9px;
+  font-size:11.5px;min-width:74px}
+.cpill.soon{border-color:var(--warn)}
+.cpill .d{font-size:10.5px;color:var(--muted);letter-spacing:.06em;
+  text-transform:uppercase}
+.cpill .t{font-weight:640;margin-top:2px}
+.cpill .w{font-size:10.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
 @media (max-width:1180px){
   body{overflow:auto;display:block}
+  .view{display:block}
+  .view[hidden]{display:none}
+  .ov{overflow:visible}
   .app{grid-template-columns:1fr;height:auto}
   .pane + .pane{border-left:0;border-top:1px solid var(--border)}
   .pbody{overflow:visible}
@@ -348,12 +453,27 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
   <span class="chip" id="t-pl"></span>
   <span class="sep"></span>
   <span class="chip" id="t-meta"></span>
+  <nav class="vnav" id="vnav">
+    <button class="vbtn" data-view="overview" aria-pressed="true">Overview</button>
+    <button class="vbtn" data-view="positions" aria-pressed="false">Positions</button>
+    <!-- Data is a peer in the nav but not a peer in the DOM: it is an overlay
+         over whichever view is up, because it is an appendix to both. That is
+         why its pressed state tracks the sheet and not `state.view`. -->
+    <button class="vbtn" id="t-sheet" aria-pressed="false">Data</button>
+  </nav>
   <span class="spacer"></span>
-  <button class="tbtn" id="t-sheet">Data</button>
   <button class="tbtn" id="t-theme" aria-pressed="false">Dark</button>
 </header>
 <div id="t-banner"></div>
 
+<div class="view" id="v-overview">
+  <div class="ov">
+    <div class="ovtop" id="ovtop"></div>
+    <div class="ovgrid" id="ovgrid"></div>
+  </div>
+</div>
+
+<div class="view" id="v-positions" hidden>
 <div class="app" id="app">
   <aside class="pane rail">
     <div class="phead"><input class="search" id="q" type="search"
@@ -401,6 +521,7 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
     <div class="phead"><span class="ptitle">THESIS</span></div>
     <div class="pbody" id="thesis"></div>
   </aside>
+</div>
 </div>
 
 <div class="sheet" id="sheet">
@@ -1543,7 +1664,204 @@ function paintSheet() {
         <button id="xclear" title="Clear filter">×</button></span>` : '');
 }
 
+/* -------------------------------------------------------------- overview */
+/* The altitude above the rail. Every number here arrived computed - the
+   treemap rectangles included - because the page displays and does not decide.
+   See overview.py for the three rules it enforces, all of which are the same
+   rule: a position that cannot be measured is excluded and counted, never
+   measured as zero. */
+
+const OV = D.overview || {};
+
+// Colour by return since purchase. The four plotted colours were chosen for
+// colour-vision deficiency and the palette block says not to hand-tune them,
+// so this mixes --pos/--neg into the plane rather than inventing a ramp.
+// Saturation saturates at TONE_CAP: past it, more green stops meaning more.
+const TONE_CAP = 25;
+// A position with no cost basis has no return. Drawn neutral, not green.
+const tone = (p) => p == null ? 'var(--surface-2)'
+  : `color-mix(in srgb, var(--${p < 0 ? 'neg' : 'pos'}) ${
+      Math.round(14 + Math.min(Math.abs(p), TONE_CAP) / TONE_CAP * 52)
+    }%, var(--plane))`;
+
+const card = (title, right, body, extra) =>
+  `<section class="card ${extra || ''}"><h3><span>${esc(title)}</span>`
+  + (right ? `<span class="rt">${right}</span>` : '')
+  + `</h3>${body}</section>`;
+
+const stat = (k, v, s) => `<div class="stat"><div class="k">${esc(k)}</div>
+  <div class="v">${v}</div><div class="s">${s || ''}</div></div>`;
+
+// Composition bars, reusing .xrow and its cross-filter attributes so a sector
+// clicked here means the same thing as a sector clicked in the data sheet.
+const ovbars = (rows, kind, limit) => (rows || []).slice(0, limit).map((r) => {
+  const w = Math.max(0, Math.min(100, r.pct || 0));
+  return `<div class="xrow" data-fk="${kind}" data-fv="${esc(r.key)}"
+    data-fl="${esc(r.label || r.key)}">
+    <div class="n" title="${esc(r.label || r.key)}">${esc(r.label || r.key)}</div>
+    <div class="t"><i class="f" style="width:${w}%"></i></div>
+    <div class="p">${num(r.pct, 1)}%</div></div>`;
+}).join('');
+
+// A ranked list with a diverging magnitude bar, scaled to the largest row in
+// the card. That is the right scale here because the question is "which of
+// these is biggest", not "what share of the whole is this".
+const lrows = (rows, get, fmt, note) => {
+  if (!rows || !rows.length) return '<div class="lnote">Nothing to show.</div>';
+  const max = Math.max(...rows.map((r) => Math.abs(get(r) || 0)), 1e-9);
+  return rows.map((r) => {
+    const v = get(r) || 0;
+    const clickable = r.sym && ROWSYM.has(r.sym);
+    return `<div class="lrow ${clickable ? 'click' : ''}"
+      ${clickable ? `data-sym="${esc(r.sym)}"` : ''}
+      title="${esc(r.name || r.ticker || '')}${note ? ' — ' + note(r) : ''}">
+      <div class="t">${esc(r.ticker || r.sym || '—')}</div>
+      <div class="track"><span class="mid"></span>
+        <i class="${v < 0 ? 'n' : 'p'}" style="width:${
+          Math.abs(v) / max * 50}%"></i></div>
+      <div class="v ${cls(v)}">${fmt(r)}</div></div>`;
+  }).join('');
+};
+
+function paintOverview() {
+  const t = OV.totals || {}, day = OV.day || {}, alloc = OV.allocation || {};
+  const X = D.exposure || {}, con = OV.contributors || {}, mv = OV.movers || {};
+  const cal = (D.reporting || {}).calendar || {};
+  const conc = X.concentration || {};
+
+  $('#ovtop').innerHTML = [
+    stat('Book value', eur(t.value_eur),
+      `${OV.n || 0} names · cost ${eur(t.cost_eur)}`),
+    stat('Total P/L', `<span class="${cls(t.pl_eur)}">${eur(t.pl_eur)}</span>`,
+      `${pct(t.pl_pct)} against what it cost`),
+    stat('Annualised', t.irr_pct == null ? '—'
+      : `<span class="${cls(t.irr_pct)}">${pct(t.irr_pct, 1)}</span>`,
+      t.irr_since ? `money-weighted since ${esc(t.irr_since)}`
+                  : esc(t.irr_note || 'not computed')),
+    // The quiet count is the honest part of this stat: it says how much of the
+    // book had no previous close and is therefore absent from the move rather
+    // than sitting inside it as a zero.
+    stat('Today', day.pct == null ? '—'
+      : `<span class="${cls(day.pct)}">${pct(day.pct)}</span>`,
+      day.pct == null ? 'no position has a previous close'
+        : `${eur(day.value_eur)} · ${num(day.covered_pct, 0)}% of the book priced`
+          + (day.n_quiet ? ` · ${day.n_quiet} without a close` : '')),
+  ].join('');
+
+  const tiles = (alloc.tiles || []).map((k) => {
+    const size = (k.w < 4.6 || k.h < 9) ? 'xs' : (k.h < 15 ? 'sm' : '');
+    const clickable = k.sym && ROWSYM.has(k.sym);
+    return `<div class="tile ${size}" ${clickable
+        ? `data-sym="${esc(k.sym)}"` : ''}
+      style="left:${k.x}%;top:${k.y}%;width:${k.w}%;height:${k.h}%;
+             background:${tone(k.pl_pct)}"
+      title="${esc(k.name || k.ticker)} · ${eur(k.value_eur)} · ${
+        num(k.weight_pct, 1)}% of book · ${pct(k.pl_pct)} since purchase">
+      <div class="tt">${esc(k.ticker)}</div>
+      <div class="tw">${num(k.weight_pct, 1)}% · ${pct(k.pl_pct)}</div></div>`;
+  }).join('');
+  const ramp = [-TONE_CAP, -15, -6, 0, 6, 15, TONE_CAP]
+    .map((v) => `<i style="background:${tone(v)}"></i>`).join('');
+
+  const cards = [];
+
+  cards.push(card('Allocation', `${alloc.n || 0} positions`,
+    `<div class="tmap">${tiles || ''}</div>
+     <div class="tmapkey"><span>Area is weight, colour is return since
+       purchase</span><span>−${TONE_CAP}%</span><span class="ramp">${ramp}
+       </span><span>+${TONE_CAP}%</span>
+       ${alloc.n_undrawn ? `<span>${alloc.n_undrawn} position${
+         alloc.n_undrawn === 1 ? '' : 's'} not drawn</span>` : ''}</div>`,
+    'ovwide'));
+
+  cards.push(card('What made the money',
+    con.n_unknown ? `${con.n_known} of ${con.n_known + con.n_unknown} priced`
+                  : `${con.n_known} positions`,
+    lrows((con.best || []).concat(con.worst || []), (r) => r.pl_eur,
+      (r) => eur(r.pl_eur), (r) => `${num(r.share_pct, 1)}% of gross movement`)
+    + `<div class="lnote">Attributed in euros, not percent. A 60% gain on the
+       smallest position is a rounding error; 12% on the largest one is the
+       year.${con.n_unknown ? ` ${con.n_unknown} position${
+         con.n_unknown === 1 ? ' has' : 's have'} no cost basis and cannot be
+       attributed.` : ''}</div>`,
+    'ovtall'));
+
+  cards.push(card('Today', mv.n_quiet ? `${mv.n_priced} priced, ${
+      mv.n_quiet} quiet` : `${mv.n_priced} priced`,
+    lrows((mv.up || []).concat(mv.down || []), (r) => r.day_pct,
+      (r) => pct(r.day_pct), (r) => eur(r.day_eur))));
+
+  cards.push(card('Sector', X.sectors
+      ? `${num(X.sectors.resolved_pct, 0)}% resolved` : '',
+    ovbars((X.sectors || {}).rows, 'sector', 8)
+    + `<div class="lnote">Look-through: a fund's sleeve is spread across its
+       disclosed constituents. Yahoo publishes ten per fund, so this names
+       ${num((X.sectors || {}).resolved_pct, 0)}% of the book.</div>`,
+    'ovtall'));
+
+  cards.push(card('Geography', X.geography
+      ? `${num(X.geography.resolved_pct, 0)}% resolved` : '',
+    ovbars((X.geography || {}).rows, 'country', 8)));
+
+  cards.push(card('Concentration', `${conc.n || 0} names`,
+    `<dl class="kv">
+      <dt>Largest position</dt><dd>${num(conc.top1_pct, 1)}%</dd>
+      <dt>Top five</dt><dd>${num(conc.top5_pct, 1)}%</dd>
+      <dt>Top ten</dt><dd>${num(conc.top10_pct, 1)}%</dd>
+      <dt>Effective positions</dt><dd>${num(conc.effective_n, 1)}</dd>
+    </dl>
+    <div class="lnote">Effective positions is 1/HHI: the number of equally
+      sized holdings that would concentrate the book as much as this one is.
+      ${num(conc.effective_n, 1)} against ${conc.n || 0} held.</div>`));
+
+  cards.push(card('Next prints', cal.n
+      ? `${cal.n} in ${cal.horizon_days} days · ${num(cal.pct_ahead, 0)}% of book`
+      : 'none scheduled',
+    ((cal.rows || []).length
+      ? `<div class="cstrip">${(cal.rows || []).slice(0, 12).map((r) =>
+          `<div class="cpill ${r.soon ? 'soon' : ''}"
+             title="${esc(r.name || '')}${r.estimated ? ' · date estimated' : ''}">
+            <div class="d">${esc(String(r.date).slice(5))}${
+              r.estimated ? ' ~' : ''}</div>
+            <div class="t">${esc(r.symbol)}</div>
+            <div class="w">${num(r.weight_pct, 1)}%</div></div>`).join('')}</div>`
+      : '<div class="lnote">No dated results in the horizon.</div>')
+    + (cal.n_unknown ? `<div class="lnote">${cal.n_unknown} stock${
+        cal.n_unknown === 1 ? ' has' : 's have'} no date from Yahoo. A missing
+        date is missing, not "nothing due".</div>` : ''),
+    'ovwide'));
+
+  const flags = (D.alerts || []);
+  cards.push(card('Flags', `${flags.length}`,
+    flags.length
+      ? flags.slice(0, 8).map((a) => `<div class="alert">
+          <span class="dot" style="background:${
+            LEVEL[a.level] || 'var(--muted)'}"></span>
+          <span><div class="t">${esc(a.title)}</div>
+          <div class="d">${esc(a.detail)}</div></span></div>`).join('')
+        + (flags.length > 8
+          ? `<div class="lnote">${flags.length - 8} more.</div>` : '')
+      : '<div class="lnote">Nothing tripped a threshold.</div>'));
+
+  $('#ovgrid').innerHTML = cards.join('');
+}
+
 /* ---------------------------------------------------------------- wiring */
+
+// Which surface is up. The chart measures its container when it is drawn, so
+// one created while Positions was hidden comes back zero-wide - switching to
+// Positions always repaints it rather than trusting what was drawn offscreen.
+function setView(v) {
+  for (const n of document.querySelectorAll('#vnav .vbtn[data-view]'))
+    n.setAttribute('aria-pressed', String(n.getAttribute('data-view') === v));
+  const o = $('#v-overview'), p = $('#v-positions');
+  if (o) o.hidden = v !== 'overview';
+  if (p) p.hidden = v !== 'positions';
+  if (v === 'positions') {
+    const r = ROWS.find((x) => x.sym === state.sym);
+    if (r) paintChart(r);
+  }
+}
 
 function select(sym) {
   if (!sym) return;
@@ -1591,8 +1909,15 @@ on('#ranges', 'click', (e) => {
 on('#q', 'input', (e) => { state.q = e.target.value || ''; paintRail(); });
 
 const sheetOpen = (open) => { const s = $('#sheet'); if (!s) return;
-  if (open) s.setAttribute('data-open','1'); else s.removeAttribute('data-open'); };
-on('#t-sheet', 'click', () => sheetOpen(true));
+  if (open) s.setAttribute('data-open','1'); else s.removeAttribute('data-open');
+  // Data sits in the view nav, so its pressed state has to say whether the
+  // overlay is up - however it was opened. A bar clicked on the Overview
+  // opens the sheet too, and a nav button that stayed unpressed through that
+  // would be lying about where the reader is.
+  const b = $('#t-sheet');
+  if (b) b.setAttribute('aria-pressed', String(!!open)); };
+on('#t-sheet', 'click', () =>
+  sheetOpen(!$('#sheet') || !$('#sheet').getAttribute('data-open')));
 on('#t-close', 'click', () => sheetOpen(false));
 
 /* -------------------------------------------------- the sheet, as a surface */
@@ -1615,6 +1940,32 @@ const jump = (sym) => {
   sheetOpen(false);
   select(sym);
 };
+
+on('#vnav', 'click', (e) => {
+  const b = e.target && e.target.closest && e.target.closest('.vbtn');
+  // Data is in this nav and is not a view. Without the guard it would call
+  // setView(null) and hide both of them.
+  if (b && b.getAttribute('data-view')) setView(b.getAttribute('data-view'));
+});
+
+// Every clickable thing on the Overview leads somewhere specific. A tile or a
+// ranked row opens that position; a composition bar opens the data sheet
+// already filtered to it. An overview whose charts are only pictures is the
+// glorified list this view exists to replace.
+on('#ovgrid', 'click', (e) => {
+  const t = e.target;
+  if (!t || !t.closest) return;
+  const bar = t.closest('.xrow[data-fk]');
+  if (bar) {
+    const kind = bar.getAttribute('data-fk');
+    sheetOpen(true);
+    return setFilter(kind, bar.getAttribute('data-fv'),
+      bar.getAttribute('data-fl'),
+      {sector: 'Sector', country: 'Geography', industry: 'Industry'}[kind] || '');
+  }
+  const node = t.closest('[data-sym]');
+  if (node) { setView('positions'); jump(node.getAttribute('data-sym')); }
+});
 
 on('#sheetnav', 'click', (e) => {
   if (!e.target || !e.target.closest) return;
@@ -1713,7 +2064,12 @@ try {
 } catch (e) {}
 
 paintTape();
+paintOverview();
 paintSheet();
+// Positions is painted at boot even though Overview is what opens, so the
+// first switch is instant. setView repaints the chart, which is the one part
+// that cannot be drawn into a hidden container.
+setView('overview');
 if (ROWS.length) {
   select(state.sym);
 } else {

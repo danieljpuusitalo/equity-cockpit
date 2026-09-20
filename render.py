@@ -9,6 +9,7 @@ import json
 import datetime as dt
 
 import config as C
+import overview as overview_mod
 
 MARKER = "/*__DATA__*/"
 LIB_MARKER = "/*__CHARTLIB__*/"
@@ -31,6 +32,18 @@ def payload(positions_valued, watchlist, alerts, health, fx, sources,
         out = dict(row)
         out["ticker"] = row.get("tunnus") or row.get("name")
         holdings.append(out)
+    totals = {
+        "value_eur": total_value,
+        "cost_eur": total_cost,
+        "pl_eur": round(total_value - total_cost, 2),
+        "pl_pct": round((total_value / total_cost - 1) * 100, 2) if total_cost else 0.0,
+        # Money-weighted annual return across every lot in the book. P/L
+        # says how much; this says how fast, which is what tells a
+        # three-year hold apart from a three-week one at the same +18%.
+        "irr_pct": (book_return or {}).get("irr_pct"),
+        "irr_since": (book_return or {}).get("since"),
+        "irr_note": (book_return or {}).get("note"),
+    }
     return {
         "generated": dt.datetime.now().isoformat(timespec="seconds"),
         "holdings": holdings,
@@ -64,18 +77,13 @@ def payload(positions_valued, watchlist, alerts, health, fx, sources,
         "health": health,
         "fx": fx,
         "sources": sources,
-        "totals": {
-            "value_eur": total_value,
-            "cost_eur": total_cost,
-            "pl_eur": round(total_value - total_cost, 2),
-            "pl_pct": round((total_value / total_cost - 1) * 100, 2) if total_cost else 0.0,
-            # Money-weighted annual return across every lot in the book. P/L
-            # says how much; this says how fast, which is what tells a
-            # three-year hold apart from a three-week one at the same +18%.
-            "irr_pct": (book_return or {}).get("irr_pct"),
-            "irr_since": (book_return or {}).get("since"),
-            "irr_note": (book_return or {}).get("note"),
-        },
+        "totals": totals,
+        # The book as one thing rather than as a list: custody accounts folded,
+        # the treemap already laid out, today's move measured over the part of
+        # the book that actually has a previous close, and the P/L attributed
+        # in euros. This is what the Overview opens on, so none of it may be
+        # computed in the browser - including the rectangles.
+        "overview": overview_mod.build(holdings, totals),
         # symbol -> {irr_pct, since, note}. Folded across custody accounts here
         # rather than in the page, because a blended IRR is not the average of
         # two IRRs and the browser has no way to know that.

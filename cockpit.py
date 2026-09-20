@@ -329,6 +329,17 @@ def _cycle(mode, quiet=False, verbose=True):
        indicators=indicators.snapshot_all(history), exposure=exposures,
        reporting=reports)
 
+    over = data["overview"]
+    day, alloc = over["day"], over["allocation"]
+    # The quiet count is the number worth watching here: it is how much of the
+    # book has no previous close and is therefore absent from the day move
+    # rather than sitting in it as a zero.
+    say(f"  Overview: {over['n']} names folded from {len(holdings)} rows; "
+        f"{alloc['n']} tiles laid out; day move "
+        + ("unmeasurable" if day["pct"] is None else f"{day['pct']:+.2f}%")
+        + f" over {day['covered_pct']:.0f}% of the book "
+          f"({day['n_quiet']} quiet)")
+
     html_path, json_path = render.write(data)
     say(f"  Rendered: {html_path}")
 
@@ -494,6 +505,17 @@ def selftest():
     check("assets: sheet is still interactive", not hooks,
           f"template lost: {', '.join(hooks)}" if hooks
           else "nav, collapsible sections and shared filter state all present")
+    # Same argument one level up. The Overview is the page's landing surface
+    # and it is built entirely in script: delete the grid container and the
+    # page still opens, still smoke-tests clean, and simply shows an empty
+    # screen where the book used to be. Four hooks, same as above - the two
+    # containers, the view switch, and the treemap tiles that are the one
+    # thing here the browser must not be allowed to lay out for itself.
+    ov = [h for h in ('id="ovgrid"', 'id="v-overview"', 'function setView',
+                      'class="tmap"') if h not in tmpl]
+    check("assets: overview is still built", not ov,
+          f"template lost: {', '.join(ov)}" if ov
+          else "grid, view switch and treemap container all present")
 
     check("privacy: holdings file is gitignored", *_leak_scan())
 

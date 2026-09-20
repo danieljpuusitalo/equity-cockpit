@@ -77,7 +77,16 @@ const WALK = `
   scan('rail', document.querySelector('#list').innerHTML);
   scan('tape', document.querySelector('#t-meta').innerHTML);
   scan('data sheet', document.querySelector('#sheetbody').innerHTML);
-  globalThis.__smoke = {rows: ROWS.length, bad: bad};
+  scan('overview headline', document.querySelector('#ovtop').innerHTML);
+  scan('overview grid', document.querySelector('#ovgrid').innerHTML);
+  // The treemap is the one picture on the page that is laid out in Python, so
+  // a tile count that disagrees with the payload means the page dropped
+  // rectangles on the floor - a map with a hole in it and no legend.
+  const grid = document.querySelector('#ovgrid').innerHTML || '';
+  const drawn = (grid.match(/class="tile /g) || []).length;
+  const want = ((D.overview || {}).allocation || {}).n || 0;
+  if (drawn !== want) bad.push('treemap: ' + drawn + ' tiles drawn, ' + want + ' laid out');
+  globalThis.__smoke = {rows: ROWS.length, tiles: drawn, bad: bad};
 })();`;
 
 try {
@@ -93,4 +102,5 @@ if (s.bad.length) {
   for (const b of s.bad.slice(0, 20)) console.error(`  ${b}`);
   process.exit(1);
 }
-console.log(`SMOKE OK  ${path} · ${s.rows} rows painted, no runtime errors`);
+console.log(`SMOKE OK  ${path} · ${s.rows} rows painted, ${s.tiles} treemap `
+  + 'tiles drawn, no runtime errors');
