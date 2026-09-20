@@ -609,6 +609,27 @@ def selftest():
           f"template lost: {', '.join(tiers)}" if tiers
           else "two-column tier and one-column fallback both present")
 
+    # A placeholder target that renders as a bare number IS a policy to whoever
+    # reads the page next, and the repo already has form for exactly this - a
+    # derived status claiming more than it means. Both render sites have to
+    # carry the marker, so both are hooked; losing either one is invisible in
+    # every other check, because the page still draws a perfectly good number.
+    basis = [h for h in ('title="Placeholder, not a policy"',
+                         'title="Filled in by a rule, not a decision.')
+             if h not in tmpl]
+    check("assets: a placeholder target says so", not basis,
+          f"template lost: {', '.join(basis)}" if basis
+          else "marked in the coverage table and in the thesis pane")
+
+    placeholders = sorted(i for i, b in C.TARGET_BASIS.items()
+                          if b == "placeholder" and C.TARGET_WEIGHT.get(i)
+                          is not None)
+    check("config: placeholder targets are declared, not silent",
+          all(C.TARGET_BASIS.get(i) in ("policy", "placeholder")
+              for i in C.TARGET_BASIS),
+          f"{len(placeholders)} placeholder, "
+          f"{sum(1 for i, b in C.TARGET_BASIS.items() if b == 'policy' and C.TARGET_WEIGHT.get(i) is not None)} written policy")
+
     check("privacy: holdings file is gitignored", *_leak_scan())
 
     lots, problems = sources.nordnet_lots()

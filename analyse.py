@@ -526,22 +526,36 @@ def coverage(holdings, watchlist):
                "yahoo": symbol if symbol and symbol != "MISSING" else None,
                "name": h.get("name", ""), "klass": klass, "account": h.get("account"),
                "value_eur": h["value_eur"], "weight_pct": weight,
-               "target_weight_pct": None, "drift_pts": None,
-               "covered": False, "gap": None}
+               "target_weight_pct": None, "target_basis": None,
+               "drift_pts": None, "covered": False, "gap": None}
 
         if klass == "fund":
             target = C.TARGET_WEIGHT.get(isin)
+            basis = C.TARGET_BASIS.get(isin, "policy")
             row["target_weight_pct"] = target
+            row["target_basis"] = basis if target is not None else None
             if target is None:
                 row["gap"] = "no target weight set"
             else:
+                # Computed for a placeholder too - it is what fills the
+                # allocation column and gives the tables something to draw.
                 drift = round(weight - target, 2)
                 row["drift_pts"] = drift
-                row["covered"] = True
-                if abs(drift) > C.WEIGHT_DRIFT_PCT:
-                    side = "above" if drift > 0 else "below"
-                    row["gap"] = (f"{abs(drift):.1f} pts {side} its "
-                                  f"{target:g}% target weight")
+                if basis == "placeholder":
+                    # Deliberately NOT covered. A placeholder is a number in
+                    # the field, not a decision, and `covered` is what the
+                    # headline counts as monitored. Calling it covered would
+                    # move eleven holdings out of the coverage warning on the
+                    # strength of an arithmetic default - the exact move this
+                    # file's TARGET_WEIGHT comment refuses for current weight.
+                    row["gap"] = ("target weight is a placeholder, not a "
+                                  "policy - still to be decided")
+                else:
+                    row["covered"] = True
+                    if abs(drift) > C.WEIGHT_DRIFT_PCT:
+                        side = "above" if drift > 0 else "below"
+                        row["gap"] = (f"{abs(drift):.1f} pts {side} its "
+                                      f"{target:g}% target weight")
         else:
             if item is None:
                 row["gap"] = "no thesis on the Equity Log"
@@ -611,6 +625,12 @@ def alerts(watchlist, holdings, health, cover=None):
     for row in (cover or {}).get("rows", []):
         drift = row.get("drift_pts")
         if drift is None or abs(drift) <= C.WEIGHT_DRIFT_PCT:
+            continue
+        # A placeholder target still draws its drift onto the page, where it
+        # is labelled as a placeholder and read in context. It must never
+        # reach Telegram: an alert is a claim that something needs attention,
+        # and "you have drifted from a number nobody chose" is not that claim.
+        if row.get("target_basis") == "placeholder":
             continue
         side = "above" if drift > 0 else "below"
         found.append({

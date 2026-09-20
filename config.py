@@ -80,6 +80,17 @@ ASSET_CLASS = {isin: (h.get("class") or "stock").lower()
 TARGET_WEIGHT = {isin: h.get("target_weight_pct")
                  for isin, h in _P["holdings"].items()}
 
+# The third state. A target can be a written policy, or a number parked in the
+# field so the allocation tables have something to draw - and those two must
+# not look alike. `null` already says "nothing here"; without this, a
+# PLACEHOLDER says "policy" in every place a real target does, and six months
+# later nothing distinguishes a decision from a default.
+#
+# Absent means "policy", so a hand-written target needs no extra key and every
+# file that predates this reads correctly.
+TARGET_BASIS = {isin: (h.get("target_basis") or "policy")
+                for isin, h in _P["holdings"].items()}
+
 FX_PAIRS = {"USD": "EURUSD=X", "SEK": "EURSEK=X", "DKK": "EURDKK=X",
             "NOK": "EURNOK=X", "GBP": "EURGBP=X"}
 

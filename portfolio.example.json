@@ -40,6 +40,15 @@
       "bucket": "Index funds",
       "class": "fund",
       "target_weight_pct": null
+    },
+
+    "IE00BFMKZ959": {
+      "symbol": "SEAC.AS",
+      "name": "A fund whose target is a stand-in, not a decision",
+      "bucket": "Thematic - example",
+      "class": "fund",
+      "target_weight_pct": 5.0,
+      "target_basis": "placeholder"
     }
   },
 
@@ -49,6 +58,7 @@
     "symbol": "Yahoo Finance symbol, or null for 'no public feed; carry at the broker's own valuation'",
     "bucket": "free-text grouping for concentration reporting; anything unmapped reads as Unclassified",
     "class": "'stock' -> judged by thesis: needs a target, a trigger and a written reason. 'fund' -> judged by allocation: needs a target weight and a drift band, not a thesis.",
-    "target_weight_pct": "funds only. Intended share of the book, in percent. null means 'no policy set yet' - the cockpit reports that as an open gap rather than inventing a number for you."
+    "target_weight_pct": "funds only. Intended share of the book, in percent. null means 'no policy set yet' - the cockpit reports that as an open gap rather than inventing a number for you.",
+    "target_basis": "optional, funds only. Omit it (or 'policy') for a weight you decided. 'placeholder' for a number parked in the field so the allocation columns have something to draw: the drift is still computed and shown, but the holding stays UNCOVERED, the page labels the number as a placeholder, and it is never alerted on. Without this key a stand-in is indistinguishable from a decision, which is the whole reason it exists. tools/placeholder_targets.py fills these in by rule."
   }
 }

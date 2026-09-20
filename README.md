@@ -219,6 +219,31 @@ missing. A **fund** is judged by allocation — give it a `target_weight_pct` an
 it is measured against that instead. Demanding a falsifiable thesis from a world
 index tracker produces a permanent warning you will learn to ignore.
 
+### Target weights you have not decided yet
+
+A fund with `"target_weight_pct": null` reads as an open gap, which is correct
+but leaves the allocation columns empty and the feature hard to look at. The
+third state fills them without pretending:
+
+```json
+"IE00B4L5Y983": {"symbol": "IWDA.AS", "name": "iShares Core MSCI World",
+                 "bucket": "Broad equity - world", "class": "fund",
+                 "target_weight_pct": 7, "target_basis": "placeholder"}
+```
+
+`"placeholder"` means *a rule put this here, not a decision*. The drift is still
+computed and drawn, but the holding stays **uncovered**, the page labels the
+number as a placeholder in both places it appears, and it never reaches
+Telegram — an alert says something needs attention, and drifting from a number
+nobody chose is not that. Omitting `target_basis` means `policy`, so a weight
+you actually decided needs no extra key and every file written before this
+reads correctly.
+
+`py tools/placeholder_targets.py` prints a set of them — equal weight per
+bucket inside a core/satellite frame, which is the absence of a view rather
+than a recommendation — and `--write` fills in every null it finds. It never
+overwrites a weight you wrote yourself.
+
 ---
 
 ## Privacy

@@ -986,9 +986,15 @@ function paintMissing(r) {
   const c = r.cov;
   if (!c || c.covered) return '';
   const stock = c.klass === 'stock';
+  /* The word "placeholder" travels with the number everywhere the number
+     goes. A target that reads like a policy IS a policy to whoever finds it
+     next, and these eleven were filled in by a rule, not a decision. */
+  const held = c.target_basis === 'placeholder';
   const alloc = c.target_weight_pct == null ? '' : `
     <dl class="kv" style="margin-top:8px">
-      <dt>Target weight</dt><dd>${num(c.target_weight_pct, 1)}%</dd>
+      <dt>Target weight</dt><dd>${num(c.target_weight_pct, 1)}%${
+        held ? ' <span class="est" title="Filled in by a rule, not a decision. '
+             + 'Not a policy, and never alerted on.">placeholder</span>' : ''}</dd>
       <dt>Drift</dt><dd class="${cls(c.drift_pts)}">${c.drift_pts == null
         ? '—' : num(c.drift_pts, 1) + ' pts'}</dd></dl>`;
   return `<div class="tsec"><div class="tlabel">WHAT'S MISSING</div>
@@ -1342,10 +1348,17 @@ function paintSheet() {
       <td>${eur(c.value_eur)}</td><td>${num(c.weight_pct,1)}%</td>
       <td>${esc(c.klass)}</td>
       <td>${c.klass === 'stock' ? 'thesis' : 'allocation'}</td>
-      <td>${c.target_weight_pct == null ? '—' : num(c.target_weight_pct,1)+'%'}</td>
+      <td>${c.target_weight_pct == null ? '—' : num(c.target_weight_pct,1) + '%'
+        + (c.target_basis === 'placeholder' ? ' <span class="est"'
+          + ' title="Placeholder, not a policy">P</span>' : '')}</td>
       <td>${c.drift_pts == null ? '—' : num(c.drift_pts,1)}</td>
       <td>${esc(c.account)}</td><td>${esc(c.name)}</td>
       </tr>`).join('')}</tbody></table></div>
+    ${cr.some((c) => c.target_basis === 'placeholder') ? `<div class="prose"
+      style="margin-top:8px"><span class="est">P</span> — placeholder. Filled in
+      by a rule (equal weight inside a core/satellite frame) so the allocation
+      columns have something to draw. It is not a policy: the holding still
+      counts as uncovered and its drift is never alerted on.</div>` : ''}
     ${(COV.researched_not_held||[]).length ? `<div class="prose"
       style="margin-top:8px">Researched but not owned — ${(COV.researched_not_held||[])
       .map(esc).join(', ')}.</div>` : ''}</div>`;

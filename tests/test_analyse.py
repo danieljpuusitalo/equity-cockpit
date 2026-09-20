@@ -457,6 +457,97 @@ def test_alerts_still_run_with_no_coverage_block_at_all():
     assert _drift_alerts(None) == []
 
 
+# ------------------------------------------------- placeholder target weights
+#
+# A target weight can be a written policy or a number a rule parked in the
+# field so the allocation columns have something to draw. The whole point of
+# `target_basis` is that those two must not behave alike, and every test below
+# pins one place where they diverge. This is the repo's signature bug class
+# pointed at itself: a derived status claiming more than it means.
+
+def _book(isin="IE00B4L5Y983", value=4000.0, rest=36000.0):
+    """One fund plus one anonymous makeweight, so the fund's weight is 10%."""
+    return [{"isin": isin, "yahoo": "FUND.AS", "tunnus": "FUND",
+             "name": "A fund", "account": "OST", "value_eur": value},
+            {"isin": "ZZ0000000000", "yahoo": "OTHER.AS", "tunnus": "OTHER",
+             "name": "Other", "account": "OST", "value_eur": rest}]
+
+
+def _as_fund(monkeypatch, isin, target, basis=None):
+    monkeypatch.setitem(analyse.C.ASSET_CLASS, isin, "fund")
+    monkeypatch.setitem(analyse.C.ASSET_CLASS, "ZZ0000000000", "stock")
+    monkeypatch.setitem(analyse.C.TARGET_WEIGHT, isin, target)
+    monkeypatch.setitem(analyse.C.TARGET_BASIS, isin, basis or "policy")
+
+
+def _fund_row(monkeypatch, target, basis=None, value=4000.0):
+    isin = "IE00B4L5Y983"
+    _as_fund(monkeypatch, isin, target, basis)
+    rows = analyse.coverage(_book(isin, value), [])["rows"]
+    return next(r for r in rows if r["isin"] == isin)
+
+
+def test_a_placeholder_target_still_draws_its_drift(monkeypatch):
+    """The number and its drift are the whole reason to park one - without
+    them the allocation columns are empty and the feature is invisible."""
+    row = _fund_row(monkeypatch, 7.0, "placeholder")
+    assert row["target_weight_pct"] == 7.0
+    assert row["drift_pts"] == 3.0          # 10% weight - 7% target
+
+
+def test_a_placeholder_target_does_not_make_a_holding_covered(monkeypatch):
+    """`covered` is what the headline counts as monitored. A placeholder is
+    arithmetic, not a decision, and must not clear the coverage warning."""
+    row = _fund_row(monkeypatch, 7.0, "placeholder")
+    assert row["covered"] is False
+    assert "placeholder" in row["gap"]
+
+
+def test_a_written_policy_at_the_same_number_does_make_it_covered(monkeypatch):
+    """The contrast is the test. Same weight, same target, same drift - the
+    only difference is the basis, and it has to be the only difference that
+    matters."""
+    placeheld = _fund_row(monkeypatch, 7.0, "placeholder")
+    written = _fund_row(monkeypatch, 7.0, "policy")
+    assert (placeheld["target_weight_pct"], placeheld["drift_pts"]) \
+        == (written["target_weight_pct"], written["drift_pts"])
+    assert written["covered"] is True and placeheld["covered"] is False
+
+
+def test_the_basis_reaches_the_page_so_the_number_can_be_labelled(monkeypatch):
+    """The template keys its marker off this field. If coverage() stops
+    emitting it the page silently renders a placeholder as a policy."""
+    assert _fund_row(monkeypatch, 7.0, "placeholder")["target_basis"] \
+        == "placeholder"
+    assert _fund_row(monkeypatch, 7.0, "policy")["target_basis"] == "policy"
+
+
+def test_no_target_carries_no_basis_at_all(monkeypatch):
+    """Three states, not two. A null target is neither a policy nor a
+    placeholder, and claiming either would be a fourth bug of this shape."""
+    row = _fund_row(monkeypatch, None)
+    assert row["target_basis"] is None
+    assert row["gap"] == "no target weight set"
+
+
+def test_a_breaching_placeholder_never_reaches_telegram():
+    """An alert claims something needs attention. 'You have drifted from a
+    number nobody chose' is not that claim, however large the drift."""
+    cover = _cover(drift=9.9)
+    cover["rows"][0]["target_basis"] = "placeholder"
+    assert _drift_alerts(cover) == []
+
+
+def test_a_breaching_written_policy_still_does():
+    """The guard above must key on the basis, not disable the alert."""
+    cover = _cover(drift=9.9)
+    cover["rows"][0]["target_basis"] = "policy"
+    assert len(_drift_alerts(cover)) == 1
+    # And a row from before target_basis existed reads as a policy, because
+    # every target written by hand until now was one.
+    assert len(_drift_alerts(_cover(drift=9.9))) == 1
+
+
 # ----------------------------------------------------------- .info shaping
 
 def _info(**kw):
@@ -1005,3 +1096,83 @@ def test_the_page_says_which_kind_of_run_painted_it(one_position_book):
         render.payload = original
 
     assert captured["run_mode"] == "refresh"
+
+
+# ------------------------------------------- the rule that fills placeholders
+#
+# tools/placeholder_targets.py takes the book as arguments precisely so these
+# can run against a fixture instead of Daniel's real file. The rule has to stay
+# recomputable from the docstring, so each test names the arithmetic rather
+# than a number someone once read off the output.
+
+import importlib                                              # noqa: E402
+PT = importlib.import_module("tools.placeholder_targets")
+
+
+def _fixture_book():
+    holdings = {
+        "C1": {"bucket": "Broad equity - US"},
+        "C2": {"bucket": "Broad equity - Europe"},
+        "N1": {"bucket": "Nordic index funds"},
+        "N2": {"bucket": "Nordic index funds"},
+        "S1": {"bucket": "Thematic - AI"},
+        "S2": {"bucket": "Thematic - defence"},
+        "X1": {"bucket": "US software"},          # a stock, must be ignored
+    }
+    klass = {k: ("stock" if k == "X1" else "fund") for k in holdings}
+    return holdings, klass
+
+
+def test_the_rule_never_touches_a_stock():
+    """Funds are judged by allocation, stocks by thesis. A target weight on a
+    stock would be a second standard applied to something that already has
+    one."""
+    targets, _ = PT.plan(*_fixture_book())
+    assert "X1" not in targets and len(targets) == 6
+
+
+def test_core_and_satellite_are_read_off_the_bucket_not_decided_per_line():
+    """No new taxonomy. If tier() stopped matching, every fund would silently
+    become a satellite and the sleeve would shrink by more than half."""
+    assert PT.tier("Broad equity - US") == "core"
+    assert PT.tier("Nordic index funds") == "core"
+    assert PT.tier("Thematic - AI") == "satellite"
+    assert PT.tier(None) == "satellite"
+
+
+def test_the_sleeve_splits_core_satellite_in_the_declared_ratio():
+    _, table = PT.plan(*_fixture_book())
+    by_tier = {}
+    for row in table:
+        by_tier[row["tier"]] = by_tier.get(row["tier"], 0) + row["sleeve_pct"]
+    assert by_tier["core"] == pytest.approx(PT.SLEEVE_PCT * PT.CORE_PCT / 100)
+    assert by_tier["satellite"] == pytest.approx(
+        PT.SLEEVE_PCT * (100 - PT.CORE_PCT) / 100)
+
+
+def test_equal_weight_is_per_sleeve_not_per_line():
+    """Three Nordic index funds are one bucket and split one share. Weighting
+    them as three lines would put a full core share on a EUR 140 position -
+    which is how a placeholder stops being neutral and starts being a view."""
+    targets, _ = PT.plan(*_fixture_book())
+    core_share = PT.SLEEVE_PCT * PT.CORE_PCT / 100 / 3      # 3 core buckets
+    assert targets["C1"] == pytest.approx(round(core_share, 2))
+    assert targets["N1"] == targets["N2"] == pytest.approx(
+        round(core_share / 2, 2))
+
+
+def test_the_whole_plan_sums_to_the_declared_sleeve():
+    """Rounding to 2dp is allowed to lose a hundredth; anything more means a
+    sleeve was dropped or double-counted."""
+    targets, _ = PT.plan(*_fixture_book())
+    assert sum(targets.values()) == pytest.approx(PT.SLEEVE_PCT, abs=0.05)
+
+
+def test_the_rule_is_blind_to_what_anything_is_currently_worth():
+    """Seeding a target from today's weight turns every drift check into a
+    tautology - the reason config.TARGET_WEIGHT refuses to do it. plan() is not
+    even given the values, and this pins that it never needs them."""
+    holdings, klass = _fixture_book()
+    for isin in holdings:
+        holdings[isin]["value_eur"] = 999_999.0 if isin == "S1" else 1.0
+    assert PT.plan(holdings, klass)[0] == PT.plan(*_fixture_book())[0]
