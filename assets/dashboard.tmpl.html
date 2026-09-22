@@ -2536,7 +2536,7 @@ function paintSheet() {
   };
 
   const XC = X.concentration || {}, XM = X.multiples || {},
-        XF = X.fees || {}, XN = X.names || {};
+        XF = X.fees || {}, XN = X.names || {}, XO = X.overlap || {};
   const xcard = (k, v, s) => `<div class="xcard"><div class="k">${esc(k)}</div>
     <div class="v">${v}</div><div class="s">${s}</div></div>`;
 
@@ -2583,6 +2583,15 @@ function paintSheet() {
          ${XN.n_both_ways || 0} held directly and inside a fund ·
          the rest is inside undisclosed fund tails`
         + atBuild(LOOKTHRU_WHY))}
+      ${xcard('Funds drawing on one pot',
+        (XO.n_substantial || 0) + ' of ' + (XO.n_pairs || 0),
+        ((XO.pairs || [])[0]
+          ? 'pairs substantially the same holding · biggest by euro is ' +
+            esc(XO.pairs[0].a) + ' × ' + esc(XO.pairs[0].b) + ' on ' +
+            XO.pairs[0].n_shared + ' names, ' + num(XO.pairs[0].pct, 1) +
+            '% of the book'
+          : 'no two funds disclose a name in common') +
+        ' · <a href="#/data/lap">see every pair</a>')}
     </div>
     <div class="xcols">
       ${xstack(X.sectors, 'Sector', 'sector',
@@ -2650,6 +2659,41 @@ function paintSheet() {
       with no published TER is not free — it is counted against coverage, so
       the fee figure reads as a floor. Click a fund to see only what it
       reaches.</div>
+    </div>
+    <h2 data-sec="lap" data-label="Fund overlap">Fund overlap — ${
+      XO.n_substantial || 0} of ${XO.n_pairs || 0} pairs substantially
+      the same holding</h2>
+    <div class="sec" data-sec="lap">
+    ${!(XO.pairs || []).length
+      ? `<div class="empty">${XO.n_funds
+          ? 'No two of the ' + XO.n_funds + ' funds disclose a name in common.'
+          : 'No fund discloses its holdings, so no pair can be compared.'}</div>`
+      : `<div class="scroll"><table><thead><tr>
+    <th class="t">Pair</th><th>Shared</th><th>Of A</th><th>Of B</th>
+    <th>Via both €</th><th>Of book</th>
+    <th class="t">Names in common</th></tr></thead><tbody>${
+      (XO.pairs || []).filter((p) => hits({symbol: p.a + ' ' + p.b,
+        name: (p.shared || []).join(' ')})).map((p) => `<tr>
+      <td class="t"><b>${esc(p.a)}</b> × <b>${esc(p.b)}</b></td>
+      <td>${p.n_shared} of ${p.n_a}/${p.n_b}</td>
+      <td>${num(p.a_disclosed_in_shared_pct,1)}%</td>
+      <td>${num(p.b_disclosed_in_shared_pct,1)}%</td>
+      <td>${eur(p.value_eur)}</td>
+      <td><b>${num(p.pct,2)}%</b></td>
+      <td class="t" style="color:var(--muted)">${
+        (p.shared || []).map(esc).join(', ')}</td></tr>`).join('')
+    }</tbody></table></div>`}
+    <div class="prose under">Two funds holding the same company is not a
+      mistake, but owning it twice at a weight you never chose is. Of A and Of B
+      are how much of each fund's <i>disclosed</i> value sits in the shared
+      names — a pair reading high on both is two routes to one bet. The euro
+      figure is the money reaching those shared names through the two funds
+      added together: each fund's own value times its disclosed weight in each
+      shared name. It is counted once per fund, so it is what the bet is worth,
+      not a double count — but do not add the pairs up, because a name held by
+      three funds is in three of these rows. Every column is a floor: it can
+      only see names both funds publish, and a fund publishes its top ten.${
+      atBuild(LOOKTHRU_WHY)}</div>
     </div>`;
 
   /* ----------------------------------------------------------- reporting */

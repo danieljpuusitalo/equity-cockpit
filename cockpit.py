@@ -1023,6 +1023,32 @@ def selftest():
           else f"card, stat and xcard share one surface; {inline_margin} "
                f"inline margin style(s) left")
 
+    # `overlap()` was computed on every run for months, logged to the console,
+    # written into the payload - and never rendered. Nothing failed, because
+    # nothing was watching the seam between what the analysis produces and what
+    # the page consumes. That is the expensive kind of dead code: it costs a
+    # Yahoo call and a paragraph of reasoning per run and returns a number
+    # nobody can see.
+    #
+    # So the guard is written against the seam rather than against this one
+    # section. It reads the keys `look_through()` actually returns and asks the
+    # template for each. Adding a key to the payload and forgetting to surface
+    # it now fails here by construction, which is the only version of this check
+    # worth having - a hardcoded list of section names would have passed
+    # happily for the whole time overlap was missing.
+    lt = re.search(r"def look_through\(.*?\n    return \{(.*?)\n    \}",
+                   (C.ROOT / "exposure.py").read_text(encoding="utf-8"), re.S)
+    seam = []
+    keys = re.findall(r'"([a-z_]+)":', lt.group(1)) if lt else []
+    if len(keys) < 5:
+        seam.append("could not read look_through()'s payload keys")
+    for key in keys:
+        if not re.search(r"\bX\." + key + r"\b", tmpl):
+            seam.append(f"exposure computes `{key}` and the page never reads it")
+    check("assets: nothing is computed and then dropped", not seam,
+          "; ".join(seam) if seam
+          else f"all {len(keys)} exposure keys reach the page")
+
     # Right-aligned is correct for the numeric columns and wrong for every word
     # column, which is how six tables came to right-rag their sector, account
     # and currency cells against a hard edge. The opt-out has to exist AND be
