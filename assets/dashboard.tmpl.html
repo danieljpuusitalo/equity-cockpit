@@ -784,23 +784,712 @@ const LEVEL = {critical:'var(--crit)', warning:'var(--warn)',
 // Holdings are per ISIN per account, so the same symbol can appear twice. The
 // rail is a list of companies, not of custody rows - fold them together first.
 const held = new Map();
-for (const h of D.holdings || []) {
-  const sym = h.yahoo || h.ticker;
-  if (!sym) continue;
-  const cur = held.get(sym) || {sym, name:h.name, ticker:h.ticker, ccy:h.ccy,
-    units:0, cost_eur:0, value_eur:0, price:h.price, day_pct:h.day_pct,
-    off_high:h.off_high, bucket:h.bucket, accounts:[], stale:h.stale};
-  cur.units += h.units || 0;
-  cur.cost_eur += h.cost_eur || 0;
-  cur.value_eur += h.value_eur || 0;
-  if (h.account && !cur.accounts.includes(h.account)) cur.accounts.push(h.account);
-  held.set(sym, cur);
+
+// What the last live-price attempt did. `null` means no attempt has been made
+// or none applies - opened from disk, for instance - and the chip stays hidden
+// rather than claiming anything. Every other state, including failure, is
+// recorded and shown, because a page that tried and failed must not look
+// identical to one that never tried.
+let LIVE = null;  // {at:Date, priced, asked, missing:[], fxMissing:[], error}
+
+function liveChip() {
+  if (!LIVE) return '';
+  if (LIVE.error) {
+    return `Live <b class="dn-t" title="${esc(LIVE.error)} · showing the prices `
+      + `this file was built with">off</b>`;
+  }
+  const hhmm = LIVE.at.toTimeString().slice(0, 5);
+  const n = (LIVE.missing || []).length;
+  // The count of what did NOT come back is part of the headline, not a detail
+  // in a tooltip. `40 priced` and `40 priced, 4 unpriced` are different claims
+  // about the same total.
+  const short = n
+    ? ` <b class="dn-t" title="${esc(LIVE.missing.join(', '))} · these keep `
+      + `their build-time price">${n} unpriced</b>`
+    : '';
+  return `Live <b title="${LIVE.priced}/${LIVE.asked} priced from Yahoo at `
+    + `${esc(LIVE.at.toString())}">${hhmm}</b>${short}`;
 }
-for (const h of held.values()) {
-  h.pl_eur = h.value_eur - h.cost_eur;
-  h.pl_pct = h.cost_eur ? (h.value_eur / h.cost_eur - 1) * 100 : null;
-  h.weight = D.totals.value_eur ? (h.value_eur / D.totals.value_eur) * 100 : 0;
+
+// Marks a figure that the live layer deliberately does NOT recompute, and says
+// why on hover. Silent about it when nothing is live, because then every number
+// on the page is a build-time number and singling three of them out would imply
+// the rest are something else.
+//
+// This is the honest half of going live. Once part of a page updates, the
+// reader reasonably assumes all of it does; the figures that cannot follow have
+// to say so themselves, or they become the most misleading numbers on screen
+// precisely because everything around them is fresh.
+// The look-through is linear in position value, so it COULD follow a price -
+// but only with each fund's published composition, and that matrix is not in
+// this payload. Emitting it is the next step; claiming the breakdown is live
+// without it would be the bug this whole module was written to remove.
+const LOOKTHRU_WHY = 'the look-through scales each fund by its published '
+  + 'composition, and that composition is not carried in this page - so the '
+  + 'breakdown moves when the file is rebuilt, not when a price ticks';
+
+const atBuild = (why) => (LIVE && !LIVE.error)
+  ? ` · <b class="dn-t" title="${esc(why)} · this figure is as at ${
+      esc(D.generated || 'the last build')}, not live">as at build</b>`
+  : '';
+
+/* ----------------------------------------------------- derived numbers */
+//
+// Every number on this page that is a function of a price, recomputed in one
+// place, from one input: D.holdings.
+//
+// Python computes all of it at build time and the page used to simply print
+// the answers. That was correct while the page was a photograph. It stopped
+// being correct the moment prices started arriving in the browser: the tape
+// went live while the Overview's P/L, the treemap's areas, the concentration
+// figures, the coverage percentage and every watchlist upside stayed frozen at
+// build time. One page quoting two different books, with nothing on screen
+// saying which number came from which.
+//
+// So the arithmetic is TRANSCRIBED, not approximated. Each function below is a
+// port of the Python that owns the same number and is named after it, down to
+// the decimal places - which are deliberately inconsistent in the original
+// (off_high is 1dp, pl_pct is 2dp, hhi is 4dp, book_ter_pct is 3dp) and are
+// inconsistent here in exactly the same way.
+//
+// `parity()` is what makes that claim checkable rather than asserted: it runs
+// the whole recompute against the prices the file was BUILT with and demands
+// it reproduce Python's own output. A port that has never been run against its
+// original is not a port, it is a second opinion.
+//
+// Three things are deliberately NOT recomputed, and the page says so rather
+// than letting them look live:
+//   * the money-weighted return (IRR) - it needs the dated lot cashflows, and
+//     those are not in this payload at all;
+//   * the look-through breakdowns - sectors, geography, single names, overlap
+//     and the blended multiples - which need each fund's published
+//     composition, also not in this payload;
+//   * the indicators - RSI, the moving averages, ATR - which are functions of
+//     daily closing bars and are supposed to be yesterday's.
+const DERIVE = (function () {
+  // Python's round() is half-to-even and JS's is half-away-from-zero. On
+  // binary floats an exact tie essentially never occurs, so this is the same
+  // function in practice - and `parity` compares with a tolerance of one unit
+  // in the last place rather than demanding bit equality, which is what makes
+  // the difference genuinely not matter.
+  const R = (n, dp) => (n == null || !isFinite(n)) ? null
+    : Math.round(n * Math.pow(10, dp)) / Math.pow(10, dp);
+
+  /* ---- treemap.py:19-85, transcribed ---- */
+
+  function worst(row, side) {
+    const total = row.reduce((a, b) => a + b, 0);
+    if (total <= 0 || side <= 0) return Infinity;
+    return Math.max((side * side * Math.max(...row)) / (total * total),
+                    (total * total) / (side * side * Math.min(...row)));
+  }
+
+  // A value that is null or <= 0 is DROPPED, never floored so it still draws.
+  // The caller reports the drop; see allocation().
+  function squarify(items, width, height) {
+    width = width == null ? 100 : width;
+    height = height == null ? 100 : height;
+    let vals = items.filter((kv) => kv[1] != null && kv[1] > 0)
+                    .map((kv) => [kv[0], Number(kv[1])])
+                    .sort((a, b) => b[1] - a[1]);
+    if (!vals.length) return [];
+
+    const total = vals.reduce((a, kv) => a + kv[1], 0);
+    const scale = (width * height) / total;
+    vals = vals.map((kv) => [kv[0], kv[1] * scale]);
+
+    const out = [];
+    let x = 0, y = 0, w = width, h = height;
+    while (vals.length) {
+      const side = Math.min(w, h);
+      let n = 1;
+      while (n < vals.length) {
+        const row = vals.slice(0, n).map((kv) => kv[1]);
+        if (worst(vals.slice(0, n + 1).map((kv) => kv[1]), side) > worst(row, side)) break;
+        n += 1;
+      }
+      const row = vals.slice(0, n);
+      vals = vals.slice(n);
+      const span = row.reduce((a, kv) => a + kv[1], 0);
+
+      if (w >= h) {                       // row runs down the left edge
+        const rw = h ? span / h : 0;
+        let oy = y;
+        for (const [key, v] of row) {
+          const rh = span ? (v / span) * h : 0;
+          out.push({key, x, y: oy, w: rw, h: rh});
+          oy += rh;
+        }
+        x += rw; w -= rw;
+      } else {                            // row runs across the top edge
+        const rh = w ? span / w : 0;
+        let ox = x;
+        for (const [key, v] of row) {
+          const rw = span ? (v / span) * w : 0;
+          out.push({key, x: ox, y, w: rw, h: rh});
+          ox += rw;
+        }
+        y += rh; h -= rh;
+      }
+    }
+    return out;
+  }
+
+  /* ---- analyse.value_holdings, analyse.price_sanity ---- */
+
+  // analyse.py:91-124 and 281-296. The per-row figures the live feed does not
+  // itself supply. `price`, `value_eur`, `day_pct` and `stale` are written by
+  // the caller from the quote; everything here is derived from those.
+  function holdings(rows) {
+    for (const h of rows) {
+      const cost = h.cost_eur;
+      // A cost of exactly zero yields null, not zero: a position transferred
+      // in without a purchase price is unknowable, not flat. Truthiness is the
+      // test in the original and it is the test here.
+      h.pl_eur = cost ? R(h.value_eur - cost, 2) : null;
+      h.pl_pct = cost ? R((h.value_eur / cost - 1) * 100, 2) : null;
+      // 52-week high is a build-time fact the live feed does not carry, so
+      // off_high moves only because the price did - which is the whole point
+      // of the measure. Without a high it is null, never zero.
+      h.off_high = (!h.stale && h.year_high)
+        ? R((h.price / h.year_high - 1) * 100, 1) : null;
+      // The broker's own valuation is the independent check that the symbol
+      // mapping is right, and it only means anything against a live price.
+      if (!h.stale && h.nordnet_mv_eur) {
+        h.vs_nordnet_pct = R((h.value_eur / h.nordnet_mv_eur - 1) * 100, 1);
+      }
+    }
+    return rows;
+  }
+
+  /* ---- overview.py, transcribed ---- */
+
+  // overview.py:33-42. Falls back to the ISIN for the index funds that have no
+  // Yahoo symbol: real positions with real value and no chart behind them.
+  const ovKey = (h) => (h.yahoo && h.yahoo !== 'MISSING')
+    ? h.yahoo : 'isin:' + h.isin;
+
+  // overview.py:45-95. One row per name, custody accounts merged. P/L percent
+  // is recomputed from the merged value and cost - it is NOT the average of
+  // the two accounts' percentages.
+  function fold(rows, klassByKey) {
+    const out = new Map();
+    for (const row of rows) {
+      const key = ovKey(row);
+      let cur = out.get(key);
+      if (!cur) {
+        const sym = row.yahoo;
+        cur = {key, sym: (sym && sym !== 'MISSING') ? sym : null,
+               ticker: row.ticker || row.tunnus || key, name: row.name,
+               klass: klassByKey ? klassByKey.get(key) : null,
+               bucket: row.bucket, accounts: [],
+               value_eur: 0, cost_eur: 0,
+               // The same symbol has the same day move in both accounts, so
+               // this is carried across rather than combined. Null stays null.
+               day_pct: row.day_pct == null ? null : row.day_pct,
+               price: row.price, units: 0};
+        out.set(key, cur);
+      }
+      cur.value_eur += row.value_eur || 0;
+      cur.cost_eur += row.cost_eur || 0;
+      cur.units += row.units || 0;
+      if (row.day_pct != null) cur.day_pct = row.day_pct;
+      if (row.account && !cur.accounts.includes(row.account)) cur.accounts.push(row.account);
+    }
+    const list = [];
+    for (const cur of out.values()) {
+      const value = R(cur.value_eur, 2), cost = R(cur.cost_eur, 2);
+      cur.value_eur = value; cur.cost_eur = cost;
+      cur.units = R(cur.units, 4);
+      cur.pl_eur = cost ? R(value - cost, 2) : null;
+      cur.pl_pct = cost ? R((value / cost - 1) * 100, 2) : null;
+      cur.accounts.sort();
+      list.push(cur);
+    }
+    list.sort((a, b) => b.value_eur - a.value_eur);
+    return list;
+  }
+
+  // overview.py:98-125. Measured over the part of the book that HAS a day
+  // move, against what that same part closed at - never against the whole
+  // book, which would understate every day by however much is unpriced.
+  function dayMove(rows) {
+    const priced = rows.filter((r) => r.day_pct != null);
+    const quiet = rows.filter((r) => r.day_pct == null);
+    const value = priced.reduce((a, r) => a + r.value_eur, 0);
+    // value / (1 + d), NOT value * (1 - d). The two agree on a quiet day and
+    // drift on exactly the days you would want the number to be right.
+    const opened = priced.filter((r) => r.day_pct !== -100)
+      .reduce((a, r) => a + r.value_eur / (1 + r.day_pct / 100), 0);
+    const moved = value - opened;
+    const quietValue = quiet.reduce((a, r) => a + r.value_eur, 0);
+    return {
+      value_eur: R(moved, 2),
+      pct: opened ? R(moved / opened * 100, 2) : null,
+      n_priced: priced.length,
+      n_quiet: quiet.length,
+      quiet_eur: R(quietValue, 2),
+      covered_pct: (value || quiet.length)
+        ? R(value / (value + quietValue) * 100, 1) : 0,
+    };
+  }
+
+  // overview.py:128-160. Area is weight and nothing else is implied, so the
+  // whole map is relaid on every tick - a tile whose label says 8.2% while its
+  // area is last hour's 8.0% is a picture that lies quietly.
+  function allocation(rows, total) {
+    total = total == null ? rows.reduce((a, r) => a + r.value_eur, 0) : total;
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    const tiles = squarify(rows.map((r) => [r.key, r.value_eur])).map((rect) => {
+      const row = byKey.get(rect.key);
+      return Object.assign({}, rect, {
+        sym: row.sym, ticker: row.ticker, name: row.name,
+        klass: row.klass, bucket: row.bucket, value_eur: row.value_eur,
+        weight_pct: total ? R(row.value_eur / total * 100, 2) : 0,
+        pl_pct: row.pl_pct, pl_eur: row.pl_eur, day_pct: row.day_pct,
+      });
+    });
+    const drawn = tiles.reduce((a, t) => a + t.value_eur, 0);
+    return {tiles, n: tiles.length, value_eur: R(drawn, 2),
+            n_undrawn: rows.length - tiles.length,
+            undrawn_eur: R(total - drawn, 2)};
+  }
+
+  // overview.py:163-182. Percent is the right unit here; euros is the right
+  // unit in contributors. Giving both the same answer is how a dashboard ends
+  // up saying nothing twice.
+  function movers(rows, limit) {
+    limit = limit || 5;
+    const priced = rows.filter((r) => r.day_pct != null)
+                       .sort((a, b) => b.day_pct - a.day_pct);
+    const trim = priced.map((r) => ({
+      sym: r.sym, ticker: r.ticker, name: r.name, day_pct: r.day_pct,
+      value_eur: r.value_eur,
+      day_eur: r.day_pct !== -100
+        ? R(r.value_eur - r.value_eur / (1 + r.day_pct / 100), 2) : null}));
+    return {
+      up: trim.filter((r) => r.day_pct > 0).slice(0, limit),
+      down: trim.slice().reverse().filter((r) => r.day_pct < 0).slice(0, limit),
+      n_priced: priced.length,
+      n_quiet: rows.filter((r) => r.day_pct == null).length};
+  }
+
+  // overview.py:185-211. Shares are taken against total ABSOLUTE movement, so
+  // a winner and a loser of the same size both read as meaningful rather than
+  // cancelling into a denominator of nearly zero.
+  function contributors(rows, limit) {
+    limit = limit || 6;
+    const known = rows.filter((r) => r.pl_eur != null);
+    const gross = known.reduce((a, r) => a + Math.abs(r.pl_eur), 0);
+    const trim = known.slice().sort((a, b) => b.pl_eur - a.pl_eur).map((r) => ({
+      sym: r.sym, ticker: r.ticker, name: r.name, pl_eur: r.pl_eur,
+      pl_pct: r.pl_pct, value_eur: r.value_eur,
+      share_pct: gross ? R(Math.abs(r.pl_eur) / gross * 100, 1) : 0}));
+    return {
+      best: trim.filter((r) => r.pl_eur > 0).slice(0, limit),
+      worst: trim.slice().reverse().filter((r) => r.pl_eur < 0).slice(0, limit),
+      n_known: known.length, n_unknown: rows.length - known.length};
+  }
+
+  /* ---- exposure.py: the part that needs only position values ---- */
+
+  // exposure.py:94-116. Merged by ISIN, NOT by account: carrying the split
+  // through would double every name held in both and make the look-through
+  // wrong in a way that looks like concentration.
+  function positions(rows, meta) {
+    const merged = new Map();
+    for (const h of rows) {
+      const isin = h.isin;
+      if (!merged.has(isin)) {
+        const sym = h.yahoo;
+        merged.set(isin, {isin, symbol: (sym && sym !== 'MISSING') ? sym : null,
+                          name: h.name || '',
+                          klass: (meta && meta.klass.get(isin)) || 'stock',
+                          value_eur: 0});
+      }
+      merged.get(isin).value_eur += h.value_eur || 0;
+    }
+    return [...merged.values()].sort((a, b) => b.value_eur - a.value_eur);
+  }
+
+  // exposure.py:412-439. Measured on positions, deliberately NOT on the
+  // look-through: only part of each fund is disclosed, and unplaced mass would
+  // read as diversification. A falsy value is DROPPED, not counted as a
+  // position worth nothing - which changes n and hhi, not just the sum.
+  function concentration(pos, total) {
+    const values = pos.map((p) => p.value_eur).filter((v) => v)
+                      .sort((a, b) => b - a);
+    if (!values.length || !total) {
+      return {n: 0, top1_pct: 0, top5_pct: 0, top10_pct: 0, hhi: 0, effective_n: 0};
+    }
+    const weights = values.map((v) => v / total);
+    const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+    const hhi = sum(weights.map((w) => w * w));
+    return {
+      n: values.length,
+      top1_pct: R(sum(weights.slice(0, 1)) * 100, 1),
+      top5_pct: R(sum(weights.slice(0, 5)) * 100, 1),
+      top10_pct: R(sum(weights.slice(0, 10)) * 100, 1),
+      hhi: R(hhi, 4),
+      // From the UNROUNDED hhi, as in the original.
+      effective_n: hhi ? R(1 / hhi, 1) : 0,
+    };
+  }
+
+  // exposure.py:444-480. A fund whose TER is not published is not treated as
+  // free: its value counts against coverage, so the euro figure reads as a
+  // floor rather than a total.
+  function fees(pos, terBySymbol, total) {
+    let annual = 0, covered = 0, fundValue = 0;
+    const rows = [];
+    for (const p of pos) {
+      if (p.klass !== 'fund' || !p.value_eur) continue;
+      const value = p.value_eur;
+      fundValue += value;
+      const ter = terBySymbol.has(p.symbol) ? terBySymbol.get(p.symbol) : null;
+      const cost = ter != null ? value * ter / 100 : null;
+      if (cost != null) { annual += cost; covered += value; }
+      rows.push({symbol: p.symbol, name: p.name, value_eur: R(value, 2),
+                 ter_pct: ter, annual_eur: cost != null ? R(cost, 2) : null});
+    }
+    rows.sort((a, b) => (b.annual_eur || 0) - (a.annual_eur || 0));
+    return {rows, annual_eur: R(annual, 2), fund_value_eur: R(fundValue, 2),
+            covered_eur: R(covered, 2),
+            unresolved_eur: R(fundValue - covered, 2),
+            resolved_pct: fundValue ? R(covered / fundValue * 100, 1) : 0,
+            // Two denominators, two different questions: what the funds cost
+            // as funds, and what they cost as a share of everything.
+            sleeve_ter_pct: covered ? R(annual / covered * 100, 3) : null,
+            book_ter_pct: total ? R(annual / total * 100, 3) : null};
+  }
+
+  // exposure.py:529-547.
+  function funds(pos, total, metaBySymbol) {
+    const out = [];
+    for (const p of pos) {
+      if (p.klass !== 'fund') continue;
+      const m = metaBySymbol.get(p.symbol) || {};
+      out.push({symbol: p.symbol, name: p.name, value_eur: R(p.value_eur, 2),
+                weight_pct: total ? R(p.value_eur / total * 100, 2) : 0,
+                ter_pct: m.ter_pct == null ? null : m.ter_pct,
+                n_disclosed: m.n_disclosed || 0,
+                disclosed_pct: m.disclosed_pct == null ? null : m.disclosed_pct,
+                has_sectors: !!m.has_sectors});
+    }
+    out.sort((a, b) => b.value_eur - a.value_eur);
+    return out;
+  }
+
+  /* ---- analyse.coverage: analyse.py:488-591 ---- */
+
+  // Coverage rows are per ISIN per account, one for one with D.holdings, so
+  // the join is on both. `covered` is a Notion and config fact and is left
+  // alone; what moves with a price is the euro, the weight and the drift.
+  //
+  // The join key is the account LABEL, not the account number: the coverage
+  // table deliberately does not carry the number, and D.holdings does. Keying
+  // on `account_no` therefore missed every single row - and because a missed
+  // row just keeps Python's value, the parity check passed with a perfect
+  // score against a function that wrote nothing at all. Caught by halving a
+  // position and watching the coverage weights not move. `unmatched` is
+  // returned so a future miss is a number on screen rather than silence.
+  function coverage(cov, rows) {
+    // The `or 1.0` floor is the original's, and it is load-bearing: an empty
+    // book yields percentages against one euro rather than a divide by zero.
+    const total = rows.reduce((a, h) => a + (h.value_eur || 0), 0) || 1;
+    const by = new Map();
+    for (const h of rows) by.set(h.isin + '|' + h.account, h);
+    let unmatched = 0;
+    for (const r of cov.rows || []) {
+      const h = by.get(r.isin + '|' + r.account);
+      if (!h) { unmatched += 1; continue; }   // no holding, nothing to restate
+      r.value_eur = h.value_eur;
+      r.weight_pct = R((h.value_eur || 0) / total * 100, 2);
+      if (r.target_weight_pct != null) {
+        r.drift_pts = R(r.weight_pct - r.target_weight_pct, 2);
+      }
+    }
+    (cov.rows || []).sort((a, b) => (b.value_eur || 0) - (a.value_eur || 0));
+    const uncovered = (cov.rows || []).filter((r) => !r.covered);
+    const uncoveredValue = uncovered.reduce((a, r) => a + (r.value_eur || 0), 0);
+    cov.value_total_eur = R(total, 2);
+    cov.value_uncovered_eur = R(uncoveredValue, 2);
+    // From the raw sum, not from the rounded euro figure above.
+    cov.pct_uncovered = R(uncoveredValue / total * 100, 1);
+    return unmatched;
+  }
+
+  /* ---- analyse.join_watchlist: the price-derived half ---- */
+
+  // analyse.py:348-368 and 450-453. `price_at_eval`, `target`, `pe`,
+  // `upside_at_eval` and everything else written down on the board are
+  // RECORDED figures and are not touched here - CLAUDE.md rule 3. Only the
+  // comparisons against today's price are restated.
+  //
+  // `live.pe`, `live.pb`, `live.ps` and `live.market_cap` are deliberately
+  // left alone too. They are Yahoo's own figures at Yahoo's own asof, and the
+  // price they were struck against is not in this payload - one holding quotes
+  // in pence and its P/E is a hundred times the naive price-over-EPS, which is
+  // exactly how a plausible-looking rescale goes wrong. They carry an asof and
+  // they keep it.
+  function watchlist(items) {
+    for (const w of items) {
+      const price = w.price_now, target = w.target, ev = w.price_at_eval;
+      w.stale_price = price == null;
+      w.drift_pct = (price && ev) ? R((price / ev - 1) * 100, 2) : null;
+      w.upside_now = (price && target) ? R((target / price - 1) * 100, 1) : null;
+      // Subtracts two already-rounded 1dp figures and rounds again, as the
+      // original does. Reproduce it exactly or the decay alert quantises into
+      // a different bucket than the one Telegram reported.
+      w.upside_decay_pts = (w.upside_now != null && w.upside_at_eval != null)
+        ? R(w.upside_now - w.upside_at_eval, 1) : null;
+      const level = w.trigger_level;
+      if (level && price) {
+        w.trigger_gap_pct = R((level / price - 1) * 100, 1);
+        w.trigger_hit = w.trigger_kind === 'below' ? price <= level : price >= level;
+      } else {
+        w.trigger_gap_pct = null;
+        w.trigger_hit = null;
+      }
+      const street = (w.live || {}).street_target;
+      w.street_upside_pct = (street && price)
+        ? R((street / price - 1) * 100, 1) : null;
+    }
+    return items;
+  }
+
+  /* ---- reporting.py: the weights, which are value over value ---- */
+
+  // reporting.py:134-222. A different denominator on purpose: it folds by
+  // Yahoo symbol and DROPS anything without one, so the index funds are not in
+  // its base. Restating it on the book's total instead would silently change
+  // what every weight in that table means.
+  function reporting(rep, rows) {
+    const byKey = new Map();
+    for (const h of rows) {
+      const sym = h.yahoo;
+      if (!sym || sym === 'MISSING') continue;
+      byKey.set(sym, (byKey.get(sym) || 0) + (h.value_eur || 0));
+    }
+    const total = [...byKey.values()].reduce((a, v) => a + v, 0) || 0;
+    // Counted, not shrugged off - for the same reason coverage counts. A join
+    // that quietly matches nothing leaves Python's numbers in place and looks
+    // exactly like a join that worked.
+    let unmatched = 0;
+    const restate = (list) => {
+      for (const r of list || []) {
+        const v = byKey.has(r.symbol || r.sym) ? byKey.get(r.symbol || r.sym) : null;
+        if (v == null) { unmatched += 1; continue; }
+        r.value_eur = R(v, 2);
+        r.weight_pct = (total && v) ? R(v / total * 100, 2) : 0;
+      }
+    };
+    const cal = rep.calendar || {};
+    restate(cal.rows); restate(cal.unknown); restate(rep.latest);
+    (cal.rows || []).sort((a, b) => String(a.date).localeCompare(String(b.date))
+                                    || b.weight_pct - a.weight_pct);
+    (cal.unknown || []).sort((a, b) => b.weight_pct - a.weight_pct);
+    (rep.latest || []).sort((a, b) => String(b.date).localeCompare(String(a.date))
+                                      || b.weight_pct - a.weight_pct);
+    return unmatched;
+  }
+
+  /* ---- the one entry point ---- */
+
+  // Static facts the recompute needs and cannot derive: which ISIN is a fund,
+  // and what each fund's published TER and disclosure are. Read once, from the
+  // build-time payload, because none of them move with a price.
+  let META = null, STATS = null;
+  function meta() {
+    if (META) return META;
+    const klass = new Map();
+    for (const r of (D.coverage || {}).rows || []) klass.set(r.isin, r.klass);
+    const klassByKey = new Map();
+    for (const h of D.holdings || []) klassByKey.set(ovKey(h), klass.get(h.isin));
+    const ter = new Map(), fundMeta = new Map();
+    for (const f of (D.exposure || {}).funds || []) {
+      ter.set(f.symbol, f.ter_pct == null ? null : f.ter_pct);
+      fundMeta.set(f.symbol, f);
+    }
+    META = {klass, klassByKey, ter, fundMeta};
+    return META;
+  }
+
+  // Recompute every price-derived figure in D from D.holdings, in place.
+  //
+  // Order matters once: the per-holding figures are restated first, because
+  // value_eur is rounded to the cent BEFORE anything downstream divides by it.
+  // Deriving a weight from the unrounded product disagrees with Python in the
+  // last digit across several dozen fields at once.
+  function all() {
+    const M = meta();
+    const rows = D.holdings || [];
+    holdings(rows);
+
+    // render.py:28-39. Note pl_pct falls back to 0, not null, here - and to
+    // null on a single holding. Two fallbacks for the same condition, both
+    // transcribed rather than harmonised, because harmonising them here would
+    // put a number on screen that the Telegram message does not agree with.
+    // Assigned INTO the existing objects, never over them. The page captures
+    // `const OV = D.overview` once at module scope; swapping in a fresh object
+    // would leave every one of those captures pointing at the boot-time answer
+    // while D itself moved on - which is the exact failure this whole module
+    // exists to remove, reintroduced one level up.
+    const value = R(rows.reduce((a, h) => a + (h.value_eur || 0), 0), 2);
+    const cost = R(rows.reduce((a, h) => a + (h.cost_eur || 0), 0), 2);
+    D.totals = D.totals || {};
+    Object.assign(D.totals, {
+      value_eur: value, cost_eur: cost, pl_eur: R(value - cost, 2),
+      pl_pct: cost ? R((value / cost - 1) * 100, 2) : 0,
+    });
+
+    const folded = fold(rows, M.klassByKey);
+    const ovTotal = folded.reduce((a, r) => a + r.value_eur, 0);
+    D.overview = D.overview || {};
+    Object.assign(D.overview, {
+      rows: folded, n: folded.length, value_eur: R(ovTotal, 2),
+      day: dayMove(folded), allocation: allocation(folded, ovTotal),
+      movers: movers(folded), contributors: contributors(folded),
+      totals: D.totals,
+    });
+
+    const pos = positions(rows, M);
+    const expTotal = pos.reduce((a, p) => a + p.value_eur, 0);
+    D.exposure = D.exposure || {};
+    Object.assign(D.exposure, {
+      total_eur: R(expTotal, 2), n_positions: pos.length,
+      concentration: concentration(pos, expTotal),
+      fees: fees(pos, M.ter, expTotal),
+      funds: funds(pos, expTotal, M.fundMeta),
+    });
+
+    // Every join's misses, kept. A recompute that silently restates nothing is
+    // indistinguishable from one that restates everything correctly - both
+    // leave Python's numbers on screen - so the only way to tell them apart is
+    // to count. STATS is what `health()` reads and what the mutation harness
+    // asserts on.
+    STATS = {
+      holdings: rows.length,
+      folded: folded.length,
+      positions: pos.length,
+      // A fund whose TER is unresolved is a known gap, not a miss: it is
+      // already reported as unresolved_eur. This counts a fund the fees table
+      // could not find at all.
+      funds_untermed: D.exposure.fees.rows.filter((r) => r.ter_pct == null).length,
+      coverage_unmatched: D.coverage ? coverage(D.coverage, rows) : 0,
+      reporting_unmatched: D.reporting ? reporting(D.reporting, rows) : 0,
+      watchlist: D.watchlist ? watchlist(D.watchlist).length : 0,
+    };
+  }
+
+  /* ---- the proof ---- */
+
+  // Run the whole recompute against the prices the file was built with and
+  // compare, field by field, with what Python wrote. Any disagreement beyond
+  // one unit in the last decimal place the original rounds to is a defect in
+  // this port, and it is reported rather than absorbed.
+  //
+  // Deep-copies the payload first, so asking the question cannot change the
+  // answer.
+  function parity() {
+    const before = JSON.parse(JSON.stringify({
+      totals: D.totals, overview: D.overview, exposure: D.exposure,
+      coverage: D.coverage, watchlist: D.watchlist, reporting: D.reporting,
+      holdings: D.holdings}));
+    all();
+    const bad = [], near = [];
+    let checked = 0;
+    const walk = (path, was, now, tol) => {
+      if (was === now) { checked += 1; return; }
+      if (was == null || now == null) {
+        checked += 1;
+        if (was !== now) bad.push({path, was, now});
+        return;
+      }
+      if (typeof was === 'number' && typeof now === 'number') {
+        checked += 1;
+        const d = Math.abs(was - now);
+        // Reported, not absorbed. A tolerance that quietly swallows a
+        // systematic last-digit drift is a tolerance that will later swallow
+        // the first real divergence too - `near` being empty is the evidence
+        // that the tolerance is currently doing no work at all.
+        if (d > tol) bad.push({path, was, now});
+        else if (d > 1e-9) near.push({path, was, now});
+        return;
+      }
+      if (Array.isArray(was) && Array.isArray(now)) {
+        if (was.length !== now.length) { bad.push({path: path + '.length',
+          was: was.length, now: now.length}); return; }
+        was.forEach((v, i) => walk(path + '[' + i + ']', v, now[i], tol));
+        return;
+      }
+      if (was && now && typeof was === 'object') {
+        for (const k of Object.keys(was)) walk(path + '.' + k, was[k], now[k], tol);
+        return;
+      }
+      checked += 1;
+      if (String(was) !== String(now)) bad.push({path, was, now});
+    };
+    // One cent, and one unit in the last place of the coarsest percentage.
+    // Tighter than that is measuring float noise, not agreement.
+    const T = 0.011;
+    walk('totals', before.totals, D.totals, T);
+    walk('overview', before.overview, D.overview, T);
+    walk('exposure.total_eur', before.exposure.total_eur, D.exposure.total_eur, T);
+    walk('exposure.concentration', before.exposure.concentration,
+         D.exposure.concentration, T);
+    walk('exposure.fees', before.exposure.fees, D.exposure.fees, T);
+    walk('exposure.funds', before.exposure.funds, D.exposure.funds, T);
+    walk('coverage', before.coverage, D.coverage, T);
+    walk('watchlist', before.watchlist, D.watchlist, T);
+    walk('reporting', before.reporting, D.reporting, T);
+    walk('holdings', before.holdings, D.holdings, T);
+    return {ok: !bad.length, checked, mismatches: bad.slice(0, 40),
+            n_mismatches: bad.length,
+            n_near: near.length, near: near.slice(0, 40)};
+  }
+
+  return {all, parity, stats: () => STATS,
+          squarify, fold, dayMove, allocation, concentration};
+})();
+
+// Run at boot, before anything reads D - so the very first paint is already the
+// ported arithmetic's output rather than Python's, and any disagreement between
+// the two is visible immediately instead of appearing the moment a price lands.
+// Shipping a port that only runs when the data has already changed means the
+// one run you can check is the one run you never do.
+const PARITY = DERIVE.parity();
+
+// Folded once at boot, and again every time live prices land. This is a
+// function rather than straight-line code for precisely that reason: the live
+// layer has to rebuild these rows under the same rules, and a second copy of
+// this loop would drift from this one the first time either changed.
+//
+// Note the rows here are NEW objects, not references into D.holdings, and
+// value_eur is summed across custody accounts. So a live update cannot patch
+// these in place - it writes the per-account rows in D.holdings and calls this
+// again.
+function foldHoldings() {
+  held.clear();
+  for (const h of D.holdings || []) {
+    const sym = h.yahoo || h.ticker;
+    if (!sym) continue;
+    const cur = held.get(sym) || {sym, name:h.name, ticker:h.ticker, ccy:h.ccy,
+      units:0, cost_eur:0, value_eur:0, price:h.price, day_pct:h.day_pct,
+      off_high:h.off_high, bucket:h.bucket, accounts:[], stale:h.stale};
+    cur.units += h.units || 0;
+    cur.cost_eur += h.cost_eur || 0;
+    cur.value_eur += h.value_eur || 0;
+    if (h.account && !cur.accounts.includes(h.account)) cur.accounts.push(h.account);
+    held.set(sym, cur);
+  }
+  for (const h of held.values()) {
+    h.pl_eur = h.value_eur - h.cost_eur;
+    h.pl_pct = h.cost_eur ? (h.value_eur / h.cost_eur - 1) * 100 : null;
+    h.weight = D.totals.value_eur ? (h.value_eur / D.totals.value_eur) * 100 : 0;
+  }
 }
+foldHoldings();
 
 const watch = new Map();
 for (const w of D.watchlist || []) {
@@ -826,7 +1515,17 @@ for (const c of COV.rows || []) {
 const alertsFor = (sym) => (D.alerts || []).filter(
   (a) => (String(a.key || '') + ' ' + String(a.title || '')).includes(sym));
 
-const ROWS = [...new Set([...held.keys(), ...watch.keys()])].map((sym) => {
+// Rebuilt, not patched, for the same reason foldHoldings() is: `h` here is a
+// reference into the folded map, and foldHoldings() replaces those objects
+// wholesale. When this was a one-shot `const ROWS = [...]` the sheet updated on
+// every tick and the rail, the strip and the detail pane went on rendering
+// through references to objects nothing wrote to any more - the same page
+// showing two different prices for the same holding, forty pixels apart.
+const ROWS = [];
+const ROWSYM = new Set();
+
+function buildRows() {
+  const rows = [...new Set([...held.keys(), ...watch.keys()])].map((sym) => {
   const h = held.get(sym), w = watch.get(sym);
   const flags = alertsFor(sym);
   return {
@@ -846,13 +1545,20 @@ const ROWS = [...new Set([...held.keys(), ...watch.keys()])].map((sym) => {
   };
 }).sort((a, b) => (b.value_eur || 0) - (a.value_eur || 0) ||
                   a.label.localeCompare(b.label));
-
-// What `select()` can actually open. The sheet's tables reach further than the
-// rail does - the look-through names companies that are only inside a fund and
-// have no chart of their own - so a row is offered as a click only when there
-// is somewhere for the click to go. Marking every row clickable and having
-// most of them do nothing teaches you to stop clicking.
-const ROWSYM = new Set(ROWS.map((r) => r.sym));
+  // Emptied and refilled rather than reassigned, so every closure that already
+  // captured ROWS keeps seeing the live array.
+  ROWS.length = 0;
+  ROWS.push(...rows);
+  // What `select()` can actually open. The sheet's tables reach further than
+  // the rail does - the look-through names companies that are only inside a
+  // fund and have no chart of their own - so a row is offered as a click only
+  // when there is somewhere for the click to go. Marking every row clickable
+  // and having most of them do nothing teaches you to stop clicking.
+  ROWSYM.clear();
+  for (const r of ROWS) ROWSYM.add(r.sym);
+  return ROWS;
+}
+buildRows();
 
 let state = {sym: ROWS.length ? ROWS[0].sym : null, filter:'all', q:'', days:365,
              ma:{50:true, 200:true}};
@@ -899,12 +1605,39 @@ function paintTape() {
     `Priced <b title="${esc(D.generated || '')}${s.run_mode === 'refresh'
         ? ` · intraday refresh; board last read ${esc(s.last_full_run || '')}`
         : ' · full run'}">${esc((D.generated || '').slice(11, 16))}</b>`,
+    // The live chip sits BESIDE the render clock and never replaces it. The
+    // render clock is the recorded figure - the evidence of when this file was
+    // built - and overwriting it with a live time would destroy the only
+    // signal that the underlying book is old (CLAUDE.md rule 3). A page whose
+    // prices are two seconds old and whose positions are four days old should
+    // say both, not average them into one reassuring number.
+    liveChip(),
     `CSV <b class="${stale ? 'dn-t' : ''}">${s.nordnet_export_age_days}d</b>`,
     `Notion <b>${live ? 'live' : 'cached'}</b>`,
   ].filter(Boolean).map((f) => `<span class="f">${f}</span>`)
    .join('<span style="color:var(--axis);margin:0 8px">·</span>');
 
-  const problems = (hs.problems || []);
+  // A failed parity check is a health problem, not a console warning. If the
+  // JS recompute disagrees with the Python that produced this file, every
+  // figure the live layer touches is suspect - and the reader is the one
+  // person who needs to know that before acting on one. Nobody has the console
+  // open, so a defect that only logs there is a defect nobody ever learns
+  // about.
+  const problems = (hs.problems || []).slice();
+  if (typeof PARITY !== 'undefined' && !PARITY.ok) {
+    problems.unshift({level: 'critical', title:
+      `recompute disagrees with the build in ${PARITY.n_mismatches} of `
+      + `${PARITY.checked} fields (first: ${PARITY.mismatches[0].path})`});
+  }
+  const st = (typeof DERIVE !== 'undefined') ? DERIVE.stats() : null;
+  if (st && (st.coverage_unmatched || st.reporting_unmatched)) {
+    // A join that matches nothing leaves the build-time numbers in place and
+    // looks identical to one that worked. It said so once by accident; now it
+    // says so on purpose.
+    problems.unshift({level: 'warning', title:
+      `${st.coverage_unmatched + st.reporting_unmatched} rows could not be `
+      + `rejoined to a holding and still show build-time figures`});
+  }
   if (problems.length) {
     const worst = problems.some((p) => p.level === 'critical') ? 'critical' : 'warning';
     $('#t-banner').innerHTML =
@@ -1648,7 +2381,10 @@ function paintSheet() {
   // unresolved bar is appended whenever there is anything to append and is
   // deliberately NOT clickable - it is the answer to "and the rest", not a
   // bucket you can look inside.
-  const xstack = (t, title, kind, note) => {
+  // `note` is escaped and `mark` is not, deliberately: the note can carry a
+  // vendor-supplied string (geography's basis line comes from the data), while
+  // mark is only ever this file's own atBuild() markup.
+  const xstack = (t, title, kind, note, mark) => {
     if (!t || !(t.rows || []).length) return '';
     const un = share(t.unresolved_eur || 0);
     return `<div><div class="tlabel" style="margin:16px 0 7px">${esc(title)} —
@@ -1659,7 +2395,7 @@ function paintSheet() {
         indirect: r.indirect_eur == null ? null : share(r.indirect_eur)})).join('')}
       ${un > 0.005 ? xbar({label: 'Not resolved', pct: un,
         value: t.unresolved_eur, un: true}) : ''}
-      <div class="xkey">${esc(note)}</div></div>`;
+      <div class="xkey">${esc(note)}${mark || ''}</div></div>`;
   };
 
   const XC = X.concentration || {}, XM = X.multiples || {},
@@ -1696,7 +2432,10 @@ function paintSheet() {
          top 10 ${num(XC.top10_pct,1)}% · HHI ${num(XC.hhi,4)}`)}
       ${xcard('Blended P/E', num(XM.pe, 1),
         `P/B ${num(XM.pb,1)} · P/S ${num(XM.ps,2)} ·
-         ${num(XM.pe_resolved_pct,1)}% of the book priced · harmonic, not averaged`)}
+         ${num(XM.pe_resolved_pct,1)}% of the book priced · harmonic, not averaged`
+        + atBuild('each multiple is the vendor’s own figure at the '
+          + 'vendor’s own asof; one holding quotes in pence, so a naive '
+          + 'price-over-earnings rescale would be out by a factor of a hundred'))}
       ${xcard('Fund fee drag', eur(XF.annual_eur) + '/yr',
         `${num(XF.sleeve_ter_pct,3)}% of the fund sleeve ·
          ${num(XF.book_ter_pct,3)}% of the book ·
@@ -1704,18 +2443,21 @@ function paintSheet() {
       ${xcard('Names reached', XN.n || 0,
         `${num(XN.resolved_pct,1)}% of the book named ·
          ${XN.n_both_ways || 0} held directly and inside a fund ·
-         the rest is inside undisclosed fund tails`)}
+         the rest is inside undisclosed fund tails`
+        + atBuild(LOOKTHRU_WHY))}
     </div>
     <div class="xcols">
       ${xstack(X.sectors, 'Sector', 'sector',
         'Solid is held directly, pale is reached through a fund. Fund cash is ' +
-        'left unresolved rather than scaled away. Click a row to filter below.')}
+        'left unresolved rather than scaled away. Click a row to filter below.',
+        atBuild(LOOKTHRU_WHY))}
       ${xstack(X.geography, 'Geography', 'country',
-        (X.geography || {}).basis || '')}
+        (X.geography || {}).basis || '', atBuild(LOOKTHRU_WHY))}
     </div>
     ${xstack(X.industries, 'Industry', 'industry',
       'Directly-held stocks only. A fund reports sectors and never industries, ' +
-      'so the fund sleeve is unresolved here by construction, not by failure.')}
+      'so the fund sleeve is unresolved here by construction, not by failure.',
+      atBuild(LOOKTHRU_WHY))}
     </div>
     <h2 data-sec="look">Look-through — ${nameRows.length}${
       nameRows.length === (XN.rows || []).length ? '' :
@@ -2112,8 +2854,10 @@ function paintOverview() {
         OV.n || 0} names`),
     stat('Annualised', t.irr_pct == null ? '—'
       : `<span class="${cls(t.irr_pct)}">${pct(t.irr_pct, 1)}</span>`,
-      t.irr_since ? `money-weighted since ${esc(t.irr_since)}`
-                  : esc(t.irr_note || 'not computed')),
+      (t.irr_since ? `money-weighted since ${esc(t.irr_since)}`
+                   : esc(t.irr_note || 'not computed'))
+      + atBuild('a money-weighted return needs the dated lot cashflows, which '
+                + 'are not carried in this page')),
     // The quiet count is the honest part of this stat: it says how much of the
     // book had no previous close and is therefore absent from the move rather
     // than sitting inside it as a zero.
@@ -2578,4 +3322,179 @@ if (ROWS.length) {
   const l = $('#list');
   if (l) l.innerHTML = '<div class="empty">No positions and no watchlist rows.</div>';
 }
+
+// --------------------------------------------------------------- live prices
+//
+// Everything above this line renders the file exactly as it was built. This
+// block, and only this block, makes the page move on its own.
+//
+// It asks /api/quotes - an edge function on the same deployment, behind the
+// same password gate - for current prices and FX, then rewrites the
+// price-derived fields and repaints. The book itself (units, cost, accounts,
+// theses, coverage) is untouched: those change when Nordnet is exported, not
+// when a price ticks, and pretending otherwise would be the whole point of the
+// exercise thrown away.
+//
+// Three rules it does not break:
+//
+//  - A holding the vendor could not price KEEPS its build-time price. It is
+//    never zeroed, never carried at yesterday's close relabelled as today, and
+//    it is COUNTED and shown in the tape. Absent is not zero.
+//  - D.generated is never touched. The render clock is the evidence of how old
+//    the underlying book is; the live clock sits next to it, not on top.
+//  - A failed fetch is a visible state, not a silent no-op. `Live off` means
+//    something different from no chip at all, and both mean something
+//    different from a fresh timestamp.
+(function liveLayer() {
+  // Opened from disk there is no origin to call, and nothing is wrong with
+  // that - the local file is the primary way this page is read. Stay silent
+  // rather than showing a failure the reader cannot act on.
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+
+  const POLL_MS = 60000;
+  const rows = (D.holdings || []).filter((h) => h.yahoo && h.yahoo !== 'MISSING');
+  const wrows = (D.watchlist || []).filter((w) => w.yahoo && w.yahoo !== 'MISSING');
+  if (!rows.length && !wrows.length) return;
+
+  const symbols = [...new Set([...rows, ...wrows].map((r) => r.yahoo))];
+  // Held rows only. A watchlist row needs a price and a day move; it is not
+  // valued in euro, so its currency needs no rate. Asking for one means the
+  // response reports a currency as missing forever - the book carries a
+  // watchlist entry whose ccy is literally "Other" - and a warning that is
+  // always on is a warning nobody reads.
+  const currencies = [...new Set(rows.map((r) => r.ccy).filter(Boolean))];
+
+  // The render-time totals, kept so they are never simply lost to an
+  // overwrite. Same reason the render clock survives.
+  if (!D.totals_built) D.totals_built = Object.assign({}, D.totals);
+
+  function applyQuotes(data) {
+    const q = data.quotes || {};
+    const fx = data.fx || {};
+    const unpriced = [];
+
+    for (const h of rows) {
+      const hit = q[h.yahoo];
+      const rate = fx[h.ccy];
+      // Both, or neither, and both positive.
+      //
+      // A price without its FX rate would be valued at the wrong scale, which
+      // is worse than being a few minutes old. And the price is re-checked for
+      // being a usable number HERE as well as in the endpoint, because this is
+      // the side where a bad one becomes a euro figure on screen. A zero that
+      // got past the endpoint would silently value the position at nothing,
+      // and a zero rate would do the same to every row in that currency.
+      if (!hit || !(hit.price > 0) || !(rate > 0)) {
+        unpriced.push(h.yahoo);
+        continue;
+      }
+      h.price = hit.price;
+      // Rounded to the cent HERE, exactly where analyse.value_holdings rounds
+      // it, because everything downstream divides by it. Carry the unrounded
+      // product into the weights and the totals and the page disagrees with
+      // Python in the last digit across several dozen fields at once - all of
+      // them individually defensible, none of them reconcilable.
+      h.value_eur = Math.round(hit.price * (h.units || 0) * rate * 100) / 100;
+      h.day_pct = hit.changePct;
+      h.stale = false;
+      h.live_asof = hit.asOf;
+      // Everything else a price implies - P/L, off_high, the broker check, the
+      // weights, the treemap, coverage, the watchlist upsides - is DERIVE's
+      // job, below. Patching a field here as well is how the page ended up
+      // with two prices for one holding in the first place.
+    }
+
+    for (const w of wrows) {
+      const hit = q[w.yahoo];
+      if (!hit || !(hit.price > 0)) continue;  // same guard, same reason
+      // price_now is the field the rest of the page reads: `w.price` does not
+      // exist in the payload, so writing to it updated nothing and failed
+      // silently - the watchlist has no euro value to look wrong, so a dead
+      // write there shows up as a column that simply never moves.
+      w.price_now = hit.price;
+      w.day_pct = hit.changePct;
+    }
+
+    // One call, one source of truth. Every price-derived number in D is
+    // recomputed from D.holdings by the same code that was proved against
+    // Python's own output at boot - rather than by a second, shorter, subtly
+    // different sum written here.
+    DERIVE.all();
+
+    LIVE = {
+      at: new Date(),
+      asked: symbols.length,
+      priced: Object.keys(q).length,
+      // Held positions only. An unpriced watchlist row costs the reader
+      // nothing; an unpriced holding is a number in the total that did not
+      // move with the others, and that is worth saying out loud.
+      missing: unpriced,
+      fxMissing: data.fxMissing || [],
+      error: null,
+    };
+
+    foldHoldings();
+    buildRows();
+    repaint();
+  }
+
+  function repaint() {
+    try {
+      paintTape();
+      paintOverview();
+      paintSheet();
+      if (typeof ROWS !== 'undefined' && ROWS.length && state && state.sym) {
+        select(state.sym);
+      }
+    } catch (e) {
+      // A repaint that throws must not leave a half-updated page claiming to
+      // be live.
+      LIVE = {at: new Date(), asked: symbols.length, priced: 0, missing: [],
+        fxMissing: [], error: 'repaint failed: ' + (e && e.message)};
+      try { paintTape(); } catch (e2) {}
+    }
+  }
+
+  let inflight = false;
+  async function tick() {
+    if (inflight) return;
+    inflight = true;
+    try {
+      const r = await fetch('/api/quotes', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({symbols, currencies}),
+      });
+      if (!r.ok) throw new Error('quotes endpoint returned ' + r.status);
+      applyQuotes(await r.json());
+    } catch (e) {
+      LIVE = {at: new Date(), asked: symbols.length, priced: 0, missing: [],
+        fxMissing: [], error: (e && e.message) || 'live prices unavailable'};
+      try { paintTape(); } catch (e2) {}
+    } finally {
+      inflight = false;
+    }
+  }
+
+  // Deliberately exposed. The interesting behaviour of this block is what it
+  // does when the endpoint lies to it - an empty quote map, a zero price, a
+  // missing FX rate, a 500 - and none of that is reachable from outside
+  // without a handle to re-run the fetch under a stubbed `fetch`. A guard
+  // nobody has killed on purpose is not a guard yet.
+  //
+  // It exposes no data the page is not already showing, and the page is behind
+  // the password gate regardless.
+  window.cockpitLive = {tick, state: () => LIVE};
+
+  tick();
+  // Polling a hidden tab burns the free tier's invocations to redraw something
+  // nobody is looking at. Refresh on the way back instead.
+  setInterval(() => {
+    if (document.visibilityState === 'visible') tick();
+  }, POLL_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') tick();
+  });
+})();
 </script>

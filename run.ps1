@@ -10,10 +10,12 @@
 #   .\run.ps1 selftest     offline wiring checks
 #   .\run.ps1 doctor       what is stale or drifting
 #   .\run.ps1 deploy       publish to Vercel behind the password gate
-#   .\run.ps1 gate-check <url>   ask a deployment what a stranger gets
+#   .\run.ps1 gate-check <url>     ask a deployment what a stranger gets
+#   .\run.ps1 quotes-check <url>   exercise the live-price endpoint
 #
-# `deploy` and `gate-check` are shell work, not cockpit subcommands, so they are
-# intercepted below rather than forwarded to cockpit.py.
+# `deploy`, `gate-check` and `quotes-check` are shell work, not cockpit
+# subcommands, so they are intercepted below rather than forwarded to
+# cockpit.py.
 #
 # Exit code is the cockpit's own, so Task Scheduler's "Last Run Result" is
 # meaningful instead of always 0.
@@ -66,6 +68,13 @@ Add-Content -Path $log -Value "$stamp  using $python  args: $($CockpitArgs -join
 # the one thing here that must stay runnable when everything else is broken.
 if ($CockpitArgs[0] -eq "gate-check") {
   & $python (Join-Path $here "tools\gate_check.py") @($CockpitArgs | Select-Object -Skip 1)
+  exit $LASTEXITCODE
+}
+
+# Same shape as gate-check: talks to a live deployment (or a running
+# `vercel dev`) rather than to cockpit.py.
+if ($CockpitArgs[0] -eq "quotes-check") {
+  & $python (Join-Path $here "tools\quotes_check.py") @($CockpitArgs | Select-Object -Skip 1)
   exit $LASTEXITCODE
 }
 

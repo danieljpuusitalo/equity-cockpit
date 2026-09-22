@@ -797,6 +797,34 @@ def selftest():
           f"template lost: {', '.join(ov)}" if ov
           else "grid, view switch and treemap container all present")
 
+    # Once prices arrive in the browser, every figure derived from a price has
+    # to be re-derived there too, or the page shows a live tape above a
+    # build-time book and says nothing about the difference. DERIVE is the one
+    # place that happens, and PARITY is the boot-time proof that its JS
+    # reproduces this file's own Python rather than approximating it.
+    #
+    # Four hooks, and the point of each is that losing it is SILENT: the page
+    # still opens, still renders, still smoke-tests clean, and simply goes on
+    # displaying numbers that stopped being true an hour ago.
+    der = [h for h in ('const DERIVE = (function ()', 'const PARITY = DERIVE.parity()',
+                       'DERIVE.all();', 'function buildRows()') if h not in tmpl]
+    check("assets: live prices still re-derive the page", not der,
+          f"template lost: {', '.join(der)}" if der
+          else "recompute, boot parity check, live call and row rebuild all present")
+
+    # The bug this replaced: the live layer summed its own totals inline, a few
+    # lines and one rounding step different from analyse.value_holdings, and
+    # the two answers diverged silently. Any `D.totals =` outside DERIVE means
+    # a second denominator has grown back.
+    #
+    # Counted rather than forbidden outright, because DERIVE legitimately
+    # assigns it once - as a `D.totals || {}` guard before writing INTO it.
+    totals_writes = tmpl.count("D.totals =")
+    check("assets: only one place computes the book's total", totals_writes == 1,
+          f"{totals_writes} assignments to D.totals; expected exactly 1 "
+          "(DERIVE's own guard). A second one is a second denominator."
+          if totals_writes != 1 else "one assignment, inside DERIVE")
+
     # The chart is the only element on the page that measures its own container,
     # and with autoSize on it gets exactly one chance - the vendored library
     # makes resize() a no-op for as long as the observer is installed. The
