@@ -5,6 +5,9 @@
 #   .\install-task.ps1 -NoRefresh   daily run only
 #   .\install-task.ps1 -Remove      unregister both
 #
+#   .\install-task.ps1 -RefreshMinutes 0 -RefreshFrom 22:00
+#                                   refresh once a day at 22:00, no repetition
+#
 # Two tasks, because they are two different jobs:
 #
 #   EquityCockpit         weekdays 07:40. Reads every source, re-checks the
@@ -55,10 +58,17 @@ if ($Remove) {
 #
 # Computed before anything is registered, so a bad argument leaves the machine
 # as it found it rather than half-applied.
+#
+# -RefreshMinutes 0 means "fire once at -RefreshFrom and stop" - no repetition at
+# all, so -RefreshUntil is not consulted and must not be validated against.
+$refreshRepeats = (-not $NoRefresh) -and ($RefreshMinutes -gt 0)
 $windowMinutes = [int]([datetime]::Parse($RefreshUntil) -
                        [datetime]::Parse($RefreshFrom)).TotalMinutes
-if (-not $NoRefresh -and $windowMinutes -le 0) {
+if ($refreshRepeats -and $windowMinutes -le 0) {
   throw "-RefreshUntil ($RefreshUntil) must be later in the day than -RefreshFrom ($RefreshFrom)."
+}
+if ($RefreshMinutes -lt 0) {
+  throw "-RefreshMinutes ($RefreshMinutes) cannot be negative. Use 0 for a single daily refresh."
 }
 
 function New-CockpitAction([string] $CockpitArg) {
@@ -96,16 +106,21 @@ if ($NoRefresh) {
   # built on a throwaway -Once trigger and grafted on. This is the documented
   # way to get "every N minutes, weekdays only" out of a single task.
   $refreshTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $weekdays -At $RefreshFrom
-  $refreshTrigger.Repetition = (New-ScheduledTaskTrigger -Once -At $RefreshFrom `
-    -RepetitionInterval (New-TimeSpan -Minutes $RefreshMinutes) `
-    -RepetitionDuration (New-TimeSpan -Minutes $windowMinutes)).Repetition
 
-  # The default is $true, which stops any instance still running when the
-  # duration expires - and the last repetition starts exactly on that boundary.
-  # That is the 22:00 one, the New York close, the single most valuable refresh
-  # of the day, and it would be racing the scheduler to finish. ExecutionTimeLimit
-  # still bounds it at 10 minutes, so nothing runs away.
-  $refreshTrigger.Repetition.StopAtDurationEnd = $false
+  if ($refreshRepeats) {
+    $refreshTrigger.Repetition = (New-ScheduledTaskTrigger -Once -At $RefreshFrom `
+      -RepetitionInterval (New-TimeSpan -Minutes $RefreshMinutes) `
+      -RepetitionDuration (New-TimeSpan -Minutes $windowMinutes)).Repetition
+
+    # The default is $true, which stops any instance still running when the
+    # duration expires - and the last repetition starts exactly on that boundary.
+    # That is the 22:00 one, the New York close, the single most valuable refresh
+    # of the day, and it would be racing the scheduler to finish. ExecutionTimeLimit
+    # still bounds it at 10 minutes, so nothing runs away.
+    $refreshTrigger.Repetition.StopAtDurationEnd = $false
+  }
+  # else: a bare weekly trigger, one fire at $RefreshFrom. StopAtDurationEnd has
+  # nothing to stop, so it is left alone rather than set to a meaningless value.
 
   # NOT StartWhenAvailable. A missed 14:00 refresh is worthless by 19:00 - the
   # next one is half an hour away and will be correct. Catching up on skipped
@@ -127,12 +142,21 @@ if ($NoRefresh) {
   # the parameters. The bug this replaces was a success message computed from
   # the inputs while a truncated duration went to the scheduler - it printed a
   # window that was never registered.
-  $reg = (Get-ScheduledTask -TaskName $refreshName).Triggers[0].Repetition
-  $end = ([datetime]::Parse($RefreshFrom) +
-          [System.Xml.XmlConvert]::ToTimeSpan($reg.Duration)).ToString("HH:mm")
-  Write-Host ("Registered '$refreshName' - weekdays every " +
-              "$([System.Xml.XmlConvert]::ToTimeSpan($reg.Interval).TotalMinutes) min, " +
-              "$RefreshFrom to $end (duration $($reg.Duration)).")
+  $regTrigger = (Get-ScheduledTask -TaskName $refreshName).Triggers[0]
+  $reg = $regTrigger.Repetition
+  if ($reg.Interval) {
+    $end = ([datetime]::Parse($RefreshFrom) +
+            [System.Xml.XmlConvert]::ToTimeSpan($reg.Duration)).ToString("HH:mm")
+    Write-Host ("Registered '$refreshName' - weekdays every " +
+                "$([System.Xml.XmlConvert]::ToTimeSpan($reg.Interval).TotalMinutes) min, " +
+                "$RefreshFrom to $end (duration $($reg.Duration)).")
+  } else {
+    # Same rule as the repeating branch: the time is read off what the scheduler
+    # actually holds, not re-printed from $RefreshFrom. An empty Interval here is
+    # the receipt that no repetition was registered.
+    $at = ([datetime]::Parse($regTrigger.StartBoundary)).ToString("HH:mm")
+    Write-Host "Registered '$refreshName' - weekdays at $at, once a day (no repetition)."
+  }
 }
 
 Write-Host ""
