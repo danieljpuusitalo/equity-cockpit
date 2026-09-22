@@ -822,6 +822,29 @@ def selftest():
     check("assets: data is a drawer, not a third tab", not drawer,
           "; ".join(drawer) if drawer
           else "trigger sits outside the view nav and announces expansion")
+    # Freshness is a fact about a price, so it is stated at the price. The four
+    # states must stay four: `build` and `stale` render the same number from the
+    # same moment and mean opposite things - nobody asked, versus asked and
+    # refused - and collapsing them is this repo's own bug class wearing a
+    # price. The marks must also actually reach the four places a price is
+    # printed; a vocabulary nothing renders is decoration.
+    # Named down to the call, not the identifier: `LIVEMISS in tmpl` survives
+    # renaming every use to LIVEMISSX, which a mutation pass caught. The dot is
+    # what makes the check bite.
+    fr = []
+    for needed in ('function freshnessOf(', 'LIVEASK.add(', 'LIVEASK.has(',
+                   'LIVEMISS.add(', 'LIVEMISS.has(', 'LIVEMISS.clear('):
+        if needed not in tmpl:
+            fr.append(f"template lost {needed}")
+    for st in ('live', 'build', 'stale', 'unpriced'):
+        if f"  {st}: [" not in tmpl:
+            fr.append(f"freshness state `{st}` is gone")
+    marks = tmpl.count('${fresh(')
+    if marks < 4:
+        fr.append(f"only {marks} price(s) carry a freshness mark, expected 4")
+    check("assets: every price says how old it is", not fr,
+          "; ".join(fr) if fr
+          else f"four states, {marks} marked prices, asked and missed tracked")
     # Same argument one level up. The Overview is the page's landing surface
     # and it is built entirely in script: delete the grid container and the
     # page still opens, still smoke-tests clean, and simply shows an empty

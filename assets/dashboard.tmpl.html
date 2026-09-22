@@ -115,6 +115,18 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
    share. They were all colourless until this was measured in the light theme. */
 .chip b.up-t{color:var(--good-ink)} .chip b.dn-t{color:var(--crit-ink)}
 
+/* Freshness mark. The slot is a fixed width and is rendered even when it is
+   empty, so a column cannot shift sideways the moment quotes arrive. It sits to
+   the LEFT of the price in the numeric cells: a right-aligned column has to keep
+   its digits on the right edge, and hanging a glyph off that edge breaks the
+   alignment the tabular figures exist to provide. */
+.fr{display:inline-block;width:0.9em;margin-right:var(--s-1);text-align:center;
+  font-style:normal;font-size:var(--t-1);line-height:1;vertical-align:0.08em}
+.fr-live{color:var(--good-ink)}
+.fr-build{color:var(--muted)}
+.fr-stale{color:var(--warn-ink)}
+.fr-none{color:transparent}
+
 /* ------------------------------------------------------------------ tape */
 /* Wraps at every width rather than at a breakpoint. The meta chip is as long as
    the book is wide - at 955px it measured 769px on its own, which pushed the view
@@ -855,6 +867,61 @@ const atBuild = (why) => (LIVE && !LIVE.error)
       esc(D.generated || 'the last build')}, not live">as at build</b>`
   : '';
 
+// Freshness, per number rather than per page.
+//
+// The tape already says whether the live layer is working, and it says it once,
+// at the top. That is the wrong altitude: whether a price is current is a fact
+// about that price, and the reader is looking at the price, not at the tape.
+// Four states, and the distinction that earns its keep is `build` against
+// `stale`:
+//
+//   live      this tick's quote landed for this symbol
+//   build     nobody has asked yet, or this symbol is not one the live layer
+//             can ask about at all - no Yahoo mapping, or mapped to MISSING
+//   stale     it WAS asked, and nothing usable came back; the build's price is
+//             still on screen
+//   unpriced  there is no price at all
+//
+// `build` and `stale` look identical - the same number, from the same moment -
+// and mean opposite things. One is "nothing has asked", the other is "something
+// asked and was refused". Collapsing them is this repo's own bug class in its
+// price-shaped form: absent is not zero, and not-asked is not refused.
+const LIVEASK = new Set();   // symbols the live layer puts to the vendor
+const LIVEMISS = new Set();  // of those, the ones it got nothing usable for
+
+function freshnessOf(price, wasStale, sym) {
+  if (price == null) return 'unpriced';
+  if (!LIVE || LIVE.error || !LIVEASK.has(sym)) return wasStale ? 'stale' : 'build';
+  return LIVEMISS.has(sym) ? 'stale' : 'live';
+}
+
+// The glyph lives in a slot that is reserved whether or not there is anything
+// to put in it, so the page does not reflow the instant quotes land - a column
+// that shifts sideways when it updates is how a reader learns to stop trusting
+// where a number is.
+const FRESH = {
+  live: ['●', 'fr-live', 'Priced live'],
+  // Deliberately says what is true rather than why. `build` covers three
+  // different causes - nothing has ticked yet, the whole live layer is off, or
+  // this symbol is one it cannot ask about - and the mark cannot tell them
+  // apart from where it sits. The tape carries the why; the mark carries the
+  // age, which is the part that belongs next to the number.
+  build: ['·', 'fr-build', 'As at the build - no live price has replaced '
+    + 'this one'],
+  stale: ['○', 'fr-stale', 'Asked, and nothing usable came back - this is '
+    + 'still the build-time price'],
+  unpriced: ['', 'fr-none', 'No price'],
+};
+
+function fresh(f) {
+  const m = FRESH[f] || FRESH.unpriced;
+  const when = f === 'live' && LIVE && LIVE.at
+    ? ' at ' + LIVE.at.toTimeString().slice(0, 5)
+    : f === 'build' || f === 'stale' ? ' (' + esc(D.generated || 'last build') + ')' : '';
+  return `<i class="fr ${m[1]}" aria-label="${esc(m[2] + when)}"
+    title="${esc(m[2] + when)}">${m[0]}</i>`;
+}
+
 /* ----------------------------------------------------- derived numbers */
 //
 // Every number on this page that is a function of a price, recomputed in one
@@ -1506,6 +1573,10 @@ function foldHoldings() {
     held.set(sym, cur);
   }
   for (const h of held.values()) {
+    // Computed here, once, rather than re-inferred at each of the four places
+    // a price is printed. A folded position takes its lots' price, so it takes
+    // their freshness with it.
+    h.freshness = freshnessOf(h.price, h.stale, h.sym);
     h.pl_eur = h.value_eur - h.cost_eur;
     h.pl_pct = h.cost_eur ? (h.value_eur / h.cost_eur - 1) * 100 : null;
     h.weight = D.totals.value_eur ? (h.value_eur / D.totals.value_eur) * 100 : 0;
@@ -1558,6 +1629,8 @@ function buildRows() {
     company: (w && w.company) || (h && h.name) || sym,
     isHeld: !!h,
     price: (h && h.price) != null ? h.price : (w ? w.price_now : null),
+    freshness: h ? h.freshness
+      : freshnessOf(w ? w.price_now : null, w && w.stale_price, sym),
     ccy: (h && h.ccy) || (w && w.ccy) || '',
     day_pct: h ? h.day_pct : null,
     value_eur: h ? h.value_eur : null,
@@ -1695,7 +1768,7 @@ function paintRail() {
         ? `<i class="dot" style="background:${LEVEL[r.worst]}"></i>` : ''}${
         r.cov && !r.cov.covered
           ? `<i class="ring" title="Not monitored — ${esc(r.cov.gap || '')}"></i>` : ''}</div>
-      <div class="px num">${px(r.price)}</div>
+      <div class="px num">${fresh(r.freshness)}${px(r.price)}</div>
       <div class="co">${esc(r.company)}</div>
       <div class="chg num ${cls(r.day_pct)}">${r.isHeld
         ? pct(r.day_pct, 1) : '<span style="color:var(--muted)">watch</span>'}</div>
@@ -1710,7 +1783,7 @@ function paintHead(r) {
     <span class="tk">${esc(r.label)}</span>
     <span class="co">${esc(r.company)}</span>
     ${wk && wk.verdict ? verdictBadge(wk.verdict) : ''}
-    <span class="px num">${px(r.price)}<span style="font-size:var(--t-3);
+    <span class="px num">${fresh(r.freshness)}${px(r.price)}<span style="font-size:var(--t-3);
       color:var(--muted);margin-left:5px">${esc(r.ccy)}</span></span>
     <span class="chg num ${cls(r.day_pct)}">${r.day_pct == null ? '' : pct(r.day_pct)}</span>`;
 }
@@ -2302,7 +2375,8 @@ function paintSheet() {
       class="click" data-sym="${esc(p.sym)}">
       <td>${esc(p.ticker)}</td><td>${esc(p.name)}</td>
       <td class="t">${esc(p.accounts.join('/'))}</td><td>${qty(p.units)}</td>
-      <td>${px(p.price)}</td><td class="${cls(p.day_pct)}">${pct(p.day_pct,1)}</td>
+      <td>${fresh(p.freshness)}${px(p.price)}</td>
+      <td class="${cls(p.day_pct)}">${pct(p.day_pct,1)}</td>
       <td>${eur(p.value_eur)}</td><td>${eur(p.cost_eur)}</td>
       <td class="${cls(p.pl_eur)}">${eur(p.pl_eur)}</td>
       <td class="${cls(p.pl_pct)}">${pct(p.pl_pct,1)}</td>
@@ -2324,7 +2398,8 @@ function paintSheet() {
       class="${ROWSYM.has(x.yahoo || x.ticker) ? 'click' : ''}"
       data-sym="${esc(x.yahoo || x.ticker)}">
       <td>${esc(x.ticker)}</td><td>${esc(x.verdict)}</td><td>${esc(x.tier)}</td>
-      <td>${px(x.price_now)}</td><td>${px(x.target)}</td>
+      <td>${fresh(freshnessOf(x.price_now, x.stale_price,
+        x.yahoo || x.ticker))}${px(x.price_now)}</td><td>${px(x.target)}</td>
       <td class="${cls(x.upside_now)}">${pct(x.upside_now,1)}</td>
       <td>${pct(x.upside_at_eval,1)}</td>
       <td>${x.upside_decay_pts == null ? '—' : x.upside_decay_pts.toFixed(1)}</td>
@@ -3543,6 +3618,11 @@ syncHash();
   if (!rows.length && !wrows.length) return;
 
   const symbols = [...new Set([...rows, ...wrows].map((r) => r.yahoo))];
+  // What the live layer is even capable of asking about. A row filtered out
+  // above - no Yahoo mapping, or mapped to MISSING - is never asked, so it must
+  // never be marked stale: nothing refused it, and nothing was ever going to
+  // move it. It reads `as at build`, which is the truth.
+  for (const s of symbols) LIVEASK.add(s);
   // Held rows only. A watchlist row needs a price and a day move; it is not
   // valued in euro, so its currency needs no rate. Asking for one means the
   // response reports a currency as missing forever - the book carries a
@@ -3558,6 +3638,9 @@ syncHash();
     const q = data.quotes || {};
     const fx = data.fx || {};
     const unpriced = [];
+    // Refilled every tick, not accumulated: a symbol that missed last time and
+    // priced this time has to be able to go back to saying so.
+    LIVEMISS.clear();
 
     for (const h of rows) {
       const hit = q[h.yahoo];
@@ -3572,6 +3655,7 @@ syncHash();
       // and a zero rate would do the same to every row in that currency.
       if (!hit || !(hit.price > 0) || !(rate > 0)) {
         unpriced.push(h.yahoo);
+        LIVEMISS.add(h.yahoo);
         continue;
       }
       h.price = hit.price;
@@ -3592,7 +3676,11 @@ syncHash();
 
     for (const w of wrows) {
       const hit = q[w.yahoo];
-      if (!hit || !(hit.price > 0)) continue;  // same guard, same reason
+      // Same guard, same reason. A watchlist miss is not counted in the tape's
+      // `n unpriced` - it costs the reader no euros - but it still has to mark
+      // its own price, or a frozen watchlist column looks exactly like a live
+      // one that has not moved today.
+      if (!hit || !(hit.price > 0)) { LIVEMISS.add(w.yahoo); continue; }
       // price_now is the field the rest of the page reads: `w.price` does not
       // exist in the payload, so writing to it updated nothing and failed
       // silently - the watchlist has no euro value to look wrong, so a dead
@@ -3657,7 +3745,14 @@ syncHash();
     } catch (e) {
       LIVE = {at: new Date(), asked: symbols.length, priced: 0, missing: [],
         fxMissing: [], error: (e && e.message) || 'live prices unavailable'};
-      try { paintTape(); } catch (e2) {}
+      // The whole page, not just the tape. A tick that succeeded and then one
+      // that failed used to leave every per-price freshness mark still reading
+      // `live` while the chip above them read `off` - the page contradicting
+      // itself about its own age. repaint() cannot recurse here: its own catch
+      // only sets LIVE and paints the tape.
+      try { foldHoldings(); buildRows(); repaint(); } catch (e2) {
+        try { paintTape(); } catch (e3) {}
+      }
     } finally {
       inflight = false;
     }
