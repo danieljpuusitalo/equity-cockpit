@@ -18,6 +18,7 @@ import re
 import sys
 import json
 import argparse
+import subprocess
 import datetime as dt
 
 import config as C
@@ -632,14 +633,67 @@ def _account_shape_scan():
     return True, f"{len(_KNOWN_EIGHT)} vouched, no others"
 
 
+def _git_ignored(paths):
+    """Which of these would git refuse to commit? None if git cannot say.
+
+    The scan used to decide this itself, from a hand-kept list of directory
+    names. That list was a second, worse copy of .gitignore, and it drifted the
+    first time a new ignored directory appeared: `deploy/public/` holds the
+    rendered book, .gitignore excludes it, and the scan read it anyway and
+    reported the account numbers inside it as a leak. A guess about what is
+    committable is the same bug as a status that claims more than it means -
+    so ask the authority instead of modelling it.
+    """
+    # Forward slashes going in, forward slashes coming back. Handed a Windows
+    # path, git echoes it C-quoted - `"deploy\\public\\index.html"`, with the
+    # quotes and the doubled backslash - which matches no key any caller will
+    # build, so every lookup silently misses and the whole scan quietly widens.
+    #
+    # Bytes, not text. `text=True` runs newline translation on the way IN as
+    # well as out, so on Windows the "\n" separators below reach git as
+    # "\r\n" and every path arrives with a trailing carriage return attached.
+    # Git dutifully treats that CR as part of the filename, and the answers
+    # come back keyed to names that match nothing the caller will ever look
+    # up. It is the file-format version of this repo's recurring bug: the
+    # reply looks like an answer and is about a slightly different question.
+    wanted = [p.as_posix() for p in paths]
+    try:
+        proc = subprocess.run(
+            ["git", "check-ignore", "--stdin"],
+            cwd=str(C.ROOT), input="\n".join(wanted).encode("utf-8"),
+            capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    # 0 = at least one ignored, 1 = none ignored. Anything else means git did
+    # not answer the question, and a non-answer must not read as "nothing is
+    # ignored" - that would be a scan that passes by failing.
+    if proc.returncode not in (0, 1):
+        return None
+    out = proc.stdout.decode("utf-8", "replace")
+    ignored = {ln.strip().strip('"') for ln in out.splitlines() if ln.strip()}
+    # A result that claims nothing at all is ignored, in a repo whose
+    # .gitignore is the only reason it is publishable, is not a result.
+    if not ignored:
+        return None
+    return ignored
+
+
 def _committable_files():
     """Every file a `git push` could carry, as (path, relative path, text)."""
-    for path in sorted(C.ROOT.rglob("*")):
-        if not path.is_file():
-            continue
+    candidates = [p for p in sorted(C.ROOT.rglob("*")) if p.is_file()
+                  and not set(p.relative_to(C.ROOT).parts) & {".git"}]
+    ignored = _git_ignored([p.relative_to(C.ROOT) for p in candidates])
+
+    for path in candidates:
         rel = path.relative_to(C.ROOT)
-        if set(rel.parts) & _NOT_COMMITTED:
+        if ignored is not None:
+            if rel.as_posix() in ignored:
+                continue
+        elif set(rel.parts) & _NOT_COMMITTED:
+            # Fallback only: git was not available. Coarser, and it is the
+            # reason _NOT_COMMITTED still exists.
             continue
+        # Belt and braces, and the load-bearing half when git cannot answer:
         # .env and the *.local.* files are gitignored, which is exactly why the
         # real numbers live in them. Reading them here would report the secret
         # as a leak from the one place it belongs.

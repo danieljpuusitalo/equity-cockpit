@@ -6,9 +6,13 @@
 # contain what is owned, what it cost, what it is worth, or any credential.
 # ---------------------------------------------------------------------------
 
-# Credentials. NOTION_TOKEN, and anything added later.
+# Credentials. NOTION_TOKEN, COCKPIT_PASSWORD, and anything added later.
+# `.env.*` is here because `*.env` does NOT match `.env.local` - it matches
+# files that END in .env. `vercel env pull` writes .env.local by default, so
+# that gap was one command away from committing the deployment password.
 .env
 *.env
+.env.*
 !*.example.env
 
 # The holdings list. portfolio.local.json is the single file that knows what is
@@ -32,6 +36,14 @@ out/
 # Caches and run history. state/equity-log.json is the Notion board mirrored to
 # disk - theses and targets - and history.jsonl is the book day by day.
 state/
+
+# The copy of the dashboard that gets uploaded to Vercel. Byte-identical to
+# out/dashboard.html, so it is the book, so it is ignored for the same reason.
+# deploy/ itself stays: middleware.ts, vercel.json and package.json are code and
+# hold no credential - the password is an environment variable on Vercel.
+deploy/public/
+deploy/.vercel/
+deploy/node_modules/
 
 # Python
 __pycache__/

@@ -1,0 +1,8 @@
+{
+  "name": "equity-cockpit-deploy",
+  "private": true,
+  "description": "Password gate in front of the rendered dashboard. Deployed from this machine by `run.ps1 deploy`, never from git - the repo is public and the page is the entire book.",
+  "dependencies": {
+    "@vercel/edge": "^1.2.2"
+  }
+}

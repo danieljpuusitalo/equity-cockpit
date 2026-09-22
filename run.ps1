@@ -9,6 +9,11 @@
 #   .\run.ps1 refresh      re-price and re-render only (intraday, every 30 min)
 #   .\run.ps1 selftest     offline wiring checks
 #   .\run.ps1 doctor       what is stale or drifting
+#   .\run.ps1 deploy       publish to Vercel behind the password gate
+#   .\run.ps1 gate-check <url>   ask a deployment what a stranger gets
+#
+# `deploy` and `gate-check` are shell work, not cockpit subcommands, so they are
+# intercepted below rather than forwarded to cockpit.py.
 #
 # Exit code is the cockpit's own, so Task Scheduler's "Last Run Result" is
 # meaningful instead of always 0.
@@ -21,6 +26,13 @@ $logDir = Join-Path $here "state"
 $log = Join-Path $logDir "run.log"
 
 if (-not $CockpitArgs -or $CockpitArgs.Count -eq 0) { $CockpitArgs = @("run") }
+
+# Intercepted before the interpreter hunt: `deploy` is PowerShell and node, not
+# Python, and forwarding it to cockpit.py would only produce an argparse error.
+if ($CockpitArgs[0] -eq "deploy") {
+  & (Join-Path $here "deploy.ps1") @($CockpitArgs | Select-Object -Skip 1)
+  exit $LASTEXITCODE
+}
 
 # Known-good first, then the usual suspects. The run is only as good as the
 # interpreter that has yfinance, so we test for that rather than trusting a path.
@@ -49,6 +61,13 @@ if (-not $python) {
 }
 
 Add-Content -Path $log -Value "$stamp  using $python  args: $($CockpitArgs -join ' ')" -Encoding utf8
+
+# gate-check is Python but not cockpit.py: it talks to a live deployment and is
+# the one thing here that must stay runnable when everything else is broken.
+if ($CockpitArgs[0] -eq "gate-check") {
+  & $python (Join-Path $here "tools\gate_check.py") @($CockpitArgs | Select-Object -Skip 1)
+  exit $LASTEXITCODE
+}
 
 # Capture, then print and log separately. Tee-Object on PowerShell 5.1 takes no
 # -Encoding and writes UTF-16 into what is otherwise a UTF-8 file, which leaves
