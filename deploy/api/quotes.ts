@@ -47,12 +47,29 @@ const CHUNK = 20;
 const UPSTREAM_TIMEOUT_MS = 8000;
 const MAX_SYMBOLS = 400;
 
+// What today's session looked like, aggregated from the five-minute series this
+// request already fetches and used to throw away.
+//
+// Read the field names literally: these are derived from five-minute CLOSES, so
+// `high` and `low` are FLOORS - the true intraday extremes happened inside a
+// bucket and are not in this data - and `open` is the first five-minute close,
+// not the opening auction print. That is why the page prefers Yahoo's own daily
+// bar whenever it has one for the same date and falls back to this only for a
+// session the daily series has not started yet.
+type Session = {
+  open: number;
+  high: number;
+  low: number;
+  points: number;
+};
+
 type Quote = {
   price: number;
   prevClose: number | null;
   change: number | null;
   changePct: number | null;
   asOf: number | null; // unix seconds, from Yahoo, not from this server
+  session: Session | null;
 };
 
 function json(body: unknown, status = 200): Response {
@@ -148,12 +165,32 @@ async function sparkChunk(symbols: string[]): Promise<ChunkResult> {
     }
 
     const ts = Array.isArray(row.timestamp) ? row.timestamp : [];
+
+    // Nulls are dropped, not zero-filled. Yahoo writes null for a five-minute
+    // bucket in which nothing traded, and a single zero reaching `low` would
+    // draw a candle with a wick to the floor of the chart - the silent-zero
+    // this file is written against, in its most visible possible form.
+    const closes = (Array.isArray(row.close) ? row.close : []).filter(
+      (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0
+    );
+    const session: Session | null = closes.length
+      ? {
+          open: closes[0],
+          high: Math.max(...closes),
+          low: Math.min(...closes),
+          // Reported so the caller can tell a one-point session - which carries
+          // no range at all - from a full day of them.
+          points: closes.length,
+        }
+      : null;
+
     out[sym] = {
       price,
       prevClose,
       change,
       changePct,
       asOf: num(ts[ts.length - 1]),
+      session,
     };
   }
   return { quotes: out, error: null };

@@ -1049,6 +1049,66 @@ def selftest():
           "; ".join(seam) if seam
           else f"all {len(keys)} exposure keys reach the page")
 
+    # The chart was the last surface the live layer did not reach. Yahoo's daily
+    # series already carries today as a partial bar, so nothing looked broken -
+    # the final candle was a real bar, correctly drawn, that stopped moving at
+    # 07:40 while every number beside it ticked. A frozen candle under a live
+    # price is this repo's signature defect wearing its most convincing
+    # disguise, because there is no blank space to notice.
+    #
+    # Four things have to hold, and they are checked separately because they
+    # fail separately:
+    #   1. the live layer still feeds the bar, from BOTH call sites
+    #   2. paintChart goes through the merge instead of reading the cache
+    #      directly - a single reverted line there restores the frozen candle
+    #      with no other symptom
+    #   3. the merge is gated on the row's own freshness, so the candle and the
+    #      mark beside the price cannot disagree
+    #   4. the cached series is never written to
+    lbar = []
+    for needed in ("function noteLiveBar(", "function barsFor(", "LIVEBAR.set(",
+                   "LIVEBAR.get(", "LIVEBAR.delete("):
+        if needed not in tmpl:
+            lbar.append(f"template lost {needed}")
+    calls = tmpl.count("noteLiveBar(")
+    if calls < 3:  # the definition plus a holdings and a watchlist call site
+        lbar.append(f"noteLiveBar is referenced {calls}x, expected 3")
+    body = tmpl.split("function paintChart(r) {", 1)[-1].split("\nfunction ", 1)[0]
+    if "barsFor(r)" not in body:
+        lbar.append("paintChart no longer merges the live bar")
+    if "D.history" in body:
+        lbar.append("paintChart reads D.history directly, bypassing the merge")
+    gate = tmpl.split("function barsFor(", 1)[-1].split("\nfunction ", 1)[0]
+    if "freshness === 'live'" not in gate:
+        lbar.append("the live bar is no longer gated on the row's freshness")
+    # Written as a live figure landing in the recorded one, which is the rule
+    # this would break (CLAUDE.md 3), not as a general ban on the substring.
+    for wrote in (".bars =", ".bars.push(", ".bars.splice(", ".bars[", "bars.pop("):
+        if wrote in tmpl:
+            lbar.append(f"something writes into the cached series: {wrote}")
+    check("assets: the last candle tracks the price", not lbar,
+          "; ".join(lbar) if lbar
+          else f"merged in paintChart, fed from {calls - 1} call site(s), "
+               f"gated on freshness, cached bars read-only")
+
+    # The merge needs a session aggregate for the one case the daily series
+    # cannot cover - a session it has not started yet. The endpoint already
+    # fetches the five-minute series to read its last point, so this is data it
+    # was discarding, not a new call.
+    qsrc = (C.ROOT / "deploy" / "api" / "quotes.ts").read_text(encoding="utf-8")
+    sess = []
+    for needed in ("type Session = {", "session: Session | null", "session,"):
+        if needed not in qsrc:
+            sess.append(f"quotes endpoint lost `{needed}`")
+    # A null in Yahoo's five-minute series means nothing traded in that bucket.
+    # Zero-filling it would put a wick on the floor of the chart - the silent
+    # zero, in its most visible possible form.
+    if "v > 0" not in qsrc.split("const closes =", 1)[-1].split(";", 1)[0]:
+        sess.append("the five-minute series no longer drops non-positive closes")
+    check("assets: the quote carries its own session", not sess,
+          "; ".join(sess) if sess else "open, high, low and a point count, "
+                                       "nulls dropped not zero-filled")
+
     # Right-aligned is correct for the numeric columns and wrong for every word
     # column, which is how six tables came to right-rag their sector, account
     # and currency cells against a hard edge. The opt-out has to exist AND be

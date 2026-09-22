@@ -23,6 +23,13 @@ portfolio.local.json
 # Working notes. CHECKPOINT.local.md quotes position sizes and the coverage
 # measurement, so it stays local for the same reason the CSVs do. Anything
 # named *.local.* is private by convention here.
+#
+# That last sentence was a claim, not a rule, until 2026-09-22: only `.local.md`
+# and `.local.json` were actually matched, so a local-only harness written as
+# `tools/stub_quotes.local.py` showed up untracked and ready to commit. The
+# convention is now enforced rather than described - the two specific lines stay
+# because they say WHY those files are private.
+*.local.*
 *.local.md
 
 # Broker exports - units, cost basis, account numbers, every transaction.

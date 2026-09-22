@@ -765,6 +765,10 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
         <span><i class="swatch" style="border-top-color:var(--ink-2);
           border-top-style:dashed"></i>MA200</span>
       </span>
+      <!-- Says what the LAST candle is, which is the only bar on the chart
+           whose age is in question. Written by paintChart from the series it
+           actually drew, never from what it expected to draw. -->
+      <span class="note" id="livebar"></span>
     </div>
     <div class="chartbox"><div id="chart" style="position:absolute;inset:0"></div>
       <div class="nochart" id="nochart" style="display:none"></div></div>
@@ -952,6 +956,101 @@ const FRESH = {
     + 'still the build-time price'],
   unpriced: ['', 'fr-none', 'No price'],
 };
+
+// The last candle, brought forward to the live price.
+//
+// Yahoo's daily series already carries TODAY as a partial bar - measured, every
+// symbol in the book had a bar dated today whose close equalled the build-time
+// price. So the chart was not missing a bar; it was drawing a real one that
+// stopped moving at 07:40 while every number beside it went on ticking. A
+// candle is the most price-shaped thing on the page, and it was the one thing
+// the live layer did not reach.
+//
+// Held in its own map rather than written into `D.history`, for two reasons.
+// `D.history` is what Python wrote and what `D.indicators` was computed from,
+// and this repo's rule is that a live figure never overwrites a recorded one.
+// And the merge has to be repeatable: every tick re-derives the bar from the
+// cached one, so a quote that comes back lower cannot leave a high behind that
+// no trade ever made.
+const LIVEBAR = new Map();  // sym -> [date, open, high, low, close]
+
+// The exchange's trading date for a quote, from Yahoo's own timestamp rather
+// than from this machine's clock - `new Date()` on a page left open overnight
+// would roll the date while the quote it is labelling did not.
+//
+// Local time is the right frame for this book: every holding lists in Europe or
+// the US, and no US session crosses midnight in a European timezone. A listing
+// in Asia would need the exchange's own zone, which is not in the payload - so
+// if one is ever added, this is the line that has to change rather than quietly
+// mislabel a bar.
+function quoteDay(asOf) {
+  if (!(asOf > 0)) return null;
+  const d = new Date(asOf * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${
+    String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Merge a quote into the tail of the cached series. Never mutates `bars`.
+function noteLiveBar(sym, hit) {
+  const series = (D.history || {})[sym];
+  const bars = series && series.bars;
+  if (!bars || !bars.length || !hit || !(hit.price > 0)) return;
+  const day = quoteDay(hit.asOf);
+  if (!day) return;
+  const last = bars[bars.length - 1];
+
+  // The cache is AHEAD of the quote. Happens on a holiday or a halted listing,
+  // where Yahoo keeps answering with the last session's price. Drawing that
+  // price onto today would invent a session that did not happen, and rewriting
+  // the earlier bar would be a live figure overwriting a recorded one. Do
+  // neither: drop the live bar and let the cached series stand.
+  if (day < last[0]) { LIVEBAR.delete(sym); return; }
+
+  if (day === last[0]) {
+    // Yahoo's own bar for today, carried forward. Open is left exactly as the
+    // vendor recorded it - it is the opening print and no quote can improve on
+    // it - and the range is only ever WIDENED. The true high is at least the
+    // recorded high and at least the price now; the same in reverse for the
+    // low. Both are floors, which is the honest direction for a bar that has
+    // not finished forming.
+    LIVEBAR.set(sym, [day, last[1], Math.max(last[2], hit.price),
+                      Math.min(last[3], hit.price), hit.price]);
+    return;
+  }
+
+  // A session the cache has never seen - the page was built before the open,
+  // or has been left running across a date boundary. `session` is the endpoint's
+  // aggregate of the five-minute closes, so its high and low are floors and its
+  // open is the first five-minute close rather than the opening auction. With
+  // nothing to draw a range from, the bar is flat at the price: a bar that says
+  // "no range known yet" rather than one that invents one.
+  const s = hit.session;
+  const o = s && s.open > 0 ? s.open : hit.price;
+  const hi = s && s.high > 0 ? Math.max(s.high, hit.price) : Math.max(o, hit.price);
+  const lo = s && s.low > 0 ? Math.min(s.low, hit.price) : Math.min(o, hit.price);
+  LIVEBAR.set(sym, [day, o, hi, lo, hit.price]);
+}
+
+// The cached series with the live bar merged in, or the cached series itself.
+// Gated on the row's OWN freshness, which is the same value the mark beside the
+// price is drawn from - so the candle and the mark cannot disagree about
+// whether this symbol is live. That matters on the tick after a failure: LIVE
+// carries an error, every mark falls back to `as at build`, and without this
+// gate the chart would still be showing a candle that moved.
+function barsFor(r) {
+  const series = (D.history || {})[r.sym];
+  const bars = series && series.bars ? series.bars : null;
+  if (!bars || !bars.length) return null;
+  const lb = r.freshness === 'live' ? LIVEBAR.get(r.sym) : null;
+  if (!lb) return bars;
+  const last = bars[bars.length - 1];
+  // The volume column is deliberately not carried onto the live bar: no quote
+  // in this response reports volume, and repeating the cached day's figure
+  // beside a moved price would be a stale number wearing a live one's clothes.
+  return lb[0] === last[0]
+    ? bars.slice(0, -1).concat([lb])
+    : bars.concat([lb]);
+}
 
 function fresh(f) {
   const m = FRESH[f] || FRESH.unpriced;
@@ -2068,8 +2167,17 @@ function paintMissing(r) {
 /* The chart, read back as numbers. Descriptive only: this section says where
    price is, never what to do about it - "overbought" is weather, and the
    thesis above is the decision. Everything here was computed in Python off the
-   same cached bars the chart draws, so it costs no extra fetch and cannot
-   disagree with what is plotted a pane to the left. */
+   cached daily bars, so it costs no extra fetch.
+
+   It used to say it "cannot disagree with what is plotted a pane to the left".
+   That stopped being true the moment the chart's last candle started tracking
+   the live price: these numbers are as at the build and the final candle is
+   not. The gap is one partial session on a 252-day window - immaterial to
+   MA200, visible in RSI on a sharp day - and every row here carries its own
+   `asof`, which is the honest place for the reader to settle it. Recomputing
+   the indicators live was considered and refused: they are Python's output,
+   proved against Python, and a second implementation in the page is exactly
+   the two-answers-for-one-fact trap this repo keeps falling into. */
 function paintBehaviour(r) {
   const i = r.ind;
   if (!i) return '';
@@ -2219,8 +2327,11 @@ function paintChart(r) {
   const rect = box.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
 
-  const series = (D.history || {})[r.sym];
-  const bars = series && series.bars ? series.bars : null;
+  // The cached series with today's quote merged into its last candle. Taken
+  // once, here, so the slice, both moving averages and fitContent() all see the
+  // same series - an MA computed off the cached bars while the candles carry a
+  // live one would stop a day short of the price it is supposed to be averaging.
+  const bars = barsFor(r);
   if (!bars || !bars.length) {
     if (chart) { chart.remove(); chart = null; candles = null; lines = []; mas = {}; }
     box.innerHTML = '';
@@ -2283,6 +2394,19 @@ function paintChart(r) {
     price:w.trigger_level, color:T.trigger, lineWidth:2,
     lineStyle:LightweightCharts.LineStyle.Dashed,
     axisLabelVisible:true, title:'trigger'}));
+
+  // Derived from the drawn series, not from LIVE alone: a symbol the live layer
+  // asked about and missed keeps a build-time candle, and this line has to say
+  // so rather than inherit the tape's verdict for the page as a whole.
+  const note = $('#livebar');
+  if (note) {
+    const tail = bars[bars.length - 1];
+    const merged = r.freshness === 'live' && LIVEBAR.has(r.sym);
+    note.textContent = merged
+      ? `Last candle ${tail[0]}, still forming · ${
+          LIVE && LIVE.at ? LIVE.at.toTimeString().slice(0, 5) : 'live'}`
+      : `Last candle ${tail[0]}, as at the build`;
+  }
 
   chart.timeScale().fitContent();
 }
@@ -2841,8 +2965,12 @@ function paintSheet() {
       <td>${i.range ? num(i.range.pct,0) : '—'}</td>
       <td>${i.volume ? num(i.volume.relative,2) : '—'}</td>
       <td>${i.bars}</td><td class="t">${esc(i.asof)}</td></tr>`; }).join('')}</tbody></table></div>
-    <div class="prose under">Computed in Python off the same
-      cached bars the chart draws. Descriptive only — no row here is a signal.</div>
+    <div class="prose under">Computed in Python off the cached daily bars, up
+      to each row's own <i>As of</i>. The chart's last candle tracks the live
+      price and these do not, so on a fast day the two will differ by one
+      partial session — that is the gap between a recorded figure and a moving
+      one, not an error in either. Descriptive only — no row here is a
+      signal.</div>
     </div>`;
 
   const al = (D.alerts||[]).filter((x) => !q ||
@@ -2922,7 +3050,11 @@ function paintSheet() {
     <tr><td>Equity Log</td><td>${esc(s.equity_log_mode)} ·
       ${s.equity_log_age_days} days old</td></tr>
     <tr><td>Price history</td><td>${s.history_symbols} symbols cached ·
-      ${s.history_problems} without a fresh series</td></tr>
+      ${s.history_problems} without a fresh series${LIVEBAR.size
+        ? ` · the chart's last candle is carried forward to the live price on
+            ${LIVEBAR.size} of them; the cached bars themselves are never
+            written over`
+        : ''}</td></tr>
     <tr><td>Fundamentals</td><td>${s.fundamentals_asked == null ? 'not fetched'
       : `${s.fundamentals_priced}/${s.fundamentals_asked} symbols carry multiples ·
          ${s.fundamentals_problems} problem${s.fundamentals_problems === 1 ? '' : 's'}`
@@ -3750,6 +3882,11 @@ syncHash();
       h.day_pct = hit.changePct;
       h.stale = false;
       h.live_asof = hit.asOf;
+      // The chart's last candle, kept in its own map - see noteLiveBar. Called
+      // for every symbol that priced, not only the one on screen, so switching
+      // rows shows a current candle immediately instead of one that catches up
+      // on the next tick.
+      noteLiveBar(h.yahoo, hit);
       // Everything else a price implies - P/L, off_high, the broker check, the
       // weights, the treemap, coverage, the watchlist upsides - is DERIVE's
       // job, below. Patching a field here as well is how the page ended up
@@ -3769,6 +3906,9 @@ syncHash();
       // write there shows up as a column that simply never moves.
       w.price_now = hit.price;
       w.day_pct = hit.changePct;
+      // A watchlist row has a chart too, and it is the surface the thesis is
+      // argued against. It gets the same live candle for the same reason.
+      noteLiveBar(w.yahoo, hit);
     }
 
     // One call, one source of truth. Every price-derived number in D is
