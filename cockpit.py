@@ -785,6 +785,43 @@ def selftest():
     check("assets: sheet is still interactive", not hooks,
           f"template lost: {', '.join(hooks)}" if hooks
           else "nav, collapsible sections and shared filter state all present")
+    # The page is addressable, and that is easy to lose by accident. Without a
+    # route a reload always lands on the Overview, the browser's back button
+    # leaves the page from wherever you were, and a drawer three sections deep
+    # cannot be linked or returned to. None of that throws, logs, or shows up
+    # in a render, so nothing else here would notice it going.
+    route = [h for h in ('function applyHash(', 'function syncHash(',
+                         "addEventListener('popstate'") if h not in tmpl]
+    check("assets: the page still has a route", not route,
+          f"template lost: {', '.join(route)}" if route
+          else "hash is read at boot, written on change, and honours back")
+    # The sheet nav's button labels are authored on the headings rather than
+    # scraped out of them. They used to be `textContent.split('—')[0]`, which
+    # made every nav button a side effect of a sentence: rewriting a heading
+    # renamed a button, silently. The fallback is still in the template on
+    # purpose, so this counts labels instead of forbidding the fallback.
+    labels = tmpl.count('data-label="')
+    secs = tmpl.count('<h2 data-sec="')
+    check("assets: sheet nav labels are authored, not scraped",
+          secs > 0 and labels >= secs,
+          f"{labels} authored label(s) for {secs} section heading(s); "
+          f"a section with no data-label falls back to scraping its prose"
+          if labels < secs else f"{labels} labels for {secs} sections")
+    # Data is a drawer, not a view. It sat inside the view nav styled as a
+    # third peer tab, which taught the reader a rule the page then broke. The
+    # test is structural: the trigger must live outside the nav element, and
+    # must describe itself as expanding something rather than as selected.
+    nav_block = tmpl.split('<nav class="vnav"')[-1].split("</nav>")[0] \
+        if '<nav class="vnav"' in tmpl else ""
+    drawer = []
+    if 'id="t-sheet"' in nav_block:
+        drawer.append("the data trigger is back inside the view nav")
+    if 'aria-expanded' not in tmpl.split('id="t-sheet"')[0][-200:] \
+            and 'aria-expanded' not in tmpl.split('id="t-sheet"')[1][:200]:
+        drawer.append("the data trigger no longer says aria-expanded")
+    check("assets: data is a drawer, not a third tab", not drawer,
+          "; ".join(drawer) if drawer
+          else "trigger sits outside the view nav and announces expansion")
     # Same argument one level up. The Overview is the page's landing surface
     # and it is built entirely in script: delete the grid container and the
     # page still opens, still smoke-tests clean, and simply shows an empty

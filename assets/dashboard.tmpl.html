@@ -149,6 +149,15 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .tbtn:hover{background:var(--surface-2);color:var(--ink)}
 .tbtn[aria-pressed="true"]{background:var(--surface-2);color:var(--ink);
   border-color:var(--axis)}
+/* The drawer trigger carries a caret so it reads as "this opens something over
+   the page" before it is pressed, rather than as one more toggle. The caret
+   turns when the drawer is up, which is the only state the button has: it is
+   not a tab and has no selected state to show. */
+.drawer::after{content:"\203A";margin-left:var(--s-2);display:inline-block;
+  transition:transform .12s ease;color:var(--muted)}
+.drawer[aria-expanded="true"]::after{transform:rotate(90deg)}
+.drawer[aria-expanded="true"]{background:var(--surface-2);color:var(--ink);
+  border-color:var(--axis)}
 
 /* --------------------------------------------------------------- banner */
 .banner{display:flex;align-items:flex-start;gap:var(--s-4);padding:9px 16px;flex:none;
@@ -285,7 +294,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   color:var(--muted);margin:26px 0 10px}
 .sheet h2:first-of-type{margin-top:14px}
 .sheethead{display:flex;align-items:center;gap:var(--s-4);flex-wrap:wrap}
-.sheethead h1{font-size:var(--t-5);font-weight:var(--w-semi);margin:0;margin-right:auto}
+.sheethead h1{font-size:var(--t-5);font-weight:var(--w-semi);margin:0}
+.crumb{font-size:var(--t-2);color:var(--muted);margin-right:auto}
+.back::before{content:"\2039";margin-right:var(--s-2);color:var(--muted)}
 /* Right is the right default here: most columns are numbers, and numbers align
    on their last digit or they cannot be compared down a column. What was wrong
    was that nothing opted out, so every text column - sector, account, currency,
@@ -634,11 +645,16 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
   <nav class="vnav" id="vnav">
     <button class="vbtn" data-view="overview" aria-pressed="true">Overview</button>
     <button class="vbtn" data-view="positions" aria-pressed="false">Positions</button>
-    <!-- Data is a peer in the nav but not a peer in the DOM: it is an overlay
-         over whichever view is up, because it is an appendix to both. That is
-         why its pressed state tracks the sheet and not `state.view`. -->
-    <button class="vbtn" id="t-sheet" aria-pressed="false">Data</button>
   </nav>
+  <!-- Data used to sit inside the nav above, styled as a third peer, and it is
+       not one: it is an overlay over whichever view is up. A control that looks
+       like a tab and behaves like a drawer teaches the reader a rule the page
+       then breaks, and there was no way back from it but a Close button in a
+       far corner. It is now outside the nav, shaped like the other utility
+       buttons, and says aria-expanded rather than aria-pressed - which is the
+       difference between "this surface is showing" and "you are on this tab". -->
+  <button class="tbtn drawer" id="t-sheet" aria-expanded="false"
+    aria-controls="sheet">All data</button>
   <!-- Label and pressed state are both set by themeLabel() at boot, from what
        is actually rendered. This text is only what shows if the script dies. -->
   <button class="tbtn" id="t-theme" aria-pressed="false">Theme</button>
@@ -715,7 +731,13 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
 </div>
 
 <div class="sheet" id="sheet">
-  <div class="sheethead"><h1>Every number on this page</h1>
+  <div class="sheethead">
+    <!-- The crumb names the surface underneath, because the drawer covers it
+         completely and otherwise there is nothing on screen saying what you
+         are on top of or what closing will return you to. Written by
+         setView(), so it can never disagree with where the back button goes. -->
+    <h1>Every number on this page</h1>
+    <span class="crumb" id="t-crumb"></span>
     <!-- The search box lives in static markup rather than being re-rendered
          with the tables, because a repaint on every keystroke would take the
          caret with it. -->
@@ -723,7 +745,7 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
       placeholder="Search any table">
     <button class="xtog" id="xunits" aria-pressed="false">Show €</button>
     <button class="xtog" id="xall" aria-pressed="false">Collapse all</button>
-    <button class="tbtn" id="t-close">Close</button></div>
+    <button class="tbtn back" id="t-close">Back</button></div>
   <div class="sheetnav" id="sheetnav"></div>
   <div id="sheetbody"></div>
 </div>
@@ -1560,8 +1582,8 @@ function buildRows() {
 }
 buildRows();
 
-let state = {sym: ROWS.length ? ROWS[0].sym : null, filter:'all', q:'', days:365,
-             ma:{50:true, 200:true}};
+let state = {sym: ROWS.length ? ROWS[0].sym : null, view:'overview',
+             filter:'all', q:'', days:365, ma:{50:true, 200:true}};
 
 /* ----------------------------------------------------------------- tape */
 
@@ -2178,6 +2200,7 @@ const SS = {
   units: 'pct',      // 'pct' | 'eur'
   sort: {},          // table name -> {k, dir}
   shut: {},          // section id -> true when collapsed
+  at: null,          // section id last jumped to - the drawer's half of the route
 };
 
 // Reads 'growth.revenue_yoy_pct' as well as 'pct', so a sort key can point at
@@ -2266,7 +2289,7 @@ function paintSheet() {
     : `${n} of ${all} ${what}`;
 
   const hr = sortRows([...held.values()].filter(hits), 'held', 'value_eur');
-  const h = `<h2 data-sec="hold">Holdings — ${some(hr.length, held.size,
+  const h = `<h2 data-sec="hold" data-label="Holdings">Holdings — ${some(hr.length, held.size,
       'companies')}, ${(D.sources||{}).lots} lots</h2>
     <div class="sec" data-sec="hold">
     <div class="scroll"><table><thead><tr>
@@ -2287,7 +2310,7 @@ function paintSheet() {
     </tbody></table></div></div>`;
 
   const wr = sortRows((D.watchlist||[]).filter(hits), 'log', 'upside_now');
-  const w = `<h2 data-sec="log">Equity Log — ${some(wr.length,
+  const w = `<h2 data-sec="log" data-label="Equity Log">Equity Log — ${some(wr.length,
       (D.watchlist||[]).length, 'rows')}, ${(D.sources||{}).equity_log_mode}</h2>
     <div class="sec" data-sec="log">
     <div class="scroll"><table><thead><tr>
@@ -2313,7 +2336,8 @@ function paintSheet() {
   // answers is "how much of the book is nobody watching", and the answer is
   // read off the top rows.
   const cr = sortRows((COV.rows || []).filter(hits), 'cov', 'value_eur');
-  const cov = !(COV.rows || []).length ? '' : `<h2 data-sec="cov">Coverage —
+  const cov = !(COV.rows || []).length ? '' :
+   `<h2 data-sec="cov" data-label="Monitoring">Coverage —
     ${(COV.rows||[]).length - (COV.n_uncovered||0)}/${(COV.rows||[]).length} monitored,
     ${eur(COV.value_uncovered_eur)} (${(COV.pct_uncovered||0).toFixed(0)}%) unwatched</h2>
     <div class="sec" data-sec="cov">
@@ -2423,7 +2447,8 @@ function paintSheet() {
   const fundRows = sortRows((X.funds || []).filter((f) => hits(f)
     && (!F || F.kind !== 'fund' || f.symbol === F.key)), 'funds', 'value_eur');
 
-  const exp = !XT ? '' : `<h2 data-sec="exp">Exposure — ${eur(XT)} across
+  const exp = !XT ? '' :
+   `<h2 data-sec="exp" data-label="Concentration">Exposure — ${eur(XT)} across
     ${X.n_positions} positions, looked through</h2>
     <div class="sec" data-sec="exp">
     <div class="xgrid">
@@ -2459,7 +2484,7 @@ function paintSheet() {
       'so the fund sleeve is unresolved here by construction, not by failure.',
       atBuild(LOOKTHRU_WHY))}
     </div>
-    <h2 data-sec="look">Look-through — ${nameRows.length}${
+    <h2 data-sec="look" data-label="Inside the funds">Look-through — ${nameRows.length}${
       nameRows.length === (XN.rows || []).length ? '' :
       ' of ' + (XN.rows || []).length} companies the book touches</h2>
     <div class="sec" data-sec="look">
@@ -2487,7 +2512,7 @@ function paintSheet() {
       ${nameRows.some((r) => ROWSYM.has(r.symbol))
         ? ' Rows with a chart of their own open it.' : ''}</div>
     </div>
-    <h2 data-sec="funds">Funds — what each one tells you</h2>
+    <h2 data-sec="funds" data-label="Funds">Funds — what each one tells you</h2>
     <div class="sec" data-sec="funds">
     <div class="scroll"><table><thead><tr>
     ${th('funds','symbol','Symbol',1)}${th('funds','name','Name',1)}
@@ -2540,7 +2565,7 @@ function paintSheet() {
   const landed = sortRows((R.latest || []).filter(hits), 'latest', 'date');
 
   const rep = !(RC.rows || []).length && !(R.latest || []).length ? '' :
-   `<h2 data-sec="rep">Reporting — ${RC.n || 0} prints in the next
+   `<h2 data-sec="rep" data-label="Earnings">Reporting — ${RC.n || 0} prints in the next
     ${RC.horizon_days} days, ${num(RC.pct_ahead,0)}% of the book</h2>
     <div class="sec" data-sec="rep">
     ${!months.length ? `<div class="empty">Nothing scheduled inside
@@ -2595,7 +2620,8 @@ function paintSheet() {
   // reading, and a merged figure would be the one thing this cannot show.
   const fa = (D.watchlist||[]).filter((x) => x.live || x.pe != null || x.fwd_pe != null);
   const fw = sortRows(fa.filter(hits), 'mult', 'live.pe');
-  const mult = !fa.length ? '' : `<h2 data-sec="mult">Multiples — board vs today,
+  const mult = !fa.length ? '' :
+   `<h2 data-sec="mult" data-label="Multiples">Multiples — board vs today,
     ${fa.filter((x) => x.live).length} live</h2>
     <div class="sec" data-sec="mult">
     <div class="scroll"><table><thead><tr>${th('mult','ticker','Ticker',1)}
@@ -2628,7 +2654,8 @@ function paintSheet() {
 
   const ia = ROWS.filter((x) => x.ind);
   const ir = sortRows(ia.filter(hits), 'ind', 'ind.rsi');
-  const ind = !ia.length ? '' : `<h2 data-sec="ind">The chart, in numbers —
+  const ind = !ia.length ? '' :
+   `<h2 data-sec="ind" data-label="Technicals">The chart, in numbers —
     ${some(ir.length, ia.length, 'symbols')}</h2>
     <div class="sec" data-sec="ind">
     <div class="scroll"><table><thead><tr>${th('ind','label','Ticker',1)}
@@ -2689,7 +2716,7 @@ function paintSheet() {
          look again: ${esc(AC.reason)}.`
       : `<b>No comparison was possible</b>, so this is not a report that nothing
          was sold — it is the absence of a report. ${esc(AC.reason)}.`;
-  const act = `<h2 data-sec="act">Activity — ${acr.length
+  const act = `<h2 data-sec="act" data-label="Changes">Activity — ${acr.length
       ? `${acr.length} change${acr.length === 1 ? '' : 's'} since the
          ${esc(AC.from_exported)} export`
       : (AC.comparable ? 'no change since the last export'
@@ -2716,7 +2743,7 @@ function paintSheet() {
     as the difference between two of those lists — and until a newer export
     lands there is nothing further to see.</div></div>`;
 
-  const a = `<h2 data-sec="flag">Flags — ${some(al.length,
+  const a = `<h2 data-sec="flag" data-label="Needs a look">Flags — ${some(al.length,
       (D.alerts||[]).length, 'open')}</h2>
     <div class="sec" data-sec="flag">
     <div class="scroll"><table><thead><tr><th>Level</th><th class="t">What</th><th class="t">Why</th>
@@ -2726,7 +2753,7 @@ function paintSheet() {
     </div>`;
 
   const s = D.sources || {};
-  const src = `<h2 data-sec="prov">Provenance</h2>
+  const src = `<h2 data-sec="prov" data-label="Sources">Provenance</h2>
     <div class="sec" data-sec="prov"><div class="scroll"><table><tbody>
     <tr><td>Generated</td><td>${esc(D.generated)}</td></tr>
     <tr><td>Run</td><td>${s.run_mode === 'refresh'
@@ -2757,7 +2784,15 @@ function paintSheet() {
          funds are not asked, Yahoo answers them with a 404`}</td></tr>
     </tbody></table></div></div>`;
 
-  $('#sheetbody').innerHTML = h + w + cov + act + exp + rep + mult + ind + a + src;
+  // Order is the argument this page makes about what matters. It used to run
+  // Holdings, Equity Log, Coverage, Activity, ... with Flags eleventh of twelve
+  // and Provenance above it - so the one section that answers "what should I
+  // look at today" sat below the list of where the data came from. It now runs
+  // in the order the questions get asked: what needs a decision, what changed,
+  // what I own, what is unwatched, how concentrated, what is coming, then the
+  // reference tables, then the receipts. `exp` carries look and funds inside
+  // it, so those three cannot be separated without splitting that string.
+  $('#sheetbody').innerHTML = a + act + h + cov + exp + rep + mult + ind + w + src;
   alignColumns($('#sheetbody'));
 
   // Collapse state is re-applied after the repaint rather than survived
@@ -2770,10 +2805,17 @@ function paintSheet() {
   // The nav is built from the sections that actually rendered, not from a list
   // kept alongside them. A hand-maintained list would keep offering a jump to
   // Reporting on a run where Yahoo returned nothing and the section is absent.
+  // The label is authored on the heading, not scraped off it. It used to be
+  // `textContent.split('—')[0]`, which made the nav a side effect of prose:
+  // rewriting a heading silently renamed a button, and one heading that is a
+  // full sentence - "The chart, in numbers" - produced a full-sentence button
+  // sitting beside one-word ones. The fallback keeps a new section navigable
+  // if someone adds an h2 and forgets the label.
   const heads = [...$('#sheetbody').querySelectorAll('h2[data-sec]')];
   $('#sheetnav').innerHTML = heads.map((n) => `<button class="navb"
       data-go="${esc(n.getAttribute('data-sec'))}"
-      >${esc(n.textContent.split('—')[0].trim())}</button>`).join('')
+      >${esc(n.getAttribute('data-label')
+              || n.textContent.split('—')[0].trim())}</button>`).join('')
     + (SS.filter ? `<span class="xchip">${esc(SS.filter.kindLabel)}
         <b>${esc(SS.filter.label)}</b>
         <button id="xclear" title="Clear filter">×</button></span>` : '');
@@ -3063,6 +3105,7 @@ function watchTiles(box) {
 // first, then paint, so the construction that was skipped at boot happens here
 // against a container that has a real width. Do not reorder these two.
 function setView(v) {
+  state.view = v;
   for (const n of document.querySelectorAll('#vnav .vbtn[data-view]'))
     n.setAttribute('aria-pressed', String(n.getAttribute('data-view') === v));
   const o = $('#v-overview'), p = $('#v-positions');
@@ -3072,6 +3115,20 @@ function setView(v) {
     const r = ROWS.find((x) => x.sym === state.sym);
     if (r) paintChart(r);
   }
+  paintCrumb();
+  syncHash();
+}
+
+// What the drawer is sitting on top of. Both the crumb and the back button read
+// from state.view rather than from each other, so they cannot disagree about
+// where closing the drawer will land you.
+const VIEWNAME = {overview: 'Overview', positions: 'Positions'};
+function paintCrumb() {
+  const under = VIEWNAME[state.view] || 'Overview';
+  const c = $('#t-crumb');
+  if (c) c.textContent = 'over ' + under;
+  const b = $('#t-close');
+  if (b) b.textContent = 'Back to ' + under;
 }
 
 function select(sym) {
@@ -3080,6 +3137,9 @@ function select(sym) {
   const r = ROWS.find((x) => x.sym === sym);
   if (!r) return;
   paintRail(); paintHead(r); paintThesis(r); paintStrip(); paintChart(r);
+  // Replace, never push. The arrow keys walk the rail one name at a time, and
+  // pushing per step would bury the previous surface under twenty entries.
+  syncHash();
 }
 
 function on(sel, ev, fn) { const n = $(sel); if (n) n.addEventListener(ev, fn); }
@@ -3119,17 +3179,132 @@ on('#ranges', 'click', (e) => {
 });
 on('#q', 'input', (e) => { state.q = e.target.value || ''; paintRail(); });
 
-const sheetOpen = (open) => { const s = $('#sheet'); if (!s) return;
-  if (open) s.setAttribute('data-open','1'); else s.removeAttribute('data-open');
-  // Data sits in the view nav, so its pressed state has to say whether the
-  // overlay is up - however it was opened. A bar clicked on the Overview
-  // opens the sheet too, and a nav button that stayed unpressed through that
-  // would be lying about where the reader is.
+/* ------------------------------------------------------------------ routing
+ *
+ * The page had no URL state at all: reloading always dropped you back on the
+ * Overview, the browser's back button left the page entirely from wherever you
+ * were, and a drawer three sections deep could not be linked or returned to.
+ *
+ * The route is two axes, not one. A view is where you are; the drawer is a
+ * thing on top of it. So the drawer gets its own hash rather than being
+ * encoded into the view's - `#/data/flag` says the drawer is up at Flags, and
+ * back from it returns to whatever view was underneath. Opening the drawer
+ * pushes; everything else replaces, because only the drawer is a place you
+ * would want to come back from.
+ *
+ * Opened from disk there is no history to speak of and pushState throws on
+ * some file: URLs, so every write is wrapped and falls back to assigning the
+ * hash, which works everywhere and simply does not give you back.
+ */
+let SHEET = false;        // is the drawer up
+let SHEETPUSHED = false;  // did opening it leave an entry we can go back over
+let SHEETSCROLL = 0;      // display:none resets scrollTop; this survives it
+let ROUTING = false;      // applying a route must never write one back
+
+function routeOf() {
+  if (SHEET) return '#/data' + (SS.at ? '/' + SS.at : '');
+  if (state.view === 'positions' && state.sym) return '#/positions/' + state.sym;
+  return '#/' + (state.view || 'overview');
+}
+
+function syncHash(push) {
+  if (ROUTING) return;
+  const r = routeOf();
+  if (location.hash === r) return;
+  try {
+    if (push && history.pushState) history.pushState(null, '', r);
+    else if (history.replaceState) history.replaceState(null, '', r);
+    else location.hash = r;
+  } catch (e) { try { location.hash = r; } catch (e2) {} }
+}
+
+// Reading is deliberately forgiving. A hash that names a symbol we do not hold
+// any more - an old bookmark, a sold position - lands on the view without the
+// symbol rather than on a blank screen or an exception.
+function applyHash() {
+  const parts = String(location.hash || '').replace(/^#\/?/, '').split('/')
+    .filter(Boolean);
+  ROUTING = true;
+  try {
+    const head = (parts[0] || 'overview').toLowerCase();
+    if (head === 'data') {
+      const sec = parts[1];
+      if (sec) SS.at = sec;
+      sheetOpen(true);
+      if (sec) gotoSection(sec);
+      return;
+    }
+    sheetOpen(false);
+    if (head === 'positions') {
+      setView('positions');
+      if (parts[1] && ROWSYM.has(parts[1])) select(parts[1]);
+    } else {
+      setView('overview');
+    }
+  } finally { ROUTING = false; }
+}
+
+function sheetOpen(open) {
+  const s = $('#sheet');
+  if (!s) return;
+  open = !!open;
+  if (open === SHEET) return;
+  if (!open) SHEETSCROLL = s.scrollTop || 0;
+  SHEET = open;
+  if (open) s.setAttribute('data-open', '1'); else s.removeAttribute('data-open');
+  // aria-expanded, not aria-pressed. The button does not select a surface the
+  // way a tab does; it reveals one. A bar clicked on the Overview opens the
+  // drawer too, and a trigger that stayed collapsed through that would be
+  // lying about what is on screen.
   const b = $('#t-sheet');
-  if (b) b.setAttribute('aria-pressed', String(!!open)); };
-on('#t-sheet', 'click', () =>
-  sheetOpen(!$('#sheet') || !$('#sheet').getAttribute('data-open')));
-on('#t-close', 'click', () => sheetOpen(false));
+  if (b) b.setAttribute('aria-expanded', String(open));
+  if (open) {
+    // Restoring after the box is displayed, because a hidden element cannot be
+    // scrolled. Coming back to the drawer at the top of a twelve-section
+    // document, having just been two thirds of the way down it, reads as the
+    // page having lost your place - which it had.
+    s.scrollTop = SHEETSCROLL;
+    paintCrumb();
+  }
+  if (open) { syncHash(true); SHEETPUSHED = !ROUTING; }
+  else { syncHash(); SHEETPUSHED = false; }
+}
+
+function gotoSection(id) {
+  // Jumping to a collapsed section opens it. Scrolling someone to a heading
+  // with nothing under it is the navigation equivalent of a dead link.
+  SS.at = id;
+  SS.shut[id] = false;
+  paintSheet();
+  const head = $(`#sheetbody h2[data-sec="${id}"]`);
+  const box = $('#sheet');
+  if (!head || !box) return;
+  // This used to be scrollIntoView({behavior:'smooth'}), which on this
+  // container is a silent no-op - measured: the identical call without
+  // `behavior` lands on the heading, with it the scrollTop never moves at all.
+  // So every jump in this nav has only ever expanded the section, and the
+  // reader was left at the top of an eleven-thousand-pixel document wondering
+  // what the click did. Nothing threw and nothing logged.
+  //
+  // Scrolling the box by measurement instead. The sticky nav is subtracted
+  // because it covers the top of the scrollport, and a heading scrolled to
+  // exactly 0 lands underneath it.
+  const nav = $('#sheetnav');
+  const GAP = 8;
+  const top = box.scrollTop + head.getBoundingClientRect().top
+    - box.getBoundingClientRect().top
+    - (nav ? nav.getBoundingClientRect().height : 0) - GAP;
+  box.scrollTop = Math.max(0, top);
+}
+
+on('#t-sheet', 'click', () => sheetOpen(!SHEET));
+// Back over the entry that opening the drawer pushed, so the browser's own
+// back button and this one do the same thing rather than two similar things.
+on('#t-close', 'click', () => {
+  if (SHEETPUSHED && history.back) history.back(); else sheetOpen(false);
+});
+try { window.addEventListener('popstate', applyHash); } catch (e) {}
+try { window.addEventListener('hashchange', applyHash); } catch (e) {}
 
 /* -------------------------------------------------- the sheet, as a surface */
 
@@ -3149,13 +3324,20 @@ const setFilter = (kind, key, label, kindLabel) => {
 const jump = (sym) => {
   if (!sym || !ROWSYM.has(sym)) return;
   sheetOpen(false);
+  // Switching the view here rather than at each call site. A symbol clicked in
+  // the drawer used to close it onto whichever view was underneath - so from
+  // the Overview you asked for a chart and got the Overview back, with the
+  // selection changed somewhere you could not see. The Overview's own handler
+  // set the view itself, which is why it looked like it worked.
+  setView('positions');
   select(sym);
 };
 
 on('#vnav', 'click', (e) => {
   const b = e.target && e.target.closest && e.target.closest('.vbtn');
-  // Data is in this nav and is not a view. Without the guard it would call
-  // setView(null) and hide both of them.
+  // The data-view guard outlived the button it was written for - Data is no
+  // longer in this nav - but it stays: the nav is now exactly the set of real
+  // views, and this is what keeps that true if anything else is ever put here.
   if (b && b.getAttribute('data-view')) setView(b.getAttribute('data-view'));
 });
 
@@ -3175,7 +3357,7 @@ on('#ovgrid', 'click', (e) => {
       {sector: 'Sector', country: 'Geography', industry: 'Industry'}[kind] || '');
   }
   const node = t.closest('[data-sym]');
-  if (node) { setView('positions'); jump(node.getAttribute('data-sym')); }
+  if (node) jump(node.getAttribute('data-sym'));   // jump() sets the view now
 });
 
 on('#sheetnav', 'click', (e) => {
@@ -3183,13 +3365,8 @@ on('#sheetnav', 'click', (e) => {
   if (e.target.closest('#xclear')) { SS.filter = null; return paintSheet(); }
   const b = e.target.closest('.navb');
   if (!b) return;
-  const id = b.getAttribute('data-go');
-  // Jumping to a collapsed section opens it. Scrolling someone to a heading
-  // with nothing under it is the navigation equivalent of a dead link.
-  SS.shut[id] = false;
-  paintSheet();
-  const head = $(`#sheetbody h2[data-sec="${id}"]`);
-  if (head) head.scrollIntoView({block: 'start', behavior: 'smooth'});
+  gotoSection(b.getAttribute('data-go'));
+  syncHash();
 });
 
 on('#sheetbody', 'click', (e) => {
@@ -3315,6 +3492,12 @@ paintSheet();
 // all render fine into a hidden container because none of them measures
 // anything. The chart is the exception and is deliberately NOT built here -
 // see paintChart - so the first switch to Positions is what constructs it.
+// ROUTING is held true across the first paint so none of it writes a route.
+// Without the guard the boot select() below stamps #/overview into the address
+// bar before applyHash ever reads it, and a cold load of a shared link lands
+// on the Overview having just overwritten the link that asked for somewhere
+// else. Build first, then read the URL, then stamp what we actually resolved.
+ROUTING = true;
 setView('overview');
 if (ROWS.length) {
   select(state.sym);
@@ -3322,6 +3505,9 @@ if (ROWS.length) {
   const l = $('#list');
   if (l) l.innerHTML = '<div class="empty">No positions and no watchlist rows.</div>';
 }
+ROUTING = false;
+applyHash();
+syncHash();
 
 // --------------------------------------------------------------- live prices
 //
