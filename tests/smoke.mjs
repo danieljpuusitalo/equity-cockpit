@@ -12,11 +12,24 @@ const html = fs.readFileSync(path, 'utf8');
 // The page carries two scripts: the vendored chart library and ours. Only ours
 // is worth executing here - the library is TradingView's problem, not this
 // repo's, and running it under a shim would test nothing we wrote.
-if (!html.includes('<script id="app">')) {
-  console.error(`SMOKE FAIL  ${path}: no <script id="app"> block found`);
+// Built by concatenation so the marker is never spelled out in this file
+// either - see the note in the template. A second occurrence anywhere in the
+// document, including inside an HTML comment, silently reassigns which block
+// gets executed, and what you get back is a syntax error from inside minified
+// TradingView source. That already happened once. Count first, split after.
+const MARK = '<script' + ' id="app">';
+const parts = html.split(MARK);
+if (parts.length === 1) {
+  console.error(`SMOKE FAIL  ${path}: no ${MARK} block found`);
   process.exit(1);
 }
-const js = html.split('<script id="app">')[1].split('</script>')[0];
+if (parts.length > 2) {
+  console.error(`SMOKE FAIL  ${path}: ${parts.length - 1} blocks match `
+    + `${MARK}; the marker must be unique or this test runs the wrong script. `
+    + 'Check for it being written out inside a comment.');
+  process.exit(1);
+}
+const js = parts[1].split('</script>')[0];
 
 const el = () => {
   const node = {
@@ -29,6 +42,13 @@ const el = () => {
     // back to build the sheet's section nav; an empty list has to be a valid
     // answer here or this test fails on the shim's limits rather than the
     // page's. What the nav actually renders is checked in a browser.
+    // Same reasoning one line down: a node that never parsed its innerHTML
+    // cannot honestly say it found a child, so it says it found none.
+    // watchTiles guards on exactly that (`if (!box) return`), which is why
+    // null is the right answer and not a hole in the shim. Without this the
+    // page throws at `$('#ovgrid').querySelector('.tmap')` and the whole smoke
+    // test dies before it walks a single row - it did, on committed code.
+    querySelector: () => null,
     querySelectorAll: () => [], scrollIntoView() {},
     closest: () => null, value: '',
     getBoundingClientRect: () => ({ width: 10, height: 10 }),
@@ -83,7 +103,13 @@ const WALK = `
   // a tile count that disagrees with the payload means the page dropped
   // rectangles on the floor - a map with a hole in it and no legend.
   const grid = document.querySelector('#ovgrid').innerHTML || '';
-  const drawn = (grid.match(/class="tile /g) || []).length;
+  // class="tile" - no trailing space. The tile carries exactly one class and
+  // its size class is added later by fitTiles, in pixels, against the laid-out
+  // box. This pattern used to be /class="tile /, which the markup has never
+  // produced, so the count was structurally 0 and this check could only ever
+  // fail. It never surfaced because the page threw further up and the harness
+  // died before reaching it - two defects covering for each other.
+  const drawn = (grid.match(/class="tile"/g) || []).length;
   const want = ((D.overview || {}).allocation || {}).n || 0;
   if (drawn !== want) bad.push('treemap: ' + drawn + ' tiles drawn, ' + want + ' laid out');
   globalThis.__smoke = {rows: ROWS.length, tiles: drawn, bad: bad};

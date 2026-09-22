@@ -22,7 +22,7 @@ CHARTLIB = C.ROOT / "assets" / "lightweight-charts.standalone.production.js"
 
 def payload(positions_valued, watchlist, alerts, health, fx, sources,
             history=None, coverage=None, book_return=None, indicators=None,
-            exposure=None, reporting=None):
+            exposure=None, reporting=None, activity=None):
     """The single object the page renders. Nothing is computed in the browser
     that could have been computed here - the page displays, it does not decide."""
     total_value = round(sum(h["value_eur"] or 0 for h in positions_valued), 2)
@@ -73,6 +73,13 @@ def payload(positions_valued, watchlist, alerts, health, fx, sources,
         # null, never as zero - see reporting.py's header for why that is the
         # single rule that module exists to enforce.
         "reporting": reporting or {},
+        # What the book did between the last two Nordnet exports. The export
+        # lists holdings and never transactions, so a sale exists here only as
+        # the difference between two of them - and `comparable` is load-bearing
+        # on this one. An empty `changes` means "nothing sold" ONLY when
+        # `comparable` is true; the rest of the time it means the question
+        # could not be asked, and the page must say which. See activity.py.
+        "activity": activity or {},
         "alerts": alerts,
         "health": health,
         "fx": fx,

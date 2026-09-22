@@ -23,6 +23,7 @@ import datetime as dt
 import config as C
 import sources
 import analyse
+import activity
 import exposure
 import reporting
 import indicators
@@ -34,6 +35,12 @@ HEARTBEAT = C.STATE / "last_run.json"
 # must not be the same one.
 REFRESH_BEAT = C.STATE / "last_refresh.json"
 HISTORY = C.STATE / "history.jsonl"
+# The lot book as of the last export that was genuinely new. This is the only
+# memory the cockpit has of what it used to hold, and it is the only way a sale
+# is ever visible: the export lists holdings, never transactions. See
+# activity.py. It is NOT a heartbeat and must not be used as one - a run that
+# refuses to compare still leaves it exactly as it was.
+LOT_BOOK = C.STATE / "lot-book.json"
 
 
 # ---------------------------------------------------------------- heartbeat
@@ -66,6 +73,86 @@ def write_refresh_beat(summary):
     C.STATE.mkdir(parents=True, exist_ok=True)
     REFRESH_BEAT.write_text(json.dumps(summary, indent=1, default=str),
                             encoding="utf-8")
+
+
+def read_lot_book():
+    if not LOT_BOOK.exists():
+        return None
+    try:
+        return json.loads(LOT_BOOK.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+
+
+def write_lot_book(book):
+    C.STATE.mkdir(parents=True, exist_ok=True)
+    LOT_BOOK.write_text(json.dumps(book, indent=1, default=str),
+                        encoding="utf-8")
+
+
+def lot_activity(lots, positions, csv_date, csv_problems, persist):
+    """What changed since the last export, and whether we could tell.
+
+    Three rules live here rather than in activity.py, because all three are
+    about this process rather than about the arithmetic:
+
+    1. A BAD PARSE IS NEVER DIFFED. Against yesterday's book, a truncated or
+       unreadable CSV reads as the entire portfolio having been sold. The
+       module has its own backstop for the mass-exit shape, but the caller
+       knowing the parse reported problems is the better signal and it comes
+       first.
+    2. THE FINDING OUTLIVES THE RUN THAT FOUND IT. Exports arrive days apart
+       and runs happen twice a day, so the run that first sees a new export is
+       the only one that can compute the diff. If the stored changes were not
+       re-served, a sale would appear on the page for one run and then vanish,
+       which is worse than never showing it. `stale` says which it is.
+    3. ONLY A FULL RUN WRITES. A refresh re-reads the same local CSV and is
+       welcome to display the finding, but the file that decides whether the
+       next comparison happens is not a read-only mode's to advance.
+    """
+    previous = read_lot_book()
+    current = activity.snapshot(lots, csv_date, positions)
+
+    if csv_problems or not lots:
+        why = (f"the export parsed with {len(csv_problems)} problem(s)"
+               if csv_problems else "the export parsed to no lots at all")
+        view = {"comparable": False, "changes": [], "stale": False, "n": 0,
+                "reason": f"{why} - a bad read of this file is "
+                          f"indistinguishable from having sold everything in it",
+                "from_exported": (previous or {}).get("exported"),
+                "to_exported": current.get("exported")}
+        return view
+
+    view = dict(activity.diff(previous, current))
+    view["stale"] = False
+
+    if view["comparable"]:
+        if persist:
+            write_lot_book({
+                "exported": current["exported"],
+                "previous_exported": (previous or {}).get("exported"),
+                "at": dt.datetime.now().isoformat(timespec="seconds"),
+                "changes": view["changes"],
+                "positions": current["positions"]})
+    elif previous and previous.get("exported") == current.get("exported"):
+        # Rule 2. The stored changes still describe the most recent thing the
+        # book actually did; what is not available is a NEW comparison.
+        view["changes"] = previous.get("changes") or []
+        view["from_exported"] = previous.get("previous_exported")
+        view["to_exported"] = previous.get("exported")
+        view["stale"] = True
+    elif previous is None and persist:
+        # Seed. Nothing is reported - there is nothing to report against - but
+        # the next new export has something to compare itself to.
+        write_lot_book({
+            "exported": current["exported"],
+            "previous_exported": None,
+            "at": dt.datetime.now().isoformat(timespec="seconds"),
+            "changes": [],
+            "positions": current["positions"]})
+
+    view["n"] = len(view["changes"])
+    return view
 
 
 def append_history(record):
@@ -357,12 +444,32 @@ def _cycle(mode, quiet=False, verbose=True):
         f"({cal['n_soon']} inside a week, {cal['pct_ahead']:.0f}% of the book); "
         f"{cal['n_unknown']} without a scheduled date")
 
+    # What the book did since the last export. Only a full run advances the
+    # stored lot book; see lot_activity() for the other two rules.
+    moves = lot_activity(lots, positions, csv_date, csv_problems,
+                         persist=not cached)
+    if moves["n"]:
+        kinds = {}
+        for change in moves["changes"]:
+            kinds[change["kind"]] = kinds.get(change["kind"], 0) + 1
+        say(f"  Activity: {moves['n']} change(s) between the "
+            f"{moves['from_exported']} and {moves['to_exported']} exports ("
+            + ", ".join(f"{v} {k}" for k, v in sorted(kinds.items())) + ")"
+            + (" - carried from the last comparison, not recomputed"
+               if moves["stale"] else ""))
+    else:
+        say(f"  Activity: no sales visible - {moves['reason'] or 'no change'}")
+
     alerts = analyse.alerts(watchlist, holdings, state, cover)
     # Appended rather than merged into analyse.alerts: those read the Equity
     # Log and the position file, this reads a vendor calendar. Keeping the two
     # sources of judgement apart is why a broken feed here cannot silence a
     # thesis alert there.
     alerts = alerts + reporting.alerts(reports)
+    # Same argument once more. This one reads two exports against each other
+    # and nothing else, and it is the only alert on the board that can be
+    # raised by something Daniel did rather than by something the market did.
+    alerts = alerts + activity.alerts(moves, watchlist)
     data = render.payload(holdings, watchlist, alerts, state, fx, {
         "nordnet_export_date": csv_date,
         "nordnet_export_age_days": csv_age,
@@ -394,7 +501,7 @@ def _cycle(mode, quiet=False, verbose=True):
         "last_full_run": (last_run or {}).get("at"),
     }, history=history, coverage=cover, book_return=book_return,
        indicators=indicators.snapshot_all(history), exposure=exposures,
-       reporting=reports)
+       reporting=reports, activity=moves)
 
     over = data["overview"]
     day, alloc = over["day"], over["allocation"]
@@ -484,6 +591,65 @@ def _by_account(holdings):
 _NOT_COMMITTED = {"state", "out", "__pycache__", ".pytest_cache", ".git",
                   ".venv", "venv"}
 
+# A Nordnet account number is eight digits. Every eight-digit run that may
+# appear in a committable file is listed here by hand, and this list is the
+# whole point: the identifier scan below can only ever catch numbers that are
+# already in portfolio.local.json, so a real account number typed from memory,
+# from a checkpoint, or from a closed account sails straight through it. That
+# has now happened twice, both times into tests/. Shape catches what the
+# identifier set cannot.
+#
+# Adding an entry here is meant to be a deliberate act by a person who has
+# looked at the number. If a test needs an account, use one of the fakes below
+# rather than extending the list - a public commit cannot be unpublished.
+_EIGHT_DIGITS = re.compile(r"(?<!\d)\d{8}(?!\d)")
+_KNOWN_EIGHT = {
+    "12345678", "87654321",          # portfolio.example.json, the documented fakes
+    "11111111", "22222222", "99999999",   # test fixtures, visibly not real
+    "00000000",                      # the all-zero UUID in the example file
+    "86400000",                      # milliseconds in a day (dashboard.tmpl.html)
+}
+
+
+def _account_shape_scan():
+    """Eight-digit runs in committable files that nobody has vouched for.
+
+    Deliberately dumber than the identifier scan and that is the value: it
+    knows nothing about what Daniel owns, so it cannot be defeated by a number
+    the private file has never seen.
+    """
+    found = []
+    for path, rel, text in _committable_files():
+        for hit in sorted(set(_EIGHT_DIGITS.findall(text))):
+            if hit not in _KNOWN_EIGHT:
+                line = next((i for i, ln in enumerate(text.splitlines(), 1)
+                             if hit in ln), 0)
+                found.append(f"{rel}:{line}: {hit}")
+    if found:
+        return False, (f"{len(found)} unvouched eight-digit run(s), "
+                       f"first {found[0]} - if it is not an account, add it to "
+                       "_KNOWN_EIGHT; if it is, remove it from the file")
+    return True, f"{len(_KNOWN_EIGHT)} vouched, no others"
+
+
+def _committable_files():
+    """Every file a `git push` could carry, as (path, relative path, text)."""
+    for path in sorted(C.ROOT.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(C.ROOT)
+        if set(rel.parts) & _NOT_COMMITTED:
+            continue
+        # .env and the *.local.* files are gitignored, which is exactly why the
+        # real numbers live in them. Reading them here would report the secret
+        # as a leak from the one place it belongs.
+        if path.suffix in {".csv", ".pyc"} or "local" in rel.name or rel.name == ".env":
+            continue
+        try:
+            yield path, rel, path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+
 
 def _leak_scan():
     """Would a `git push` of this folder disclose the book?
@@ -496,25 +662,18 @@ def _leak_scan():
 
     Looks for the two things that identify the book: ISINs (12 chars, the two
     leading letters are a country code) and broker account numbers.
+
+    Necessary and not sufficient. It can only match what portfolio.local.json
+    already names, so it is paired with _account_shape_scan, which matches on
+    shape and therefore catches numbers this set has never heard of.
     """
     secrets = set(C.YAHOO) | set(C.ACCOUNTS)
     if C.EQUITY_LOG_DATA_SOURCE:
         secrets.add(C.EQUITY_LOG_DATA_SOURCE)
-    # The private file and the .env are the two places these SHOULD appear.
-    allowed = {C.PORTFOLIO_FILE.name, ".env", ".gitignore"}
 
     found = []
-    for path in sorted(C.ROOT.rglob("*")):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(C.ROOT)
-        if set(rel.parts) & _NOT_COMMITTED or rel.name in allowed:
-            continue
-        if path.suffix in {".csv", ".pyc"} or "local" in rel.name:
-            continue
-        try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+    for path, rel, text in _committable_files():
+        if rel.name == ".gitignore":
             continue
         hits = sorted(s for s in secrets if s in text)
         if hits:
@@ -610,6 +769,62 @@ def selftest():
           f"template lost: {', '.join(tiers)}" if tiers
           else "two-column tier and one-column fallback both present")
 
+    # The Activity section is the only part of the sheet that must render when
+    # it has nothing to show, because its empty state carries the finding: an
+    # absent section reads as "nothing was sold", and the thing it most often
+    # has to say is "I could not tell". The natural tidy-up here is the one
+    # every other section gets - `!rows.length ? '' : ...` around the whole
+    # block - and applying it would restore the exact defect the module was
+    # written for, silently. So the hooks checked are the section itself AND
+    # the sentence that distinguishes the two empty states.
+    act = [h for h in ('data-sec="act"', 'No comparison was possible',
+                       'it is the absence of a report')
+           if h not in tmpl]
+    check("assets: activity says which kind of empty it is", not act,
+          f"template lost: {', '.join(act)}" if act
+          else "the section and both of its empty states are present")
+
+    # The wide tier, which is the one no test here can reach: the Chrome
+    # sidebar caps innerWidth at 955 and resize_window does not move it, so
+    # every browser measurement this repo has ever taken was of a narrow tier.
+    # Two things hold the twelve-track grid up and both fail silently.
+    #
+    # The tracks: on `auto-fit` the viewport chose the column count, which at
+    # 1920 resolved to six and left Concentration alone on a row with five
+    # empty tracks beside it. Declared spans mean nothing without fixed tracks.
+    #
+    # The scoping: `.ovgrid > .ov-8` and `.ovgrid > *` TIE on specificity
+    # (0,1,1 each - one class, one element), so source order decides between
+    # them. Scoped, every span class is declared after the default it must beat
+    # and beats it. Unscoped, a bare `.ov-8{}` is (0,1,0), loses to the `> *`
+    # default outright, and the card silently takes 4 tracks instead of 8. The
+    # page still opens, the smoke test still passes, every unit test stays
+    # green, and the orphan-row bug is back at a width nobody here can measure.
+    css = re.sub(r"/\*.*?\*/", " ", tmpl.split("</style>")[0], flags=re.S)
+    grid = []
+    # Read the tracks off the `.ovgrid` rule itself, not off the stylesheet.
+    # `.ovtop` declares the same twelve tracks one rule below - deliberately,
+    # so a stat edge lines up with a card edge - so a substring search over the
+    # whole sheet stays satisfied by the headline band long after the card grid
+    # has gone back to auto-fit. That version of this check was written first
+    # and the mutation run is the only reason it did not ship.
+    ovgrid = re.search(r"\.ovgrid\{([^}]*)\}", css)
+    if not ovgrid:
+        grid.append("the .ovgrid rule is gone")
+    elif "grid-template-columns:repeat(12,minmax(0,1fr))" not in ovgrid.group(1):
+        grid.append("the twelve fixed tracks are gone (auto-fit again?): "
+                    + ovgrid.group(1).strip()[:70])
+    spans = re.findall(r"([^{}]*\.ov-\d+[^{}]*)\{", css)
+    loose = sorted({part.strip() for sel in spans for part in sel.split(",")
+                    if ".ov-" in part
+                    and not part.strip().startswith(".ovgrid > .ov-")})
+    if loose:
+        grid.append(f"span rules not scoped as children: {', '.join(loose)}")
+    check("assets: overview spans outrank the grid default", not grid,
+          "; ".join(grid) if grid
+          else f"twelve fixed tracks, {len(spans)} span rules all scoped "
+               f"`.ovgrid > .ov-N`")
+
     # The type scale is only a scale while it is the only source of sizes. It
     # decayed into 15 font-sizes, 10 weights and 10 radii once before, one rule
     # at a time, and no single edit in that drift looked wrong on its own. So
@@ -703,6 +918,7 @@ def selftest():
           f"{sum(1 for i, b in C.TARGET_BASIS.items() if b == 'policy' and C.TARGET_WEIGHT.get(i) is not None)} written policy")
 
     check("privacy: holdings file is gitignored", *_leak_scan())
+    check("privacy: no unvouched account numbers", *_account_shape_scan())
 
     lots, problems = sources.nordnet_lots()
     check("nordnet: export parses", bool(lots) and not problems,

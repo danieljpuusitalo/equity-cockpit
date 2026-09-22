@@ -654,7 +654,17 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
 </div>
 
 <div class="view" id="v-positions" hidden>
-<div class="app" id="app">
+<!-- No id here. The app script tag near the foot of the file carries id="app"
+     and that one is load-bearing: tests/smoke.mjs splits the whole document on
+     it to find the code it executes. This div was referenced by nothing - no
+     CSS rule, no getElementById - and only made the document carry two nodes
+     with the same id.
+     Do not write that opening tag out in full anywhere above the real one.
+     Spelled literally, even inside a comment, it becomes a second marker and
+     smoke.mjs runs the vendored chart library instead of this page - which
+     fails as a syntax error from inside minified TradingView source and looks
+     like anything except a comment. -->
+<div class="app">
   <aside class="pane rail">
     <div class="phead"><input class="search" id="q" type="search"
       placeholder="Filter ticker or name" autocomplete="off"></div>
@@ -1911,6 +1921,59 @@ function paintSheet() {
 
   const al = (D.alerts||[]).filter((x) => !q ||
     (x.title + ' ' + x.detail).toLowerCase().includes(q));
+  // Sales. The Nordnet export lists holdings and never transactions, so every
+  // row here is the difference between two exports and nothing else.
+  //
+  // This section renders even when it has no rows, and that is the point of
+  // it. "Nothing was sold" and "the question could not be asked" are different
+  // answers, only one of them is good news, and a section that vanished on the
+  // second would be read as the first - which is precisely the derived status
+  // claiming more than it means that this repo keeps finding. So the prose
+  // below always says which of the two it is.
+  //
+  // The euro column is ACHROMATIC on purpose, same argument as the multiple
+  // drift above: a sale is not a bad thing and a purchase is not a good one.
+  // Colouring them would have the page take a view that belongs to the thesis.
+  const AC = D.activity || {};
+  const acr = AC.changes || [];
+  const KIND = {exited: 'sold out', reduced: 'sold down', opened: 'opened',
+                increased: 'added to', adjusted: 'adjusted (not a trade)'};
+  const acWhy = AC.comparable
+    ? `Compared the ${esc(AC.from_exported)} export against
+       ${esc(AC.to_exported)}.`
+    : acr.length
+      ? `Carried from the last comparison that was possible
+         (${esc(AC.from_exported)} → ${esc(AC.to_exported)}). This run could not
+         look again: ${esc(AC.reason)}.`
+      : `<b>No comparison was possible</b>, so this is not a report that nothing
+         was sold — it is the absence of a report. ${esc(AC.reason)}.`;
+  const act = `<h2 data-sec="act">Activity — ${acr.length
+      ? `${acr.length} change${acr.length === 1 ? '' : 's'} since the
+         ${esc(AC.from_exported)} export`
+      : (AC.comparable ? 'no change since the last export'
+                       : 'cannot tell')}</h2>
+    <div class="sec" data-sec="act">
+    ${!acr.length ? '' : `<div class="scroll"><table><thead><tr>
+      <th class="t">Ticker</th><th class="t">What</th><th>Units before</th>
+      <th>Units after</th><th>Cost €</th><th class="t">Lots closed outright</th>
+      <th class="t">Acct</th><th class="t">Name</th>
+      </tr></thead><tbody>${acr.map((c) => `<tr
+        class="${ROWSYM.has(c.yahoo || c.ticker) ? 'click' : ''}"
+        data-sym="${esc(c.yahoo || c.ticker)}">
+        <td class="t">${esc(c.ticker)}</td>
+        <td class="t">${esc(KIND[c.kind] || c.kind)}${c.why
+          ? ` <span class="est" title="${esc(c.why)}">?</span>` : ''}</td>
+        <td>${num(c.units_before, 4)}</td><td>${num(c.units_after, 4)}</td>
+        <td>${eur(c.cost_delta)}</td>
+        <td class="t">${(c.lots_closed || []).map((l) => esc(l.bought))
+          .join(', ') || '—'}</td>
+        <td class="t">${esc(c.account)}</td><td class="t">${esc(c.name)}</td>
+        </tr>`).join('')}</tbody></table></div>`}
+    <div class="prose" style="margin-top:8px">${acWhy} The export is a list of
+    what you hold, never a list of what you traded, so a sale exists here only
+    as the difference between two of those lists — and until a newer export
+    lands there is nothing further to see.</div></div>`;
+
   const a = `<h2 data-sec="flag">Flags — ${some(al.length,
       (D.alerts||[]).length, 'open')}</h2>
     <div class="sec" data-sec="flag">
@@ -1952,7 +2015,7 @@ function paintSheet() {
          funds are not asked, Yahoo answers them with a 404`}</td></tr>
     </tbody></table></div></div>`;
 
-  $('#sheetbody').innerHTML = h + w + cov + exp + rep + mult + ind + a + src;
+  $('#sheetbody').innerHTML = h + w + cov + act + exp + rep + mult + ind + a + src;
   alignColumns($('#sheetbody'));
 
   // Collapse state is re-applied after the repaint rather than survived
