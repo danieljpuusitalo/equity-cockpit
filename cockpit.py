@@ -980,10 +980,48 @@ def selftest():
                              ("font-weight", r"font-weight:(\d+)"),
                              ("border-radius", r"border-radius:([\d.]+px)"),
                              ("gap", r"gap:([\d.]+px)"))}
+    # Line height was the one axis with no token at all: eight values between
+    # 1.05 and 1.5, so two cards showing the same kind of thing disagreed by
+    # accident. `1` is exempt and stays exempt - on the freshness mark and the
+    # chip's button it is an icon metric, the deliberate "this box is exactly
+    # as tall as its glyph", not a rhythm decision.
+    raw["line-height"] = sorted({v for v in re.findall(r"line-height:([\d.]+)\b",
+                                                       body_css) if v != "1"})
     stray = {k: v for k, v in raw.items() if v}
     check("assets: type scale has no bypasses", not stray,
           "; ".join(f"{k}: {', '.join(v)}" for k, v in stray.items()) if stray
-          else "sizes, weights, radii and gaps all come from :root tokens")
+          else "sizes, weights, radii, gaps and line heights all come from "
+               ":root tokens")
+
+    # One bordered box, three names. .card and .stat were byte-identical and
+    # .xcard was a near-copy, which is the state in which a fourth gets written
+    # - nobody diffs a rule they are about to add. The test is that the shared
+    # rule exists AND that none of the three has quietly re-grown its own.
+    #
+    # Second half: spacing set as an inline style inside a JS template string is
+    # invisible to the stylesheet and cannot be overridden by anything. Twenty
+    # of them had accumulated, spelling one idea - the gap between a block and
+    # the note explaining it - as 8px, 9px, 10px and 11px. The count is what is
+    # checked, because there are legitimate inline styles here (a treemap
+    # rectangle's position is data, not design) and forbidding the mechanism
+    # would forbid those too.
+    box = []
+    if ".card,.stat,.xcard{" not in tmpl.replace(" ", "").replace("\n", ""):
+        box.append("the shared box rule is gone")
+    flat = re.sub(r"\s+", "", body_css)
+    # Anchored, because the shared rule's own selector list ENDS in `.xcard{`
+    # and a plain substring test flags it as the thing it is preventing. The
+    # lookbehind is what makes this a test of a standalone rule.
+    for name in (".card", ".stat", ".xcard"):
+        if re.search(r"(?<![,\w.-])" + re.escape(name) + r"\{", flat):
+            box.append(f"{name} has its own surface rule again")
+    inline_margin = len(re.findall(r'style="[^"]*margin[^"]*:\s*\d', tmpl))
+    if inline_margin > 2:
+        box.append(f"{inline_margin} inline margin styles, expected at most 2")
+    check("assets: one box rule, not three", not box,
+          "; ".join(box) if box
+          else f"card, stat and xcard share one surface; {inline_margin} "
+               f"inline margin style(s) left")
 
     # Right-aligned is correct for the numeric columns and wrong for every word
     # column, which is how six tables came to right-rag their sector, account

@@ -89,6 +89,21 @@
      Multi-value paddings are left alone here - `padding:7px 8px` is component
      geometry, not rhythm, and is set where each component is defined. */
   --s-1:2px; --s-2:4px; --s-3:6px; --s-4:10px; --s-5:14px; --s-6:20px;
+  /* That histogram was taken from the stylesheet, and the stylesheet is not
+     where all the spacing lives: a dozen gaps between a block and the note
+     explaining it are inline styles inside JS template strings, hardcoded at
+     8px or 9px, invisible to anything reading the CSS. It is one interval used
+     one way, so it gets one name rather than a new rung on a scale that was
+     fitted without it. */
+  --s-note:8px;
+
+  /* Line height was eight ad hoc values between 1.05 and 1.5 with no token, so
+     two cards showing the same kind of thing set it differently by accident.
+     Four steps, chosen by what the text IS rather than by how big it is. */
+  --lh-num:1.08;   /* display figures - the one number a card exists to show */
+  --lh-tight:1.2;  /* headings and labels that must not open up */
+  --lh:1.4;        /* table cells, captions, short secondary text */
+  --lh-loose:1.5;  /* prose meant to be read as sentences */
 
   --r-sm:3px; --r-md:7px; --r-lg:10px; --r-pill:999px;
 }
@@ -148,7 +163,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 /* The meta chip is the one that has to give. Block flow rather than inline-flex
    so it breaks at the separators and nowhere else - each fact is a .f that stays
    whole, so a line never ends with "24" and starts with "held". */
-#t-meta{display:block;white-space:normal;min-width:0;line-height:1.5}
+#t-meta{display:block;white-space:normal;min-width:0;line-height:var(--lh-loose)}
 #t-meta .f{white-space:nowrap}
 .sep{width:1px;height:22px;background:var(--border);flex:none}
 /* No flex spacer: under wrap a spacer eats the rest of its own line and pushes
@@ -256,11 +271,21 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .tsec{padding:12px 14px;border-bottom:1px solid var(--grid)}
 .tsec:last-child{border-bottom:0}
 .tlabel{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.12em;color:var(--muted);
-  margin-bottom:8px}
+  margin-bottom:var(--s-note)}
+/* A block, and the note that explains it. Ten inline `margin-top:8px` and
+   `margin-top:9px` in JS template strings each said this independently, plus an
+   11px and a pair of margin-bottoms that meant the same thing in the other
+   direction. Two classes say it once, and a density or theme change can now
+   reach them - an inline style cannot be overridden by anything. */
+.under{margin-top:var(--s-note)}
+.over{margin-bottom:var(--s-note)}
+/* A run-in title between two blocks inside a section, spelled `margin:16px 0
+   7px` in one place and `18px 0 7px` in another. It is one thing. */
+.tlabel.run{margin:var(--s-6) 0 var(--s-3)}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:var(--s-3) 12px;font-size:var(--t-3)}
 .kv dt{color:var(--muted)}
 .kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:var(--w-med)}
-.prose{font-size:var(--t-3);line-height:1.5;color:var(--ink-2);
+.prose{font-size:var(--t-3);line-height:var(--lh-loose);color:var(--ink-2);
   overflow-wrap:anywhere}
 /* Three columns, because the point of the section is the gap between two of
    them. A dt may be followed by more than one dd - this is that, not a hack. */
@@ -315,7 +340,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
    "judged by", "reached through" - was right-ragged against a hard edge and
    had to be read from an unpredictable left margin. Hence .t. */
 table{width:100%;border-collapse:collapse;font-size:var(--t-3);
-  line-height:1.4;font-variant-numeric:tabular-nums}
+  line-height:var(--lh);font-variant-numeric:tabular-nums}
 th{text-align:right;font-weight:var(--w-semi);color:var(--muted);font-size:var(--t-1);
   letter-spacing:.05em;text-transform:uppercase;padding:0 8px 8px;
   border-bottom:1px solid var(--axis);white-space:nowrap}
@@ -337,13 +362,12 @@ thead th{position:sticky;top:0;z-index:1;background:var(--plane)}
    which is the one distortion a composition chart must not introduce. */
 .xgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
   gap:var(--s-4);margin-bottom:4px}
-.xcard{border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;
-  background:var(--surface-1)}
-.xcard .k{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.1em;
-  text-transform:uppercase;color:var(--muted)}
-.xcard .v{font-size:var(--t-6);font-weight:var(--w-semi);font-variant-numeric:tabular-nums;
-  margin:4px 0 2px;line-height:1.1}
-.xcard .s{font-size:var(--t-2);color:var(--ink-2);line-height:1.4}
+/* .xcard's own surface rule lived here and was a near-copy of .card's, which
+   itself was a byte-for-byte copy of .stat's. All three are now the one rule
+   further down; see the note there. Only the type inside differs, and only
+   .xcard's value weight actually differed on purpose, and that override sits
+   AFTER the shared rule rather than here - both selectors are (0,1,1), so
+   source order is the whole argument. Same trap as `.chip b` above. */
 /* Namespaced .xrow, not .bar: the weight strip up at line 154 already owns
    .bar, and a second rule on that name silently reflowed it to a grid. */
 .xrow{display:grid;grid-template-columns:168px 1fr 66px;gap:var(--s-4);
@@ -480,8 +504,28 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
 .ovgrid > .ov-6{grid-column:span 6}
 .ovgrid > .ov-8{grid-column:span 8}
 .ovgrid > .ov-12{grid-column:span 12}
-.card{border:1px solid var(--border);border-radius:var(--r-lg);padding:11px 13px;
-  background:var(--surface-1);min-width:0}
+/* One surface, three names.
+   .card and .stat were byte-identical apart from `min-width:0`, and .xcard was
+   the same box with a different radius and 1px less padding - three rules for
+   one idea, which is exactly the state in which a fourth gets added. The names
+   stay because they mean different things in the markup (a panel, a headline
+   figure, a composition card); what they no longer do is each redescribe a
+   bordered box.
+   The label/value/note triple was written out three times too, with
+   letter-spacing .1em against .11em and line-heights 1.05, 1.1, 1.35 and 1.4 -
+   differences nobody chose. One triple now, off the scale. */
+.card,.stat,.xcard{border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:11px 13px;background:var(--surface-1);min-width:0}
+.card .k,.stat .k,.xcard .k{font-size:var(--t-1);font-weight:var(--w-bold);
+  letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}
+.card .v,.stat .v,.xcard .v{font-size:var(--t-6);font-weight:var(--w-bold);
+  letter-spacing:-.02em;margin:var(--s-2) 0 var(--s-1);
+  font-variant-numeric:tabular-nums;line-height:var(--lh-num)}
+.card .s,.stat .s,.xcard .s{font-size:var(--t-2);color:var(--ink-2);
+  line-height:var(--lh)}
+/* The one difference that was a decision: a composition card's figure is a
+   share of the book, not a headline, and sits a weight below the band's. */
+.xcard .v{font-weight:var(--w-semi)}
 .card h3{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.11em;
   text-transform:uppercase;color:var(--muted);margin:0 0 9px;
   display:flex;justify-content:space-between;gap:var(--s-4);align-items:baseline}
@@ -493,13 +537,9 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
 .ovtop{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
   gap:var(--s-5);margin-bottom:13px}
 .ovtop > *{grid-column:span 4}
-.stat{border:1px solid var(--border);border-radius:var(--r-lg);padding:11px 13px;
-  background:var(--surface-1)}
-.stat .k{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.11em;
-  text-transform:uppercase;color:var(--muted)}
-.stat .v{font-size:var(--t-6);font-weight:var(--w-bold);letter-spacing:-.02em;margin:5px 0 1px;
-  font-variant-numeric:tabular-nums;line-height:1.05}
-.stat .s{font-size:var(--t-2);color:var(--ink-2);line-height:1.35}
+/* .stat's own surface and label/value/note rules were here. They are the shared
+   rule above now - .stat is what the headline band's boxes are called, not a
+   fourth description of a bordered box. */
 
 /* ---------------------------------------------------------------- treemap */
 /* Rectangles arrive from Python already placed (see treemap.py). The page
@@ -518,10 +558,10 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
   display:flex;flex-direction:column;justify-content:flex-start}
 .tile[data-sym]{cursor:pointer}
 .tile[data-sym]:hover{outline:2px solid var(--ink);outline-offset:-2px;z-index:2}
-.tile .tt{font-size:var(--t-2);font-weight:var(--w-bold);color:var(--ink);line-height:1.15;
+.tile .tt{font-size:var(--t-2);font-weight:var(--w-bold);color:var(--ink);line-height:var(--lh-tight);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile .tw{font-size:var(--t-1);color:var(--ink-2);font-variant-numeric:tabular-nums;
-  line-height:1.3;white-space:nowrap}
+  line-height:var(--lh);white-space:nowrap}
 /* Two rungs, set by fitTiles against measured pixels. `sm` drops the weight
    line, `xs` drops both. The old `xs` rule hid .tt and left .tw showing, so
    the smallest tiles displayed a percentage with no ticker attached to it -
@@ -562,7 +602,7 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
 .lrow .track .mid{position:absolute;left:calc(50% - 1px);top:0;bottom:0;width:2px;
   background:var(--axis)}
 .lrow .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:var(--w-med)}
-.lnote{font-size:var(--t-2);color:var(--muted);margin-top:7px;line-height:1.4}
+.lnote{font-size:var(--t-2);color:var(--muted);margin-top:var(--s-3);line-height:var(--lh)}
 /* The sheet's composition bars reused at a third of the width. The 168px label
    column there would leave a card here with a 30px track, so the label gives
    way to the bar - the bar is the thing being read. */
@@ -1821,7 +1861,7 @@ function paintThesis(r) {
        the section - a name whose reason to be held was never written down is
        the finding, not a rendering gap. */
     const infl = w.inflection_date
-      ? `<dl class="kv" style="margin-top:9px">
+      ? `<dl class="kv under">
          <dt>Settles on</dt><dd>${esc(w.inflection_date)}${w.days_to_inflection == null
            ? '' : ` <span style="color:var(--muted)">${w.days_to_inflection}d</span>`}</dd>
          ${w.inflection_event ? `<dt>Event</dt><dd>${esc(w.inflection_event)}</dd>` : ''}
@@ -1855,18 +1895,18 @@ function paintThesis(r) {
       <dt>Next check</dt><dd>${esc(w.next_check || '—')}${w.days_to_check == null
         ? '' : ` <span style="color:var(--muted)">${w.days_to_check}d</span>`}</dd>
       </dl>${Math.abs(decay || 0) >= (D.thresholds || {}).decay_alert_pts
-        ? `<div class="prose" style="margin-top:9px;color:var(--warn-ink)">
+        ? `<div class="prose under" style="color:var(--warn-ink)">
            ⚠ The board still claims ${pct(w.upside_at_eval, 1)}; today it is
            ${pct(w.upside_now, 1)} — <b>${Math.abs(decay).toFixed(1)} points</b>
            of decay. The thesis has not been re-checked since ${esc(w.last_eval)}.</div>` : ''}
       </div>`);
 
     out.push(`<div class="tsec"><div class="tlabel">WHAT WOULD CHANGE YOUR MIND</div>
-      ${w.trigger_level ? `<dl class="kv" style="margin-bottom:8px">
+      ${w.trigger_level ? `<dl class="kv over">
         <dt>Level</dt><dd>${esc(w.trigger_kind || '')} ${px(w.trigger_level)}</dd>
         <dt>Gap to level</dt><dd class="${w.trigger_hit ? 'dn-t' : ''}">
           ${pct(w.trigger_gap_pct, 1)}${w.trigger_hit ? ' · HIT' : ''}</dd></dl>`
-        : `<div class="prose" style="margin-bottom:8px;color:var(--muted)">
+        : `<div class="prose over" style="color:var(--muted)">
            No price level parsed from this trigger — it is a condition, not a
            number. Read it and judge for yourself.</div>`}
       <div class="prose">${esc(w.trigger || 'Nothing written down.')}</div></div>`);
@@ -1967,7 +2007,7 @@ function paintMultiples(w, r) {
      you can hold your own target up against is evidence; a word telling you to
      buy is somebody else making the decision this pane exists to make. */
   const street = L.street_target == null ? '' : `
-    <dl class="kv" style="margin-top:11px">
+    <dl class="kv under">
       <dt>Street target</dt><dd>${px(L.street_target)} ${ccy}${L.street_analysts
         ? ` <span style="color:var(--muted)">${L.street_analysts} analysts</span>` : ''}</dd>
       <dt>Street sees</dt><dd class="${cls(w.street_upside_pct)}">${pct(w.street_upside_pct, 1)}</dd>
@@ -1975,7 +2015,7 @@ function paintMultiples(w, r) {
     </dl>`;
 
   const sector = L.sector
-    ? `<div class="prose" style="margin-top:9px;color:var(--muted)">${esc(L.sector)}${
+    ? `<div class="prose under" style="color:var(--muted)">${esc(L.sector)}${
         L.industry ? ' · ' + esc(L.industry) : ''}</div>` : '';
 
   // "Now", not "Today". The Overview already spends that word on the day's
@@ -2006,7 +2046,7 @@ function paintMissing(r) {
      next, and these eleven were filled in by a rule, not a decision. */
   const held = c.target_basis === 'placeholder';
   const alloc = c.target_weight_pct == null ? '' : `
-    <dl class="kv" style="margin-top:8px">
+    <dl class="kv under">
       <dt>Target weight</dt><dd>${num(c.target_weight_pct, 1)}%${
         held ? ' <span class="est" title="Filled in by a rule, not a decision. '
              + 'Not a policy, and never alerted on.">placeholder</span>' : ''}</dd>
@@ -2017,7 +2057,7 @@ function paintMissing(r) {
       <dt>At stake</dt><dd>${eur(c.value_eur)} · ${num(c.weight_pct, 1)}% of the book</dd>
       <dt>Judged by</dt><dd>${stock ? 'a thesis' : 'an allocation'}</dd>
     </dl>
-    <div class="prose" style="margin-top:9px">${esc(cap(c.gap) || 'Not monitored.')}${
+    <div class="prose under">${esc(cap(c.gap) || 'Not monitored.')}${
       stock
         ? ' — so there is no target to measure today against and no condition that '
           + 'would tell you the reasoning had broken.'
@@ -2069,7 +2109,7 @@ function paintBehaviour(r) {
   if (!rows.length) return '';
   return `<div class="tsec"><div class="tlabel">THE CHART</div>
     <dl class="kv">${rows.join('')}</dl>
-    <div class="prose" style="margin-top:9px;color:var(--muted)">
+    <div class="prose under" style="color:var(--muted)">
       ${i.bars} bars to ${esc(i.asof)}. Description, not advice — none of this
       knows why you own it.</div></div>`;
 }
@@ -2436,13 +2476,11 @@ function paintSheet() {
       <td>${c.drift_pts == null ? '—' : num(c.drift_pts,1)}</td>
       <td class="t">${esc(c.account)}</td><td>${esc(c.name)}</td>
       </tr>`).join('')}</tbody></table></div>
-    ${cr.some((c) => c.target_basis === 'placeholder') ? `<div class="prose"
-      style="margin-top:8px"><span class="est">P</span> — placeholder. Filled in
+    ${cr.some((c) => c.target_basis === 'placeholder') ? `<div class="prose under"><span class="est">P</span> — placeholder. Filled in
       by a rule (equal weight inside a core/satellite frame) so the allocation
       columns have something to draw. It is not a policy: the holding still
       counts as uncovered and its drift is never alerted on.</div>` : ''}
-    ${(COV.researched_not_held||[]).length ? `<div class="prose"
-      style="margin-top:8px">Researched but not owned — ${(COV.researched_not_held||[])
+    ${(COV.researched_not_held||[]).length ? `<div class="prose under">Researched but not owned — ${(COV.researched_not_held||[])
       .map(esc).join(', ')}.</div>` : ''}</div>`;
 
   // The book seen through its wrappers. Two rules hold across everything
@@ -2486,7 +2524,7 @@ function paintSheet() {
   const xstack = (t, title, kind, note, mark) => {
     if (!t || !(t.rows || []).length) return '';
     const un = share(t.unresolved_eur || 0);
-    return `<div><div class="tlabel" style="margin:16px 0 7px">${esc(title)} —
+    return `<div><div class="tlabel run">${esc(title)} —
       ${num(t.resolved_pct, 1)}% placed</div>
       ${t.rows.map((r) => xbar({label: r.label, key: r.key, kind: kind,
         pct: r.pct, value: r.value_eur,
@@ -2579,7 +2617,7 @@ function paintSheet() {
         ? 'held outright + ' : ''}${(r.via || []).map((v) =>
         esc(v.fund)+' '+num(v.pct,1)+'%').join(', ') || 'held outright'}</td>
       </tr>`).join('')}</tbody></table></div>`}
-    <div class="prose" style="margin-top:8px">A name absent from this table is
+    <div class="prose under">A name absent from this table is
       not absent from the book — it is absent from a fund's disclosed top ten.
       The indirect column is a floor.${blind ? ` ${blind} of these companies
       have no ${esc(F.kind === 'country' ? 'domicile' : F.kind)} on record and
@@ -2607,7 +2645,7 @@ function paintSheet() {
       <td>${num(f.disclosed_pct,1)}%</td><td>${f.n_disclosed}</td>
       <td class="t">${f.has_sectors ? 'yes' : '<b>no</b>'}</td></tr>`; }).join('')
     }</tbody></table></div>
-    <div class="prose" style="margin-top:8px">The spread down the Discloses
+    <div class="prose under">The spread down the Discloses
       column is why every figure above carries a coverage percentage. A fund
       with no published TER is not free — it is counted against coverage, so
       the fee figure reads as a floor. Click a fund to see only what it
@@ -2656,13 +2694,13 @@ function paintSheet() {
             : 'cons. ' + num(r.eps_estimate, 2) + ' · '}${num(r.weight_pct,1)}%
             of book</span></div>`).join('')}
       </div>`).join('')}</div>`}
-    ${(RC.unknown || []).length ? `<div class="xkey" style="margin-top:10px">
+    ${(RC.unknown || []).length ? `<div class="xkey under">
       No scheduled date from Yahoo for ${(RC.unknown || []).map((u) =>
       esc(u.symbol)).join(', ')} — ${(RC.unknown || []).some((u) => u.has_history)
       ? 'the reporting history is there, the next date is not.'
       : 'nothing on record at all.'} Absence of a date is not absence of a
       quarter.</div>` : ''}
-    <div class="tlabel" style="margin:18px 0 7px">Last reported</div>
+    <div class="tlabel run">Last reported</div>
     <div class="scroll"><table><thead><tr>
     ${th('latest','symbol','Symbol',1)}${th('latest','date','Reported')}
     ${th('latest','days_ago','Days ago',1)}${th('latest','eps_estimate','Expected')}
@@ -2683,7 +2721,7 @@ function paintSheet() {
       <td class="${cls(g.revenue_yoy_pct)}">${pct(g.revenue_yoy_pct,1)}</td>
       <td class="t">${esc(g.period || '—')}</td><td>${num(r.weight_pct,1)}%</td>
       </tr>`; }).join('')}</tbody></table></div>
-    <div class="prose" style="margin-top:8px">Surprise is against analyst
+    <div class="prose under">Surprise is against analyst
       consensus, not against the thesis — a beat is a fact about expectations.
       Revenue is compared with the same quarter a year earlier, never with last
       quarter. A quarter that has not been reported is absent from this table
@@ -2759,7 +2797,7 @@ function paintSheet() {
       <td>${i.range ? num(i.range.pct,0) : '—'}</td>
       <td>${i.volume ? num(i.volume.relative,2) : '—'}</td>
       <td>${i.bars}</td><td class="t">${esc(i.asof)}</td></tr>`; }).join('')}</tbody></table></div>
-    <div class="prose" style="margin-top:8px">Computed in Python off the same
+    <div class="prose under">Computed in Python off the same
       cached bars the chart draws. Descriptive only — no row here is a signal.</div>
     </div>`;
 
@@ -2813,7 +2851,7 @@ function paintSheet() {
           .join(', ') || '—'}</td>
         <td class="t">${esc(c.account)}</td><td class="t">${esc(c.name)}</td>
         </tr>`).join('')}</tbody></table></div>`}
-    <div class="prose" style="margin-top:8px">${acWhy} The export is a list of
+    <div class="prose under">${acWhy} The export is a list of
     what you hold, never a list of what you traded, so a sale exists here only
     as the difference between two of those lists — and until a newer export
     lands there is nothing further to see.</div></div>`;
