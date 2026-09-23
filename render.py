@@ -122,6 +122,10 @@ def payload(positions_valued, watchlist, alerts, health, fx, sources,
             "check_soon_days": C.CHECK_SOON_DAYS,
             "decay_alert_pts": C.DECAY_ALERT_PTS,
             "trigger_near_pct": C.TRIGGER_NEAR_PCT,
+            # The page restates the flags on every live tick (DERIVE.alerts)
+            # and needs every band analyse.alerts draws against.
+            "weight_drift_pct": C.WEIGHT_DRIFT_PCT,
+            "multiple_drift_pct": C.MULTIPLE_DRIFT_PCT,
             "price_divergence_pct": C.PRICE_DIVERGENCE_PCT,
             "csv_stale_days": C.CSV_STALE_DAYS,
             "run_stale_days": C.RUN_STALE_DAYS,

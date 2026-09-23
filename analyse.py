@@ -299,6 +299,26 @@ def price_sanity(holdings):
 
 # ----------------------------------------------------------------- watchlist
 
+# Yahoo quotes some venues in the minor unit - London in pence, Johannesburg in
+# cents, Tel Aviv in agorot - and says so in the quote's currency code.
+MINOR_UNITS = {"GBp": "GBP", "ZAc": "ZAR", "ILA": "ILS"}
+
+
+def board_scale(quote_ccy, price, recorded):
+    """What to multiply a Yahoo price by to put it in the board's unit.
+
+    The board is typed by hand and is not consistent about it: one London name
+    carries its figures in pence, one Johannesburg name in rand. The currency
+    column cannot settle it (the London row says GBP over pence figures), so
+    the figures do: a minor-unit quote sitting 20-500x above what was written
+    down is the same price in the other unit, not a 100-bagger. Anything else
+    is left alone - 1.0, never a guess.
+    """
+    if quote_ccy not in MINOR_UNITS or not price or not recorded or recorded <= 0:
+        return 1.0
+    return 0.01 if 20 <= price / recorded <= 500 else 1.0
+
+
 def join_watchlist(log_rows, quotes, holdings, today=None):
     """Recompute every Equity Log row against the live price."""
     today = today or dt.date.today()
@@ -309,9 +329,12 @@ def join_watchlist(log_rows, quotes, holdings, today=None):
         ticker = (row.get("Ticker") or "").strip()
         symbol = _yahoo_for(ticker)
         quote = quotes.get(symbol)
-        price_now = quote["price"] if quote else None
         eval_price = _f(row.get("Price at eval"))
         target = _f(row.get("Target"))
+        quote_ccy = (quote or {}).get("currency")
+        scale = board_scale(quote_ccy, quote["price"] if quote else None,
+                            eval_price or target)
+        price_now = quote["price"] * scale if quote else None
 
         item = {
             "ticker": ticker,
@@ -323,6 +346,11 @@ def join_watchlist(log_rows, quotes, holdings, today=None):
             "ccy": row.get("Currency"),
             "price_at_eval": eval_price,
             "price_now": price_now,
+            # Yahoo's own unit, and the factor that turned its price into the
+            # board's. The page applies the same factor to every live tick and
+            # draws the board's lines back in Yahoo's unit on the chart.
+            "quote_ccy": quote_ccy,
+            "price_scale": scale,
             "target": target,
             "last_eval": row.get("Last evaluated"),
             "next_check": row.get("Next check"),
@@ -447,7 +475,11 @@ def attach_fundamentals(watchlist, funda):
         # numbers are actually comparable. Shown side by side, never merged: a
         # consensus target is evidence about what others expect, not a second
         # opinion on your own target.
+        # Yahoo's consensus target is in Yahoo's unit; price_now is in the
+        # board's. Same factor, or a cents target reads 100x above a rand price.
         street = (fields or {}).get("street_target")
+        if street:
+            street = street * item.get("price_scale", 1.0)
         item["street_upside_pct"] = (
             round((street / item["price_now"] - 1) * 100, 1)
             if street and item.get("price_now") else None)

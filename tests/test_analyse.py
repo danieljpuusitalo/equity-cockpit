@@ -198,6 +198,55 @@ def test_decay_is_measured_against_the_frozen_board_number():
     assert item["trigger_hit"] is False
 
 
+def _minor_row(ticker, eval_price, target, ccy="Other"):
+    return {"Ticker": ticker, "Company": "Fake Co", "Verdict": "Watch",
+            "Tier": "Tier 2 - Watch", "Held": "Not held", "Currency": ccy,
+            "Price at eval": eval_price, "Target": target,
+            "Last evaluated": "2026-09-01", "Next check": "2026-11-05", "Trigger": ""}
+
+
+def _minor_quote(price, ccy):
+    return {"price": price, "prev_close": price, "year_high": None,
+            "year_low": None, "currency": ccy}
+
+
+def test_a_cents_quote_against_a_rand_board_is_the_same_price():
+    """Johannesburg quotes in cents (ZAc); the board was written in rand. Read
+    raw, that is a +9,900% move and a -99% upside - two false alarms at once."""
+    [item] = analyse.join_watchlist([_minor_row("FAKE.JO", 700.0, 800.0)],
+                                    {"FAKE.JO": _minor_quote(71000.0, "ZAc")}, [])
+    assert item["price_scale"] == 0.01
+    assert item["price_now"] == 710.0
+    assert item["drift_pct"] == 1.43
+    assert item["upside_now"] == 12.7
+    assert item["quote_ccy"] == "ZAc"
+
+
+def test_a_pence_board_against_a_pence_quote_is_left_alone():
+    """The London row is written in pence under a GBP label. Scaling it would
+    manufacture the very 100x error the rand case removes."""
+    [item] = analyse.join_watchlist([_minor_row("FAKE.L", 4100.0, 4800.0, "GBP")],
+                                    {"FAKE.L": _minor_quote(4173.0, "GBp")}, [])
+    assert item["price_scale"] == 1.0
+    assert item["price_now"] == 4173.0
+
+
+def test_a_real_crash_in_a_major_unit_quote_is_not_rescaled():
+    """The scale only exists for minor-unit quotes. A USD name that really did
+    fall 99% must read as a 99% fall, not be quietly 'corrected'."""
+    [item] = analyse.join_watchlist([_minor_row("FAKE", 100.0, 120.0, "USD")],
+                                    {"FAKE": _minor_quote(10000.0, "USD")}, [])
+    assert item["price_scale"] == 1.0
+    assert item["price_now"] == 10000.0
+
+
+def test_the_street_target_follows_the_quote_into_the_board_unit():
+    item = {"yahoo": "FAKE.JO", "price_now": 710.0, "price_scale": 0.01}
+    analyse.attach_fundamentals(
+        [item], {"FAKE.JO": {"fields": {"street_target": 85200.0}, "fetched": "x"}})
+    assert item["street_upside_pct"] == 20.0
+
+
 def test_reconcile_catches_a_real_disagreement():
     watchlist = [{"ticker": "ALMA.HE", "held_notion": "Not held", "held_actual": "OST"}]
     [issue] = analyse.reconcile(watchlist)

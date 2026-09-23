@@ -657,6 +657,38 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
      wider than the widest of them needs. Halving them would leave one alone. */
 }
 
+/* ------------------------------------------------------ navigation affordances */
+.alert.click,.cpill.click{cursor:pointer}
+.alert.click:hover .t{text-decoration:underline;text-underline-offset:2px}
+.cpill.click:hover{border-color:var(--axis);background:var(--surface-2)}
+.golink{display:inline-block;margin-top:var(--s-4);padding:0;border:0;
+  background:none;color:var(--accent);font:inherit;font-size:var(--t-2);
+  cursor:pointer}
+.golink:hover{text-decoration:underline;text-underline-offset:2px}
+.tbtn kbd{font:inherit;font-size:var(--t-1);color:var(--muted);margin-left:4px;
+  padding:0 4px;border:1px solid var(--border);border-radius:var(--r-sm)}
+.pal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.28);
+  display:flex;justify-content:center;align-items:flex-start;padding:12vh 16px 16px}
+.pal[hidden]{display:none}
+.palbox{width:min(560px,100%);background:var(--surface-1);border:1px solid var(--border);
+  border-radius:var(--r-lg);box-shadow:0 12px 40px rgba(0,0,0,.22);overflow:hidden;
+  display:flex;flex-direction:column;max-height:70vh}
+#palq{border:0;border-bottom:1px solid var(--border);padding:12px 14px;
+  font:inherit;font-size:var(--t-4);background:transparent;color:var(--ink);outline:none}
+.pallist{overflow-y:auto;padding:4px 0}
+.palrow{display:flex;gap:var(--s-4);align-items:baseline;width:100%;text-align:left;
+  padding:7px 14px;border:0;background:none;color:var(--ink);font:inherit;cursor:pointer}
+.palrow[aria-selected="true"]{background:var(--surface-2)}
+.palrow .k{flex:none;width:74px;font-size:var(--t-1);color:var(--muted);
+  letter-spacing:.06em;text-transform:uppercase}
+.palrow b{font-weight:var(--w-semi)}
+.palrow .s{color:var(--ink-2);font-size:var(--t-2);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.palrow .dot{flex:none;align-self:center}
+.palempty{padding:10px 14px;color:var(--muted)}
+.palfoot{border-top:1px solid var(--border);padding:7px 14px;font-size:var(--t-1);
+  color:var(--muted)}
+
 /* ------------------------------------------------------ narrow: one column */
 /* Below 761px there is no honest two-column split left, so this tier stacks and
    lets the PAGE scroll - the one width where that is right, because a single
@@ -705,6 +737,11 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
        far corner. It is now outside the nav, shaped like the other utility
        buttons, and says aria-expanded rather than aria-pressed - which is the
        difference between "this surface is showing" and "you are on this tab". -->
+  <!-- One box that reaches everything: every held and watched name, both
+       views and each drawer section. The page grew thirteen sections and two
+       views faster than it grew ways between them. -->
+  <button class="tbtn" id="t-jump" aria-haspopup="dialog" aria-controls="pal"
+    title="Find a position or a section. Keys: Ctrl K or / to open, 1 Overview, 2 Positions, D the data drawer, Esc to close">Jump to&hellip; <kbd>Ctrl K</kbd></button>
   <button class="tbtn drawer" id="t-sheet" aria-expanded="false"
     aria-controls="sheet">All data</button>
   <!-- Label and pressed state are both set by themeLabel() at boot, from what
@@ -713,6 +750,16 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
   </div>
 </header>
 <div id="t-banner"></div>
+<div class="pal" id="pal" role="dialog" aria-label="Jump to" hidden>
+  <div class="palbox">
+    <input id="palq" type="search" autocomplete="off" spellcheck="false"
+      placeholder="Ticker, company or section" aria-controls="pallist">
+    <div class="pallist" id="pallist" role="listbox"></div>
+    <div class="palfoot">&uarr;&darr; move &middot; Enter open &middot; Esc close
+      &middot; elsewhere: 1 Overview &middot; 2 Positions &middot; D data drawer
+      &middot; &uarr;&darr; step the rail</div>
+  </div>
+</div>
 
 <div class="view" id="v-overview">
   <div class="ov">
@@ -871,7 +918,23 @@ const held = new Map();
 let LIVE = null;  // {at:Date, priced, asked, missing:[], fxMissing:[], error}
 
 function liveChip() {
-  if (!LIVE) return '';
+  if (!LIVE) {
+    // Opened from disk the live layer never starts, and an empty chip let a
+    // snapshot pass for a page that was simply between ticks.
+    const web = typeof location !== 'undefined'
+      && (location.protocol === 'http:' || location.protocol === 'https:');
+    const built = String(D.generated || '').replace('T', ' ').slice(0, 16);
+    return web
+      ? 'Live <b title="waiting for the first price refresh">connecting</b>'
+      : `Snapshot <b class="dn-t" title="opened from a file, so prices never `
+        + `refresh here - every figure is as built at ${esc(built)}. The `
+        + `deployed copy is the live one.">not live</b>`;
+  }
+  if (LIVE.error && LIVE.carried) {
+    const was = LIVE.at.toTimeString().slice(0, 5);
+    return `Live <b class="dn-t" title="${esc(LIVE.error)} · still showing the `
+      + `prices that landed at ${was}, the last refresh that worked">held ${was}</b>`;
+  }
   if (LIVE.error) {
     return `Live <b class="dn-t" title="${esc(LIVE.error)} · showing the prices `
       + `this file was built with">off</b>`;
@@ -907,7 +970,7 @@ const LOOKTHRU_WHY = 'the look-through scales each fund by its published '
   + 'composition, and that composition is not carried in this page - so the '
   + 'breakdown moves when the file is rebuilt, not when a price ticks';
 
-const atBuild = (why) => (LIVE && !LIVE.error)
+const atBuild = (why) => (LIVE && (!LIVE.error || LIVE.carried))
   ? ` · <b class="dn-t" title="${esc(why)} · this figure is as at ${
       esc(D.generated || 'the last build')}, not live">as at build</b>`
   : '';
@@ -942,7 +1005,13 @@ const LIVEMISS = new Set();  // of those, the ones it got nothing usable for
 
 function freshnessOf(price, wasStale, sym) {
   if (price == null) return 'unpriced';
-  if (!LIVE || LIVE.error || !LIVEASK.has(sym)) return wasStale ? 'stale' : 'build';
+  // A failed tick after a good one leaves the good one's prices on screen -
+  // D was restated from them and nothing puts the build's back. `carried`
+  // says so, and those prices keep reading `live` at the time they landed,
+  // not `build`: the mark has to describe the number beside it.
+  if (!LIVE || (LIVE.error && !LIVE.carried) || !LIVEASK.has(sym)) {
+    return wasStale ? 'stale' : 'build';
+  }
   return LIVEMISS.has(sym) ? 'stale' : 'live';
 }
 
@@ -1063,6 +1132,7 @@ function fresh(f) {
   const m = FRESH[f] || FRESH.unpriced;
   const when = f === 'live' && LIVE && LIVE.at
     ? ' at ' + LIVE.at.toTimeString().slice(0, 5)
+      + (LIVE.carried ? ' - the refresh after that failed' : '')
     : f === 'build' || f === 'stale' ? ' (' + esc(D.generated || 'last build') + ')' : '';
   return `<i class="fr ${m[1]}" aria-label="${esc(m[2] + when)}"
     title="${esc(m[2] + when)}">${m[0]}</i>`;
@@ -1738,7 +1808,8 @@ const DERIVE = (function () {
         w.trigger_gap_pct = null;
         w.trigger_hit = null;
       }
-      const street = (w.live || {}).street_target;
+      // In Yahoo's unit; price is in the board's (analyse.attach_fundamentals).
+      const street = (w.live || {}).street_target * (w.price_scale || 1);
       w.street_upside_pct = (street && price)
         ? R((street / price - 1) * 100, 1) : null;
     }
@@ -1773,6 +1844,14 @@ const DERIVE = (function () {
     };
     const cal = rep.calendar || {};
     restate(cal.rows); restate(cal.unknown); restate(rep.latest);
+    // reporting.py:174-186. The headline "n prints, x% of the book" sat on the
+    // Overview and the Earnings section as the build's share while every row
+    // under it moved.
+    if (cal.rows) {
+      const ahead = cal.rows.reduce((a, r) => a + (byKey.get(r.symbol || r.sym) || 0), 0);
+      cal.value_ahead_eur = R(ahead, 2);
+      cal.pct_ahead = total ? R(ahead / total * 100, 1) : 0;
+    }
     (cal.rows || []).sort((a, b) => String(a.date).localeCompare(String(b.date))
                                     || b.weight_pct - a.weight_pct);
     (cal.unknown || []).sort((a, b) => b.weight_pct - a.weight_pct);
@@ -1780,6 +1859,161 @@ const DERIVE = (function () {
                                       || b.weight_pct - a.weight_pct);
     return unmatched;
   }
+
+  /* ---- analyse.alerts: the flags, restated on the live price ---- */
+
+  // analyse.py alerts(). Until this existed every flag on the page - the tape
+  // count, the rail dots, the Flagged filter, the Overview card, the pane's
+  // FLAGS - was the build's list, while the numbers beside them moved. A name
+  // could read HIT in its own pane with no trigger flag anywhere, and a flag
+  // could go on claiming "3.1% from its trigger" of a price an hour gone.
+  //
+  // Only the kinds analyse.alerts writes are rebuilt, in its order and with
+  // its wording to the character, because the same sentence goes to Telegram
+  // and the two must never disagree about what a flag says. Health problems
+  // ride in that list unchanged. reporting.alerts and activity.alerts, which
+  // cockpit.py appends after the sort, are kept exactly as built: they read
+  // the calendar and the export diff, not a price.
+  const OWN = ['coverage:', 'weight-drift:', 'trigger-hit:', 'check-due:',
+               'inflection:', 'trigger-near:', 'decay:', 'multiple-stale:'];
+  let BUILT_ALERTS = null;
+
+  // Python's formatting, not JS's. They differ in exactly the places a flag
+  // lives: a tie rounds to even in Python and away from zero in toFixed, and
+  // str(120.0) is "120.0" where String(120) is "120".
+  const pyFixed = (x, d) => {
+    const m = Math.pow(10, d), t = x * m;
+    return Math.abs(t % 1) === 0.5 ? (2 * Math.round(t / 2) / m).toFixed(d) : x.toFixed(d);
+  };
+  const pyRound = (x) => Math.abs(x % 1) === 0.5 ? 2 * Math.round(x / 2) : Math.round(x);
+  const pyComma = (x) => pyFixed(x, 0).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const pySigned = (x, d) => (x >= 0 ? '+' : '') + pyFixed(x, d);
+  const pyG = (x) => String(Number(x.toPrecision(6)));
+  const pyStr = (x) => Number.isInteger(x) ? x.toFixed(1) : String(x);
+
+  // analyse.days_until. Calendar days, both ends read as dates - no clock and
+  // no timezone, so the answer is the same as Python's on the same day.
+  const dayNum = (s) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000 : null;
+  };
+  const daysUntil = (s, today) => {
+    const a = dayNum(s), b = dayNum(today);
+    return a == null || b == null ? null : a - b;
+  };
+
+  function alerts(items, cover, th, today) {
+    if (!BUILT_ALERTS) BUILT_ALERTS = (D.alerts || []).slice();
+    // An older payload without these thresholds cannot be restated honestly.
+    // It keeps its build list, and STATS says so.
+    const need = ['weight_drift_pct', 'multiple_drift_pct', 'check_soon_days',
+                  'trigger_near_pct', 'decay_alert_pts'];
+    if (!th || need.some((k) => th[k] == null)) return false;
+
+    for (const w of items) {
+      w.days_to_check = daysUntil(w.next_check, today);
+      w.days_to_inflection = daysUntil(w.inflection_date, today);
+      const since = daysUntil(w.last_eval, today);
+      w.days_since_eval = since == null ? null : -since;
+    }
+
+    const found = [];
+    if (cover && cover.n_uncovered) {
+      const biggest = (cover.rows || []).filter((r) => !r.covered).slice(0, 3);
+      found.push({level: 'warning', key: `coverage:${cover.n_uncovered}`,
+        title: `${pyFixed(cover.pct_uncovered, 0)}% of the book ` +
+               `(${cover.n_uncovered} holdings) is not being monitored`,
+        detail: biggest.map((r) => `${r.ticker} EUR ${pyComma(r.value_eur)} - ${r.gap}`)
+                       .join('; ')});
+    }
+    for (const r of (cover || {}).rows || []) {
+      const drift = r.drift_pts;
+      if (drift == null || Math.abs(drift) <= th.weight_drift_pct) continue;
+      if (r.target_basis === 'placeholder') continue;
+      const side = drift > 0 ? 'above' : 'below';
+      found.push({level: 'warning', key: `weight-drift:${r.ticker}:${pyRound(drift)}`,
+        title: `${r.ticker} is ${pyFixed(Math.abs(drift), 1)} pts ${side} its ` +
+               `${pyG(r.target_weight_pct)}% target weight`,
+        detail: `EUR ${pyComma(r.value_eur)}, ${pyFixed(r.weight_pct, 1)}% of ` +
+                `the book against a ${pyG(r.target_weight_pct)}% target. ` +
+                `The band is ${pyG(th.weight_drift_pct)} pts.`});
+    }
+    for (const w of items) {
+      if (!w.trigger_hit) continue;
+      found.push({level: 'critical', key: `trigger-hit:${w.ticker}`,
+        title: `${w.ticker} has hit its written trigger`,
+        detail: `Live ${pyFixed(w.price_now, 2)} ${w.ccy} vs trigger ` +
+                `${pyStr(w.trigger_level)}. ${w.trigger}`});
+    }
+    for (const w of items) {
+      const days = w.days_to_check;
+      if (days == null || days < 0 || days > th.check_soon_days) continue;
+      found.push({level: 'warning', key: `check-due:${w.ticker}:${w.next_check}`,
+        title: `${w.ticker} catalyst in ${days} days (${w.next_check})`,
+        detail: w.trigger || ''});
+    }
+    for (const w of items) {
+      const days = w.days_to_inflection;
+      if (days == null || days < 0 || days > th.check_soon_days) continue;
+      const event = (w.inflection_event || '').trim();
+      found.push({level: 'warning', key: `inflection:${w.ticker}:${w.inflection_date}`,
+        title: `${w.ticker}: ${event || 'inflection event'} in ` +
+               `${days} days (${w.inflection_date})`,
+        detail: w.thesis || w.trigger || 'No thesis written for this name.'});
+    }
+    for (const w of items) {
+      const gap = w.trigger_gap_pct;
+      if (gap == null || w.trigger_hit || Math.abs(gap) > th.trigger_near_pct) continue;
+      found.push({level: 'warning', key: `trigger-near:${w.ticker}`,
+        title: `${w.ticker} is ${pyFixed(Math.abs(gap), 1)}% from its trigger`,
+        detail: `Live ${pyFixed(w.price_now, 2)} ${w.ccy}, ` +
+                `trigger at ${pyStr(w.trigger_level)}.`});
+    }
+    for (const w of items) {
+      const decay = w.upside_decay_pts;
+      if (decay == null || Math.abs(decay) < th.decay_alert_pts) continue;
+      found.push({level: decay < 0 ? 'warning' : 'good',
+        key: `decay:${w.ticker}:${pyRound(decay)}`,
+        title: `${w.ticker} upside ${decay > 0 ? 'widened' : 'narrowed'} ` +
+               `${pyFixed(w.upside_at_eval, 1)}% -> ${pyFixed(w.upside_now, 1)}%`,
+        detail: `Price moved ${pySigned(w.drift_pct, 1)}% since the ` +
+                `${w.last_eval} check. The board still says ` +
+                `${pyFixed(w.upside_at_eval, 1)}%.`});
+    }
+    for (const w of items) {
+      const drift = w.pe_drift_pct;
+      if (drift == null || Math.abs(drift) < th.multiple_drift_pct) continue;
+      const live = (w.live || {}).pe;
+      found.push({level: 'warning', key: `multiple-stale:${w.ticker}:${pyRound(drift / 10)}`,
+        title: `${w.ticker}: today's P/E is ${pyFixed(Math.abs(drift), 0)}% ` +
+               `${drift > 0 ? 'above' : 'below'} the board's`,
+        detail: `The board says ${pyG(w.pe)}` +
+                (w.last_eval ? `, typed at the ${w.last_eval} check` : ' and never dated') +
+                `; Yahoo says ${pyFixed(live, 1)} today. The multiple in that ` +
+                'write-up is not the one you own now.'});
+    }
+    for (const a of BUILT_ALERTS) if (a.health) found.push(a);
+
+    const order = {critical: 0, warning: 1, good: 2};
+    const rank = (a) => (a.level in order ? order[a.level] : 3);
+    // Array.prototype.sort is stable, as Python's sort is.
+    found.sort((a, b) => rank(a) - rank(b));
+    const appended = BUILT_ALERTS.filter((a) => !a.health &&
+      !OWN.some((p) => String(a.key || '').startsWith(p)));
+    // In place, for the same reason as D.overview: anything holding D.alerts
+    // must see the restated list, not the boot-time one.
+    D.alerts = D.alerts || [];
+    D.alerts.length = 0;
+    D.alerts.push(...found, ...appended);
+    return true;
+  }
+
+  // Today on this machine's calendar, as Python's date.today() reads it.
+  const localToday = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-` +
+           String(d.getDate()).padStart(2, '0');
+  };
 
   /* ---- the one entry point ---- */
 
@@ -1808,7 +2042,8 @@ const DERIVE = (function () {
   // value_eur is rounded to the cent BEFORE anything downstream divides by it.
   // Deriving a weight from the unrounded product disagrees with Python in the
   // last digit across several dozen fields at once.
-  function all() {
+  function all(today) {
+    today = today || localToday();
     const M = meta();
     const rows = D.holdings || [];
     holdings(rows);
@@ -1882,6 +2117,9 @@ const DERIVE = (function () {
       reporting_unmatched: D.reporting ? reporting(D.reporting, rows) : 0,
       watchlist: D.watchlist ? watchlist(D.watchlist).length : 0,
     };
+    // Last: it reads the coverage and watchlist figures restated just above.
+    // False means the flags on screen are the build's, and the page says so.
+    STATS.alerts = alerts(D.watchlist || [], D.coverage, D.thresholds, today);
   }
 
   /* ---- the proof ---- */
@@ -1897,8 +2135,11 @@ const DERIVE = (function () {
     const before = JSON.parse(JSON.stringify({
       totals: D.totals, overview: D.overview, exposure: D.exposure,
       coverage: D.coverage, watchlist: D.watchlist, reporting: D.reporting,
-      holdings: D.holdings}));
-    all();
+      holdings: D.holdings, alerts: D.alerts}));
+    // On the build's own calendar day. Parity asks whether the port reproduces
+    // Python on Python's inputs, and "today" is one of them: a catalyst 12
+    // days out at build is 11 days out tomorrow, and that is not a defect.
+    all(String(D.generated || '').slice(0, 10) || undefined);
     const bad = [], near = [];
     let checked = 0;
     const walk = (path, was, now, tol) => {
@@ -1951,6 +2192,8 @@ const DERIVE = (function () {
     walk('watchlist', before.watchlist, D.watchlist, T);
     walk('reporting', before.reporting, D.reporting, T);
     walk('holdings', before.holdings, D.holdings, T);
+    // Exact: every field is a string, and the strings are what Telegram sends.
+    if (STATS.alerts) walk('alerts', before.alerts, D.alerts, 0);
     return {ok: !bad.length, checked, mismatches: bad.slice(0, 40),
             n_mismatches: bad.length,
             n_near: near.length, near: near.slice(0, 40)};
@@ -2025,6 +2268,8 @@ for (const c of COV.rows || []) {
 // symbol string covers both shapes without the analyser having to promise one.
 const alertsFor = (sym) => (D.alerts || []).filter(
   (a) => (String(a.key || '') + ' ' + String(a.title || '')).includes(sym));
+// analyse.alerts' own sort order: lower is more urgent.
+const SEV = {critical: 0, warning: 1, good: 2};
 
 // Rebuilt, not patched, for the same reason foldHoldings() is: `h` here is a
 // reference into the folded map, and foldHoldings() replaces those objects
@@ -2050,11 +2295,16 @@ function buildRows() {
     freshness: h ? h.freshness
       : freshnessOf(w ? w.price_now : null, w && w.stale_price, sym),
     ccy: (h && h.ccy) || (w && w.ccy) || '',
-    day_pct: h ? h.day_pct : null,
+    // A watch-only name gets its day move from the live layer too; it was
+    // written there and never read, so the rail showed a blank beside a price
+    // that was plainly moving.
+    day_pct: h ? h.day_pct : (w && w.day_pct != null ? w.day_pct : null),
     value_eur: h ? h.value_eur : null,
     weight: h ? h.weight : 0,
+    // The most severe, by rank. The old fold let a later `good` overwrite an
+    // earlier `warning`, so a name with both showed the calm dot.
     worst: flags.reduce((acc, a) =>
-      a.level === 'critical' ? 'critical' : acc === 'critical' ? acc : a.level, null),
+      acc && (SEV[acc] ?? 3) <= (SEV[a.level] ?? 3) ? acc : a.level, null),
   };
 }).sort((a, b) => (b.value_eur || 0) - (a.value_eur || 0) ||
                   a.label.localeCompare(b.label));
@@ -2315,7 +2565,9 @@ function paintThesis(r) {
     ${(() => { const rr = (D.returns || {})[h.sym] || {};
        return rr.irr_pct != null
          ? `<dt>Annualised</dt><dd class="${cls(rr.irr_pct)}">${pct(rr.irr_pct, 1)}/yr
-            <span style="color:var(--muted)">since ${esc(rr.since || '')}</span></dd>`
+            <span style="color:var(--muted)">since ${esc(rr.since || '')}</span>${
+            atBuild('a money-weighted return needs the dated lot cashflows, which '
+                    + 'are not carried in this page')}</dd>`
          : rr.note
            ? `<dt>Annualised</dt><dd style="color:var(--muted)">${esc(rr.note)}</dd>`
            : ''; })()}
@@ -2386,7 +2638,7 @@ function paintMultiples(w, r) {
      buy is somebody else making the decision this pane exists to make. */
   const street = L.street_target == null ? '' : `
     <dl class="kv under">
-      <dt>Street target</dt><dd>${px(L.street_target)} ${ccy}${L.street_analysts
+      <dt>Street target</dt><dd>${px(L.street_target * (w.price_scale || 1))} ${ccy}${L.street_analysts
         ? ` <span style="color:var(--muted)">${L.street_analysts} analysts</span>` : ''}</dd>
       <dt>Street sees</dt><dd class="${cls(w.street_upside_pct)}">${pct(w.street_upside_pct, 1)}</dd>
       <dt>You see</dt><dd class="${cls(w.upside_now)}">${pct(w.upside_now, 1)}</dd>
@@ -2396,13 +2648,15 @@ function paintMultiples(w, r) {
     ? `<div class="prose under" style="color:var(--muted)">${esc(L.sector)}${
         L.industry ? ' · ' + esc(L.industry) : ''}</div>` : '';
 
-  // "Now", not "Today". The Overview already spends that word on the day's
-  // move, and this column is a current level rather than a change over a day.
+  // Headed by who said it and when, like the Board column. It used to read
+  // "Now", which on a page whose prices tick every minute claimed these tick
+  // too - they do not. They are Yahoo's own figures from the cached fetch.
+  const asof = L.asof ? ' ' + esc(String(L.asof).slice(5, 10)) : '';
   return `<div class="tsec"><div class="tlabel">THE MULTIPLES</div>
     ${compared ? `<dl class="trio">
       <dt></dt>
       <dd class="hd">Board${w.last_eval ? ' ' + esc(String(w.last_eval).slice(5)) : ''}</dd>
-      <dd class="hd">Now</dd>
+      <dd class="hd" title="Yahoo's own figure, fetched ${esc(L.asof || 'at the build')}; not re-read on a live tick">Yahoo${asof}</dd>
       ${compared}
     </dl>` : ''}
     ${current ? `<div class="lnote" style="margin:${compared ? '11px' : '0'} 0 5px"
@@ -2503,7 +2757,7 @@ function paintBehaviour(r) {
 
 /* ----------------------------------------------------------------- chart */
 
-let chart = null, candles = null, lines = [], mas = {};
+let chart = null, candles = null, lines = [], mas = {}, chartKey = null;
 
 /* Simple moving average over closes, as a rolling sum - one pass, no window
    re-summing, so 500 bars costs 500 additions rather than 25,000.
@@ -2612,7 +2866,7 @@ function paintChart(r) {
   // live one would stop a day short of the price it is supposed to be averaging.
   const bars = barsFor(r);
   if (!bars || !bars.length) {
-    if (chart) { chart.remove(); chart = null; candles = null; lines = []; mas = {}; }
+    if (chart) { chart.remove(); chart = null; candles = null; lines = []; mas = {}; chartKey = null; }
     box.innerHTML = '';
     miss.style.display = 'flex';
     miss.textContent = `No price history for ${r.label}. Yahoo returned nothing for ` +
@@ -2648,6 +2902,14 @@ function paintChart(r) {
     slice = bars.filter((b) => Date.parse(b[0]) >= from);
   }
   if (!slice.length) slice = bars.slice(-2);
+  // A live tick redraws this chart every minute. Refitting it each time threw
+  // away whatever the reader had zoomed or panned to, so a chart tied to a
+  // moving price was unusable exactly while the price was moving. Same symbol,
+  // same range, same overlays: keep their view and let only the last candle
+  // move. Anything they changed themselves still gets a fresh fit.
+  const viewKey = [r.sym, state.days, state.ma[50], state.ma[200]].join('|');
+  const keep = viewKey === chartKey ? chart.timeScale().getVisibleLogicalRange() : null;
+  chartKey = viewKey;
   candles.setData(slice.map((b) => ({time:b[0], open:b[1], high:b[2],
                                      low:b[3], close:b[4]})));
 
@@ -2663,14 +2925,18 @@ function paintChart(r) {
   lines.forEach((l) => { try { candles.removePriceLine(l); } catch (e) {} });
   lines = [];
   const w = r.w;
+  // The candles are in Yahoo's unit and the board's lines are in the board's.
+  // Where those differ (cents vs rand) the lines go back into Yahoo's unit,
+  // or a rand target draws as a flat line along the bottom of a cents chart.
+  const unit = (w && w.price_scale) || 1;
   // Both lines carry a title and an axis label, so target and trigger are never
   // told apart by colour alone - solid vs dashed, plus the words themselves.
   if (w && w.target) lines.push(candles.createPriceLine({
-    price:w.target, color:T.target, lineWidth:2,
+    price:w.target / unit, color:T.target, lineWidth:2,
     lineStyle:LightweightCharts.LineStyle.Solid,
     axisLabelVisible:true, title:'target'}));
   if (w && w.trigger_level) lines.push(candles.createPriceLine({
-    price:w.trigger_level, color:T.trigger, lineWidth:2,
+    price:w.trigger_level / unit, color:T.trigger, lineWidth:2,
     lineStyle:LightweightCharts.LineStyle.Dashed,
     axisLabelVisible:true, title:'trigger'}));
 
@@ -2687,7 +2953,8 @@ function paintChart(r) {
       : `Last candle ${tail[0]}, as at the build`;
   }
 
-  chart.timeScale().fitContent();
+  if (keep) chart.timeScale().setVisibleLogicalRange(keep);
+  else chart.timeScale().fitContent();
 }
 
 function retheme() {
@@ -3414,6 +3681,24 @@ const card = (title, right, body, extra) =>
   + (right ? `<span class="rt">${right}</span>` : '')
   + `</h3>${body}</section>`;
 
+// A way from a card to the drawer section that holds its full table.
+const goLink = (sec, label) =>
+  `<button class="golink" data-go="${esc(sec)}">${esc(label)} &rarr;</button>`;
+
+// Which position a flag is about. The key carries the ticker second
+// (`trigger-hit:ERIC-B.ST`); failing that, the longest held or watched symbol
+// named anywhere in the key or title - the same rule alertsFor matches on, run
+// the other way.
+function symOfAlert(a) {
+  const k = String(a.key || '').split(':')[1];
+  if (k && ROWSYM.has(k)) return k;
+  const text = String(a.key || '') + ' ' + String(a.title || '');
+  let best = null;
+  for (const r of ROWS)
+    if (text.includes(r.sym) && (!best || r.sym.length > best.length)) best = r.sym;
+  return best;
+}
+
 const stat = (k, v, s) => `<div class="stat"><div class="k">${esc(k)}</div>
   <div class="v">${v}</div><div class="s">${s || ''}</div></div>`;
 
@@ -3532,19 +3817,27 @@ function paintOverview() {
     </dl>
     <div class="lnote">Effective positions is 1/HHI: the number of equally
       sized holdings that would concentrate the book as much as this one is.
-      ${num(conc.effective_n, 1)} against ${conc.n || 0} held.</div>`));
+      ${num(conc.effective_n, 1)} against ${conc.n || 0} held.</div>`
+    + goLink('exp', 'Full exposure breakdown')));
 
   const flags = (D.alerts || []);
   cards.push(card('Flags', `${flags.length}`,
     flags.length
-      ? flags.slice(0, 8).map((a) => `<div class="alert">
+      ? flags.slice(0, 8).map((a) => {
+          // A flag names a position; clicking it opens that position. A flag
+          // about the whole book (coverage, health) has no chart to open and
+          // stays plain text rather than a link that goes nowhere.
+          const s = symOfAlert(a);
+          return `<div class="alert${s ? ' click' : ''}"${
+            s ? ` data-sym="${esc(s)}"` : ''}>
           <span class="dot" style="background:${
             LEVEL[a.level] || 'var(--muted)'}"></span>
           <span><div class="t">${esc(a.title)}</div>
           <div class="d" title="${esc(a.detail)}">${esc(a.detail)}</div>
-          </span></div>`).join('')
-        + (flags.length > 8
-          ? `<div class="lnote">${flags.length - 8} more.</div>` : '')
+          </span></div>`;
+        }).join('')
+        + goLink('flag', flags.length > 8
+          ? `All ${flags.length} flags (${flags.length - 8} more)` : 'All flags')
       : '<div class="lnote">Nothing tripped a threshold.</div>'));
 
   cards.push(card('What made the money',
@@ -3589,7 +3882,8 @@ function paintOverview() {
       : 'none scheduled',
     (shown.length
       ? `<div class="cstrip">${shown.map((r) =>
-          `<div class="cpill ${r.soon ? 'soon' : ''}"
+          `<div class="cpill ${r.soon ? 'soon' : ''}${
+               ROWSYM.has(r.symbol) ? ' click" data-sym="' + esc(r.symbol) : ''}"
              title="${esc(r.name || '')} · ${esc(String(r.date))}${
                r.estimated ? ' (estimated by Yahoo, not confirmed by the company)'
                            : ''}">
@@ -3865,6 +4159,14 @@ function gotoSection(id) {
   box.scrollTop = Math.max(0, top);
 }
 
+// The drawer, opened at one section. Order matters: the box has to be showing
+// before gotoSection can measure where the heading sits.
+function openSection(id) {
+  sheetOpen(true);
+  gotoSection(id);
+  syncHash();
+}
+
 on('#t-sheet', 'click', () => sheetOpen(!SHEET));
 // Back over the entry that opening the drawer pushed, so the browser's own
 // back button and this one do the same thing rather than two similar things.
@@ -3916,6 +4218,8 @@ on('#vnav', 'click', (e) => {
 on('#ovgrid', 'click', (e) => {
   const t = e.target;
   if (!t || !t.closest) return;
+  const go = t.closest('[data-go]');
+  if (go) { openSection(go.getAttribute('data-go')); return; }
   const bar = t.closest('.xrow[data-fk]');
   if (bar) {
     const kind = bar.getAttribute('data-fk');
@@ -4037,6 +4341,140 @@ try {
   else if (mq.addListener) mq.addListener(onFlip);
 } catch (e) {}
 
+/* ------------------------------------------------------------ jump palette
+ *
+ * Built from what is on the page at the moment it opens, not from a list kept
+ * alongside it: the names from ROWS (which the live layer rebuilds), the
+ * sections from the drawer's own headings. A section added later shows up here
+ * without anyone remembering to register it.
+ */
+const PAL = {items: [], i: 0};
+
+function palAll() {
+  const out = [
+    {kind: 'View', label: 'Overview', sub: 'the book at a glance', go: () => {
+      sheetOpen(false); setView('overview'); }},
+    {kind: 'View', label: 'Positions', sub: 'rail, chart and thesis', go: () => {
+      sheetOpen(false); setView('positions'); }},
+  ];
+  for (const n of document.querySelectorAll('#sheetbody h2[data-sec]')) {
+    const id = n.getAttribute('data-sec');
+    out.push({kind: 'Data', label: n.getAttribute('data-label') || id,
+      sub: (n.textContent || '').replace(/\s+/g, ' ').trim(),
+      go: () => openSection(id)});
+  }
+  for (const r of ROWS) {
+    out.push({kind: r.isHeld ? 'Holding' : 'Watchlist', label: r.label,
+      sub: r.company !== r.label ? r.company : '', level: r.worst,
+      hay: r.sym, go: () => jump(r.sym)});
+  }
+  return out;
+}
+
+// Ranked, not just filtered: a ticker that starts with what you typed beats a
+// company name that merely contains it, so "ab" finds ABB before Alphabet.
+function palFilter(q) {
+  q = q.trim().toLowerCase();
+  const all = palAll();
+  if (!q) return all;
+  const scored = [];
+  for (const it of all) {
+    const l = it.label.toLowerCase(), h = String(it.hay || '').toLowerCase();
+    const s = (it.sub || '').toLowerCase();
+    const score = l.startsWith(q) || h.startsWith(q) ? 0
+      : l.includes(q) || h.includes(q) ? 1 : s.includes(q) ? 2 : -1;
+    if (score >= 0) scored.push([score, it]);
+  }
+  return scored.sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+}
+
+function palPaint() {
+  const box = $('#pallist');
+  if (!box) return;
+  box.innerHTML = PAL.items.length
+    ? PAL.items.slice(0, 60).map((it, i) => `<button class="palrow" role="option"
+        data-i="${i}" aria-selected="${i === PAL.i}"><span class="k">${
+        esc(it.kind)}</span>${it.level ? `<span class="dot" style="background:${
+        LEVEL[it.level] || 'var(--muted)'}"></span>` : ''}<b>${esc(it.label)}</b>
+        <span class="s">${esc(it.sub || '')}</span></button>`).join('')
+    : '<div class="palempty">Nothing by that name.</div>';
+  const cur = box.querySelector && box.querySelector('[aria-selected="true"]');
+  if (cur && cur.scrollIntoView) cur.scrollIntoView({block: 'nearest'});
+}
+
+function palOpen(open) {
+  const p = $('#pal');
+  if (!p) return;
+  p.hidden = !open;
+  if (!open) return;
+  const q = $('#palq');
+  if (q) q.value = '';
+  PAL.items = palFilter('');
+  PAL.i = 0;
+  palPaint();
+  if (q && q.focus) q.focus();
+}
+const palIsOpen = () => { const p = $('#pal'); return !!p && !p.hidden; };
+
+function palPick(i) {
+  const it = PAL.items[i];
+  palOpen(false);
+  if (it) it.go();
+}
+
+on('#t-jump', 'click', () => palOpen(true));
+on('#palq', 'input', (e) => {
+  PAL.items = palFilter(e.target.value || '');
+  PAL.i = 0;
+  palPaint();
+});
+on('#palq', 'keydown', (e) => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const n = Math.min(PAL.items.length, 60);
+    if (n) PAL.i = (PAL.i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+    palPaint();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    palPick(PAL.i);
+  }
+});
+on('#pallist', 'click', (e) => {
+  const b = e.target && e.target.closest && e.target.closest('.palrow');
+  if (b) palPick(Number(b.getAttribute('data-i')));
+});
+// A click on the dimmed backdrop, outside the box, closes it.
+on('#pal', 'click', (e) => { if (e.target === e.currentTarget) palOpen(false); });
+
+// The keyboard map. Single keys only act when nothing is being typed into, so
+// searching the rail for "D" does not throw the drawer open.
+try {
+  window.addEventListener('keydown', (e) => {
+    const tag = e.target && e.target.tagName;
+    const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      palOpen(!palIsOpen());
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (palIsOpen()) { e.preventDefault(); palOpen(false); return; }
+      if (SHEET) {
+        e.preventDefault();
+        if (SHEETPUSHED && history.back) history.back(); else sheetOpen(false);
+        return;
+      }
+      if (typing && e.target.blur) e.target.blur();
+      return;
+    }
+    if (typing || e.ctrlKey || e.metaKey || e.altKey || palIsOpen()) return;
+    if (e.key === '/') { e.preventDefault(); palOpen(true); return; }
+    if (e.key === '1') { sheetOpen(false); setView('overview'); return; }
+    if (e.key === '2') { sheetOpen(false); setView('positions'); return; }
+    if (e.key === 'd' || e.key === 'D') { sheetOpen(!SHEET); return; }
+  });
+} catch (e) {}
+
 // Arrow keys walk the rail. It is a terminal; hands should not have to leave
 // the keyboard to step through twenty-three names.
 try {
@@ -4044,6 +4482,7 @@ try {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     const tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (palIsOpen() || SHEET) return;
     const rows = visible();
     const i = rows.findIndex((r) => r.sym === state.sym);
     const next = rows[Math.min(rows.length - 1, Math.max(0, i + (e.key === 'ArrowDown' ? 1 : -1)))];
@@ -4106,6 +4545,7 @@ syncHash();
   if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
 
   const POLL_MS = 60000;
+  let LAST_OK = null;   // the last tick whose prices D was restated from
   const rows = (D.holdings || []).filter((h) => h.yahoo && h.yahoo !== 'MISSING');
   const wrows = (D.watchlist || []).filter((w) => w.yahoo && w.yahoo !== 'MISSING');
   if (!rows.length && !wrows.length) return;
@@ -4183,8 +4623,13 @@ syncHash();
       // exist in the payload, so writing to it updated nothing and failed
       // silently - the watchlist has no euro value to look wrong, so a dead
       // write there shows up as a column that simply never moves.
-      w.price_now = hit.price;
+      //
+      // Scaled into the board's unit by the factor Python chose at build
+      // (analyse.board_scale): a Johannesburg quote arrives in cents against a
+      // board written in rand, and read raw it is a 100x move.
+      w.price_now = hit.price * (w.price_scale || 1);
       w.day_pct = hit.changePct;
+      w.live_asof = hit.asOf;
       // A watchlist row has a chart too, and it is the surface the thesis is
       // argued against. It gets the same live candle for the same reason.
       noteLiveBar(w.yahoo, hit);
@@ -4207,6 +4652,7 @@ syncHash();
       fxMissing: data.fxMissing || [],
       error: null,
     };
+    LAST_OK = LIVE;
 
     foldHoldings();
     buildRows();
@@ -4244,8 +4690,15 @@ syncHash();
       if (!r.ok) throw new Error('quotes endpoint returned ' + r.status);
       applyQuotes(await r.json());
     } catch (e) {
-      LIVE = {at: new Date(), asked: symbols.length, priced: 0, missing: [],
-        fxMissing: [], error: (e && e.message) || 'live prices unavailable'};
+      const why = (e && e.message) || 'live prices unavailable';
+      // After a good tick, D already holds that tick's prices and keeps them.
+      // Saying `off` then made every mark read `as at build` over numbers
+      // that were not the build's, and the candle snapped back while the
+      // price beside it did not.
+      LIVE = LAST_OK
+        ? Object.assign({}, LAST_OK, {error: why, carried: true, failedAt: new Date()})
+        : {at: new Date(), asked: symbols.length, priced: 0, missing: [],
+           fxMissing: [], error: why};
       // The whole page, not just the tape. A tick that succeeded and then one
       // that failed used to leave every per-price freshness mark still reading
       // `live` while the chip above them read `off` - the page contradicting

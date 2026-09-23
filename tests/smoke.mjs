@@ -150,8 +150,48 @@ const WALK = `
       moved = was === now ? 'no' : 'yes';
     }
   }
+  // The same control for the flags. Parity on the build's own prices passes
+  // just as well if the flags were never rebuilt at all, so push one watchlist
+  // name through its written trigger and demand the critical flag appear -
+  // and, because it is the thing a reader acts on, the rail count follow it.
+  let flagged = 'skipped';
+  if (!DERIVE.stats().alerts) {
+    bad.push('flags: not restated - the payload is missing a threshold the port needs');
+  } else {
+    const w = (D.watchlist || []).find((x) => x.trigger_level && x.price_now
+      && !x.trigger_hit);
+    if (w) {
+      w.price_now = w.trigger_level * (w.trigger_kind === 'below' ? 0.99 : 1.01);
+      DERIVE.all();
+      const hit = (D.alerts || []).some((a) => a.key === 'trigger-hit:' + w.ticker);
+      if (!hit) bad.push('flags: ' + w.ticker + ' pushed through its trigger and '
+        + 'no trigger-hit flag appeared - the flags are frozen at build');
+      flagged = hit ? 'yes' : 'no';
+    }
+  }
+  // Navigation. The jump box has to reach every name on the rail, and a flag
+  // about a position has to open that position - a flag that only reads is
+  // the dead end the Overview card used to be.
+  const reach = palFilter('').filter((it) => it.kind === 'Holding'
+    || it.kind === 'Watchlist').length;
+  if (reach !== ROWS.length) bad.push('jump box: reaches ' + reach + ' of '
+    + ROWS.length + ' names');
+  for (const r of ROWS) {
+    if (!palFilter(r.label.toLowerCase()).some((it) => it.label === r.label))
+      bad.push('jump box: typing ' + r.label + ' does not find it');
+  }
+  let linked = 0;
+  for (const a of (D.alerts || [])) {
+    const own = String(a.key || '').split(':')[1];
+    if (own && ROWSYM.has(own)) {
+      if (symOfAlert(a) !== own) bad.push('flag ' + a.key + ' opens '
+        + symOfAlert(a) + ', not ' + own);
+      else linked++;
+    }
+  }
   globalThis.__smoke = {rows: ROWS.length, tiles: drawn, bad: bad,
-                        parity: PARITY.checked, moved: moved};
+                        parity: PARITY.checked, moved: moved, flagged: flagged,
+                        linked: linked};
 })();`;
 
 try {
@@ -169,4 +209,6 @@ if (s.bad.length) {
 }
 console.log(`SMOKE OK  ${path} · ${s.rows} rows painted, ${s.tiles} treemap `
   + `tiles drawn, ${s.parity} fields at parity with Python, look-through `
-  + `moved under a perturbed fund: ${s.moved}, no runtime errors`);
+  + `moved under a perturbed fund: ${s.moved}, trigger flag followed a pushed `
+  + `price: ${s.flagged}, ${s.linked} flags link to their position, jump box `
+  + `reaches every name, no runtime errors`);
