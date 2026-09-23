@@ -39,7 +39,7 @@ def _scrub(obj):
 
 def payload(positions_valued, watchlist, alerts, health, fx, sources,
             history=None, coverage=None, book_return=None, indicators=None,
-            exposure=None, reporting=None, activity=None):
+            exposure=None, reporting=None, activity=None, lookthrough=None):
     """The single object the page renders. Nothing is computed in the browser
     that could have been computed here - the page displays, it does not decide."""
     total_value = round(sum(h["value_eur"] or 0 for h in positions_valued), 2)
@@ -85,6 +85,12 @@ def payload(positions_valued, watchlist, alerts, health, fx, sources,
         # thematic and almost none of a world tracker. The page must print that
         # figure beside the chart it qualifies - see exposure.py's header.
         "exposure": exposure or {},
+        # The published weights behind the linear half of `exposure` - each
+        # fund's sectors and disclosed constituents, each stock's sector,
+        # industry and country (exposure.inputs). With them the page restates
+        # the look-through on a live price; without them it has to say "as at
+        # build". Absent, not empty, when there is nothing to carry.
+        "lookthrough": lookthrough,
         # The reporting calendar ahead and the record behind it. The upcoming
         # quarter arrives from Yahoo with a NaN result and is carried here as
         # null, never as zero - see reporting.py's header for why that is the

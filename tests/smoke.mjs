@@ -116,7 +116,42 @@ const WALK = `
   const drawn = (grid.match(/class="tile"/g) || []).length;
   const want = ((D.overview || {}).allocation || {}).n || 0;
   if (drawn !== want) bad.push('treemap: ' + drawn + ' tiles drawn, ' + want + ' laid out');
-  globalThis.__smoke = {rows: ROWS.length, tiles: drawn, bad: bad};
+
+  // The browser port against its Python original, on the prices the file was
+  // built with. The page runs this at boot and only shows the verdict; here a
+  // disagreement fails the build instead of waiting for someone to look.
+  if (!PARITY.ok) {
+    bad.push('parity: ' + PARITY.n_mismatches + ' of ' + PARITY.checked
+      + ' fields disagree with Python');
+    for (const m of PARITY.mismatches.slice(0, 8)) {
+      bad.push('  ' + m.path + ': ' + JSON.stringify(m.was) + ' -> ' + JSON.stringify(m.now));
+    }
+  }
+  // ...and the negative control, without which a perfect score proves nothing.
+  // A recompute that never ran leaves Python's numbers in place and passes
+  // parity exactly as well as one that ran correctly. So move a fund's price
+  // and demand the look-through move with it.
+  let moved = 'skipped';
+  if (D.lookthrough) {
+    const X = D.exposure;
+    const fundIsin = new Set(((D.coverage || {}).rows || [])
+      .filter((r) => r.klass === 'fund').map((r) => r.isin));
+    const h = (D.holdings || []).find((r) => fundIsin.has(r.isin)
+      && r.yahoo && (D.lookthrough.funds || {})[r.yahoo]);
+    if (!h) {
+      bad.push('negative control: no fund with a composition to perturb');
+    } else {
+      const was = JSON.stringify([X.sectors, X.geography, X.names, X.overlap]);
+      h.value_eur = Math.round(h.value_eur * 50) / 100;   // halve it
+      DERIVE.all();
+      const now = JSON.stringify([X.sectors, X.geography, X.names, X.overlap]);
+      if (was === now) bad.push('negative control: halving ' + h.yahoo
+        + ' left the look-through unchanged - the recompute is not running');
+      moved = was === now ? 'no' : 'yes';
+    }
+  }
+  globalThis.__smoke = {rows: ROWS.length, tiles: drawn, bad: bad,
+                        parity: PARITY.checked, moved: moved};
 })();`;
 
 try {
@@ -133,4 +168,5 @@ if (s.bad.length) {
   process.exit(1);
 }
 console.log(`SMOKE OK  ${path} · ${s.rows} rows painted, ${s.tiles} treemap `
-  + 'tiles drawn, no runtime errors');
+  + `tiles drawn, ${s.parity} fields at parity with Python, look-through `
+  + `moved under a perturbed fund: ${s.moved}, no runtime errors`);

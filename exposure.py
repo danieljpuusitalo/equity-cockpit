@@ -371,8 +371,11 @@ def overlap(positions, comp, total):
     keys = sorted(funds)
     for i, a in enumerate(keys):
         for b in keys[i + 1:]:
+            # Ties broken on the symbol. A set iterates in hash order, and
+            # string hashes are salted per process, so without the second key
+            # two equal-weight names swapped places from one run to the next.
             shared = sorted(set(funds[a]) & set(funds[b]),
-                            key=lambda c: -(funds[a][c] + funds[b][c]))
+                            key=lambda c: (-(funds[a][c] + funds[b][c]), c))
             if not shared:
                 continue
             # The EUR that reaches these companies through BOTH funds. Not
@@ -517,6 +520,40 @@ def multiples(positions, funda, comp, total):
         out[key] = round(covered / weighted_yield, 2) if weighted_yield else None
         out[f"{key}_resolved_pct"] = round(covered / total * 100, 1) if total else 0.0
     return out
+
+
+# ------------------------------------------------------------------- inputs
+
+def inputs(funda, comp):
+    """The slice of both caches the linear breakdowns read, for the page.
+
+    Sectors, industries, geography, names and overlap are each a sum of
+    position value times a fixed published weight, so the page can restate
+    them on a live price - but only if it carries the weights. This is exactly
+    those fields and nothing else: a fund's sector weights and disclosed
+    constituents, and a stock's sector, industry and country. Multiples are
+    left out on purpose; see the template's DERIVE header for why they stay
+    as at the build.
+    """
+    stocks, funds = {}, {}
+    for symbol, entry in sorted((funda or {}).items()):
+        f = (entry or {}).get("fields") or {}
+        row = {k: f.get(k) for k in ("sector", "industry", "country")
+               if f.get(k)}
+        if row:
+            stocks[symbol] = row
+    for symbol, entry in sorted((comp or {}).items()):
+        f = (entry or {}).get("fields") or {}
+        row = {}
+        if f.get("sectors"):
+            row["sectors"] = dict(f["sectors"])
+        if f.get("top_holdings"):
+            row["top_holdings"] = [
+                {"symbol": line.get("symbol"), "name": line.get("name"),
+                 "pct": line.get("pct")} for line in f["top_holdings"]]
+        if row:
+            funds[symbol] = row
+    return {"stocks": stocks, "funds": funds}
 
 
 # ------------------------------------------------------------------ assemble

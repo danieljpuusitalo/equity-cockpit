@@ -898,10 +898,11 @@ function liveChip() {
 // reader reasonably assumes all of it does; the figures that cannot follow have
 // to say so themselves, or they become the most misleading numbers on screen
 // precisely because everything around them is fresh.
-// The look-through is linear in position value, so it COULD follow a price -
-// but only with each fund's published composition, and that matrix is not in
-// this payload. Emitting it is the next step; claiming the breakdown is live
-// without it would be the bug this whole module was written to remove.
+// The look-through is linear in position value, so it follows a price - but
+// only when the page carries each fund's published composition
+// (D.lookthrough). A page built without it still says "as at build" on those
+// breakdowns; claiming them live without the weights would be the bug this
+// whole module was written to remove.
 const LOOKTHRU_WHY = 'the look-through scales each fund by its published '
   + 'composition, and that composition is not carried in this page - so the '
   + 'breakdown moves when the file is rebuilt, not when a price ticks';
@@ -910,6 +911,12 @@ const atBuild = (why) => (LIVE && !LIVE.error)
   ? ` · <b class="dn-t" title="${esc(why)} · this figure is as at ${
       esc(D.generated || 'the last build')}, not live">as at build</b>`
   : '';
+// Keyed on whether the recompute actually ran, not on whether the key exists:
+// STATS is what all() wrote, so a look-through that was skipped keeps its mark.
+const lookMark = () => {
+  const s = DERIVE.stats();
+  return s && s.lookthrough ? '' : atBuild(LOOKTHRU_WHY);
+};
 
 // Freshness, per number rather than per page.
 //
@@ -1085,13 +1092,19 @@ function fresh(f) {
 // it reproduce Python's own output. A port that has never been run against its
 // original is not a port, it is a second opinion.
 //
+// The look-through - sectors, industries, geography, single names and fund
+// overlap - IS recomputed, from each fund's published composition, which the
+// build carries as D.lookthrough (exposure.inputs). Each is value times a
+// fixed weight, so it follows a price exactly.
+//
 // Three things are deliberately NOT recomputed, and the page says so rather
 // than letting them look live:
 //   * the money-weighted return (IRR) - it needs the dated lot cashflows, and
 //     those are not in this payload at all;
-//   * the look-through breakdowns - sectors, geography, single names, overlap
-//     and the blended multiples - which need each fund's published
-//     composition, also not in this payload;
+//   * the blended multiples - each P/E is the vendor's figure struck at the
+//     vendor's own price. Re-weighting them on a live price while the ratios
+//     themselves stay at Yahoo's asof would be a hybrid of two moments that
+//     neither source ever published;
 //   * the indicators - RSI, the moving averages, ATR - which are functions of
 //     daily closing bars and are supposed to be yesterday's.
 const DERIVE = (function () {
@@ -1408,6 +1421,252 @@ const DERIVE = (function () {
     return out;
   }
 
+  /* ---- exposure.py: the look-through, which needs the composition ---- */
+
+  // Every breakdown below is a sum of position value times a published weight
+  // that does not move with a price, so it restates exactly - PROVIDED the
+  // weights are here. They arrive as D.lookthrough, written by
+  // exposure.inputs(). Without it these are not called and the page keeps
+  // saying "as at build"; see lookMark().
+
+  const SECTOR_ALIASES = {realestate: 'real_estate', real_estate: 'real_estate'};
+  const SUFFIX_COUNTRY = {
+    AS: 'Netherlands', BR: 'Belgium', CO: 'Denmark', DE: 'Germany',
+    F: 'Germany', HE: 'Finland', HK: 'Hong Kong', IR: 'Ireland',
+    KQ: 'South Korea', KS: 'South Korea', L: 'United Kingdom', LS: 'Portugal',
+    MC: 'Spain', MI: 'Italy', NS: 'India', OL: 'Norway', PA: 'France',
+    SI: 'Singapore', ST: 'Sweden', SW: 'Switzerland', T: 'Japan',
+    TA: 'Israel', TO: 'Canada', TW: 'Taiwan', VI: 'Austria', WA: 'Poland',
+  };
+
+  // exposure.py:56-58. str.capitalize() lowercases the tail; so does this.
+  const label = (key) => String(key).split('_')
+    .map((p) => p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : '').join(' ');
+
+  // exposure.py:61-66.
+  function sectorKey(name) {
+    if (!name) return null;
+    const key = String(name).trim().toLowerCase().replace(/ /g, '_').replace(/-/g, '_');
+    return (Object.prototype.hasOwnProperty.call(SECTOR_ALIASES, key)
+      ? SECTOR_ALIASES[key] : key) || null;
+  }
+
+  // exposure.py:69-83. A bare ticker is a US listing by Yahoo's convention; a
+  // bare numeric code is not, and resolves to null rather than to America.
+  function countryFor(symbol) {
+    if (!symbol) return null;
+    const text = String(symbol).trim();
+    if (text.includes('.')) {
+      const sfx = text.slice(text.lastIndexOf('.') + 1).toUpperCase();
+      return Object.prototype.hasOwnProperty.call(SUFFIX_COUNTRY, sfx)
+        ? SUFFIX_COUNTRY[sfx] : null;
+    }
+    return /^\p{L}+$/u.test(text.replace(/-/g, '')) ? 'United States' : null;
+  }
+
+  // exposure.py:119-136. Rows keep the buckets' insertion order and then sort
+  // stably on the ROUNDED value, which is what Python sorts on too.
+  function breakdown(buckets, unresolved, total, extra) {
+    const rows = [];
+    let placed = 0;
+    for (const [key, value] of buckets) {
+      rows.push({key, label: label(key), value_eur: R(value, 2),
+                 pct: total ? R(value / total * 100, 2) : 0});
+      placed += value;
+    }
+    rows.sort((a, b) => b.value_eur - a.value_eur);
+    return Object.assign({rows, value_eur: R(placed, 2),
+                          unresolved_eur: R(unresolved, 2),
+                          resolved_pct: total ? R(placed / total * 100, 1) : 0,
+                          n: rows.length}, extra || {});
+  }
+
+  const add = (m, k, v) => m.set(k, (m.get(k) || 0) + v);
+
+  // exposure.py:141-180. Fund cash is left unresolved, never scaled away.
+  function sectors(pos, LT, total) {
+    const buckets = new Map(), direct = new Map(), indirect = new Map();
+    let unresolved = 0;
+    for (const p of pos) {
+      const value = p.value_eur;
+      if (!value) continue;
+      if (p.klass === 'fund') {
+        const weights = (LT.funds[p.symbol] || {}).sectors || {};
+        let placed = 0;
+        for (const [raw, pct] of Object.entries(weights)) {
+          const key = sectorKey(raw);
+          if (!key || !pct) continue;
+          const part = value * pct / 100;
+          add(buckets, key, part); add(indirect, key, part);
+          placed += part;
+        }
+        unresolved += Math.max(0, value - placed);
+      } else {
+        const key = sectorKey((LT.stocks[p.symbol] || {}).sector);
+        if (key) { add(buckets, key, value); add(direct, key, value); }
+        else unresolved += value;
+      }
+    }
+    const table = breakdown(buckets, unresolved, total);
+    for (const r of table.rows) {
+      r.direct_eur = R(direct.get(r.key) || 0, 2);
+      r.indirect_eur = R(indirect.get(r.key) || 0, 2);
+    }
+    return table;
+  }
+
+  // exposure.py:185-210. Funds report no industries, so they are unresolved
+  // here by construction.
+  function industries(pos, LT, total) {
+    const buckets = new Map();
+    let unresolved = 0;
+    for (const p of pos) {
+      const value = p.value_eur;
+      if (!value) continue;
+      if (p.klass === 'fund') { unresolved += value; continue; }
+      const name = (LT.stocks[p.symbol] || {}).industry;
+      if (name) add(buckets, name, value);
+      else unresolved += value;
+    }
+    const table = breakdown(buckets, unresolved, total);
+    for (const r of table.rows) r.label = r.key;
+    return table;
+  }
+
+  // exposure.py:215-256. Domicile for a stock, listing venue for a fund's
+  // constituent - two proxies on one axis, and the basis line says so.
+  function geography(pos, LT, total) {
+    const buckets = new Map();
+    let unresolved = 0;
+    for (const p of pos) {
+      const value = p.value_eur;
+      if (!value) continue;
+      if (p.klass === 'fund') {
+        let placed = 0;
+        for (const line of (LT.funds[p.symbol] || {}).top_holdings || []) {
+          const country = countryFor(line.symbol);
+          const pct = line.pct || 0;
+          if (!country || !pct) continue;
+          const part = value * pct / 100;
+          add(buckets, country, part);
+          placed += part;
+        }
+        unresolved += Math.max(0, value - placed);
+      } else {
+        const country = (LT.stocks[p.symbol] || {}).country;
+        if (country) add(buckets, country, value);
+        else unresolved += value;
+      }
+    }
+    const table = breakdown(buckets, unresolved, total,
+      {basis: 'stated domicile for directly-held stocks, '
+            + 'listing venue for fund constituents'});
+    for (const r of table.rows) r.label = r.key;
+    return table;
+  }
+
+  // exposure.py:261-334. The indirect side is a floor: ten constituents per
+  // fund are disclosed, and resolved_pct says how much of the book got named.
+  function names(pos, LT, total) {
+    const rows = new Map();
+    let resolved = 0;
+    const touch = (symbol, name) => {
+      if (!rows.has(symbol)) {
+        rows.set(symbol, {symbol, name: name || symbol,
+                          direct_eur: 0, indirect_eur: 0, via: []});
+      } else if (name && rows.get(symbol).name === symbol) {
+        rows.get(symbol).name = name;
+      }
+      return rows.get(symbol);
+    };
+    for (const p of pos) {
+      const value = p.value_eur;
+      if (!value) continue;
+      if (p.klass !== 'fund') {
+        if (p.symbol) { touch(p.symbol, p.name).direct_eur += value; resolved += value; }
+        continue;
+      }
+      for (const line of (LT.funds[p.symbol] || {}).top_holdings || []) {
+        const child = line.symbol, pct = line.pct || 0;
+        if (!child || !pct) continue;
+        const part = value * pct / 100;
+        const row = touch(child, line.name);
+        row.indirect_eur += part;
+        row.via.push({fund: p.symbol, pct: R(pct, 2), value_eur: R(part, 2)});
+        resolved += part;
+      }
+    }
+    const out = [];
+    for (const r of rows.values()) {
+      const t = r.direct_eur + r.indirect_eur;
+      const s = LT.stocks[r.symbol] || {};
+      r.via.sort((a, b) => b.value_eur - a.value_eur);
+      out.push({
+        symbol: r.symbol, name: r.name,
+        direct_eur: R(r.direct_eur, 2), indirect_eur: R(r.indirect_eur, 2),
+        value_eur: R(t, 2),
+        pct: total ? R(t / total * 100, 2) : 0,
+        direct_pct: total ? R(r.direct_eur / total * 100, 2) : 0,
+        indirect_pct: total ? R(r.indirect_eur / total * 100, 2) : 0,
+        held_both_ways: r.direct_eur > 0 && r.indirect_eur > 0,
+        via: r.via,
+        sector: sectorKey(s.sector),
+        industry: s.industry || null,
+        country: s.country || countryFor(r.symbol)});
+    }
+    out.sort((a, b) => b.value_eur - a.value_eur);
+    return {rows: out, n: out.length, value_eur: R(resolved, 2),
+            unresolved_eur: R(Math.max(0, total - resolved), 2),
+            resolved_pct: total ? R(resolved / total * 100, 1) : 0,
+            n_both_ways: out.filter((r) => r.held_both_ways).length};
+  }
+
+  // exposure.py:339-410. Every figure is a floor; disclosed_pct per side says
+  // how much of each fund was visible at all.
+  function overlap(pos, LT, total) {
+    const lines = new Map(), sizes = new Map();
+    for (const p of pos) {
+      if (p.klass !== 'fund' || !p.symbol || !p.value_eur) continue;
+      const m = new Map();
+      for (const line of (LT.funds[p.symbol] || {}).top_holdings || []) {
+        const child = line.symbol, pct = line.pct || 0;
+        if (child && pct) add(m, child, pct);
+      }
+      if (m.size) { lines.set(p.symbol, m); sizes.set(p.symbol, p.value_eur); }
+    }
+    const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+    const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+    const keys = [...lines.keys()].sort(cmp);
+    const pairs = [];
+    keys.forEach((a, i) => {
+      for (const b of keys.slice(i + 1)) {
+        const A = lines.get(a), B = lines.get(b);
+        // Same tiebreak as the Python: weight, then symbol.
+        const shared = [...A.keys()].filter((c) => B.has(c))
+          .sort((x, y) => ((B.get(y) + A.get(y)) - (A.get(x) + B.get(x))) || cmp(x, y));
+        if (!shared.length) continue;
+        const eur = sum(shared.map((c) =>
+          sizes.get(a) * A.get(c) / 100 + sizes.get(b) * B.get(c) / 100));
+        const share = (F) => {
+          const all = sum([...F.values()]);
+          return all ? R(sum(shared.map((c) => F.get(c))) / all * 100, 1) : 0;
+        };
+        pairs.push({a, b, shared, n_shared: shared.length,
+                    n_a: A.size, n_b: B.size,
+                    a_disclosed_in_shared_pct: share(A),
+                    b_disclosed_in_shared_pct: share(B),
+                    a_disclosed_pct: R(sum([...A.values()]), 1),
+                    b_disclosed_pct: R(sum([...B.values()]), 1),
+                    value_eur: R(eur, 2),
+                    pct: total ? R(eur / total * 100, 2) : 0});
+      }
+    });
+    pairs.sort((x, y) => y.value_eur - x.value_eur);
+    return {pairs, n_pairs: pairs.length, n_funds: lines.size,
+            n_substantial: pairs.filter((p) => Math.max(
+              p.a_disclosed_in_shared_pct, p.b_disclosed_in_shared_pct) >= 50).length};
+  }
+
   /* ---- analyse.coverage: analyse.py:488-591 ---- */
 
   // Coverage rows are per ISIN per account, one for one with D.holdings, so
@@ -1590,6 +1849,18 @@ const DERIVE = (function () {
       fees: fees(pos, M.ter, expTotal),
       funds: funds(pos, expTotal, M.fundMeta),
     });
+    // Multiples are deliberately not in this list: see the note at the top of
+    // this module. Only the linear breakdowns follow a price.
+    const LT = D.lookthrough;
+    if (LT) {
+      Object.assign(D.exposure, {
+        sectors: sectors(pos, LT, expTotal),
+        industries: industries(pos, LT, expTotal),
+        geography: geography(pos, LT, expTotal),
+        names: names(pos, LT, expTotal),
+        overlap: overlap(pos, LT, expTotal),
+      });
+    }
 
     // Every join's misses, kept. A recompute that silently restates nothing is
     // indistinguishable from one that restates everything correctly - both
@@ -1604,6 +1875,9 @@ const DERIVE = (function () {
       // already reported as unresolved_eur. This counts a fund the fees table
       // could not find at all.
       funds_untermed: D.exposure.fees.rows.filter((r) => r.ter_pct == null).length,
+      // Whether the look-through was restated at all. False means the payload
+      // carried no composition and those breakdowns are Python's, as at build.
+      lookthrough: !!LT,
       coverage_unmatched: D.coverage ? coverage(D.coverage, rows) : 0,
       reporting_unmatched: D.reporting ? reporting(D.reporting, rows) : 0,
       watchlist: D.watchlist ? watchlist(D.watchlist).length : 0,
@@ -1668,6 +1942,11 @@ const DERIVE = (function () {
          D.exposure.concentration, T);
     walk('exposure.fees', before.exposure.fees, D.exposure.fees, T);
     walk('exposure.funds', before.exposure.funds, D.exposure.funds, T);
+    if (D.lookthrough) {
+      for (const k of ['sectors', 'industries', 'geography', 'names', 'overlap']) {
+        walk('exposure.' + k, before.exposure[k], D.exposure[k], T);
+      }
+    }
     walk('coverage', before.coverage, D.coverage, T);
     walk('watchlist', before.watchlist, D.watchlist, T);
     walk('reporting', before.reporting, D.reporting, T);
@@ -2706,7 +2985,7 @@ function paintSheet() {
         `${num(XN.resolved_pct,1)}% of the book named ·
          ${XN.n_both_ways || 0} held directly and inside a fund ·
          the rest is inside undisclosed fund tails`
-        + atBuild(LOOKTHRU_WHY))}
+        + lookMark())}
       ${xcard('Funds drawing on one pot',
         (XO.n_substantial || 0) + ' of ' + (XO.n_pairs || 0),
         ((XO.pairs || [])[0]
@@ -2721,14 +3000,14 @@ function paintSheet() {
       ${xstack(X.sectors, 'Sector', 'sector',
         'Solid is held directly, pale is reached through a fund. Fund cash is ' +
         'left unresolved rather than scaled away. Click a row to filter below.',
-        atBuild(LOOKTHRU_WHY))}
+        lookMark())}
       ${xstack(X.geography, 'Geography', 'country',
-        (X.geography || {}).basis || '', atBuild(LOOKTHRU_WHY))}
+        (X.geography || {}).basis || '', lookMark())}
     </div>
     ${xstack(X.industries, 'Industry', 'industry',
       'Directly-held stocks only. A fund reports sectors and never industries, ' +
       'so the fund sleeve is unresolved here by construction, not by failure.',
-      atBuild(LOOKTHRU_WHY))}
+      lookMark())}
     </div>
     <h2 data-sec="look" data-label="Inside the funds">Look-through — ${nameRows.length}${
       nameRows.length === (XN.rows || []).length ? '' :
@@ -2817,7 +3096,7 @@ function paintSheet() {
       not a double count — but do not add the pairs up, because a name held by
       three funds is in three of these rows. Every column is a floor: it can
       only see names both funds publish, and a fund publishes its top ten.${
-      atBuild(LOOKTHRU_WHY)}</div>
+      lookMark()}</div>
     </div>`;
 
   /* ----------------------------------------------------------- reporting */

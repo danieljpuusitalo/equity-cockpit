@@ -502,7 +502,8 @@ def _cycle(mode, quiet=False, verbose=True):
         "last_full_run": (last_run or {}).get("at"),
     }, history=history, coverage=cover, book_return=book_return,
        indicators=indicators.snapshot_all(history), exposure=exposures,
-       reporting=reports, activity=moves)
+       reporting=reports, activity=moves,
+       lookthrough=exposure.inputs(funda, comp))
 
     over = data["overview"]
     day, alloc = over["day"], over["allocation"]
@@ -871,6 +872,52 @@ def selftest():
     check("assets: live prices still re-derive the page", not der,
           f"template lost: {', '.join(der)}" if der
           else "recompute, boot parity check, live call and row rebuild all present")
+
+    # The look-through follows a price only while three things hold together:
+    # the build carries the weights, the recompute uses them, and the parity
+    # walk checks them. Lose the first and the page quietly falls back to "as
+    # at build" everywhere; lose the second or third and it can claim live
+    # figures it never recomputed, or recompute them wrong with nothing
+    # comparing. Each part below names its own call site.
+    lt_in = exposure.inputs(
+        {"S.X": {"fields": {"sector": "Technology", "industry": "Chips",
+                            "country": "Sweden", "pe": 9.0}}},
+        {"F.X": {"fields": {"sectors": {"technology": 60.0},
+                            "top_holdings": [{"symbol": "S.X", "name": "S",
+                                              "pct": 5.0, "extra": 1}],
+                            "ter": 0.2, "valuation": {"pe": 20.0}}}})
+    lt_want = {"stocks": {"S.X": {"sector": "Technology", "industry": "Chips",
+                                  "country": "Sweden"}},
+               "funds": {"F.X": {"sectors": {"technology": 60.0},
+                                 "top_holdings": [{"symbol": "S.X", "name": "S",
+                                                   "pct": 5.0}]}}}
+    lt = []
+    if lt_in != lt_want:
+        lt.append(f"exposure.inputs returned {lt_in}")
+    # Concatenated so this line cannot satisfy its own search.
+    with open(__file__, encoding="utf-8") as fh:
+        wired = ("lookthrough=" + "exposure.inputs(funda, comp)") in fh.read()
+    if not wired:
+        lt.append("the build no longer passes exposure.inputs to render.payload")
+    if "lookthrough" not in render.payload([], [], [], {}, {}, {},
+                                           lookthrough={"stocks": {}, "funds": {}}):
+        lt.append("render.payload drops the lookthrough key")
+    for name in ("sectors", "industries", "geography", "names", "overlap"):
+        if f"{name}: {name}(pos, LT, expTotal)" not in tmpl:
+            lt.append(f"DERIVE.all no longer restates exposure.{name}")
+    if "for (const k of ['sectors', 'industries', 'geography', 'names', 'overlap'])" \
+            not in tmpl:
+        lt.append("parity() no longer walks the look-through")
+    # One "as at build" for the look-through, inside lookMark, which drops it
+    # only when all() reports it actually ran. A second bare one is a site that
+    # went back to claiming staleness, or a new site that never learned.
+    if tmpl.count("atBuild(LOOKTHRU_WHY)") != 1 or tmpl.count("lookMark())") < 4:
+        lt.append(f"{tmpl.count('atBuild(LOOKTHRU_WHY)')} bare look-through marks, "
+                  f"{tmpl.count('lookMark())')} lookMark call sites")
+    check("assets: the look-through follows a price", not lt,
+          "; ".join(lt) if lt
+          else "weights emitted, five breakdowns restated and parity-walked, "
+               "marks gated on the recompute having run")
 
     # The bug this replaced: the live layer summed its own totals inline, a few
     # lines and one rounding step different from analyse.value_holdings, and

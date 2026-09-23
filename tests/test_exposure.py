@@ -383,6 +383,35 @@ def test_three_funds_make_three_pairs(fake_book, monkeypatch):
         ("FA", "FB"), ("FA", "FC"), ("FB", "FC")}
 
 
+def test_shared_names_of_equal_weight_come_out_in_symbol_order(fake_book):
+    """The page restates this list in the browser and compares it to this one.
+    Ordered by weight alone, a tie came out in set order, which moves with the
+    per-process string hash - so the two could disagree on identical input."""
+    book = [holding(FUND_A, "FA", 1000.0), holding(FUND_B, "FB", 1000.0)]
+    line = {"top_holdings": [{"symbol": s, "pct": 10.0}
+                             for s in ("ZZZ", "MMM", "AAA", "QQQ")]}
+    out = exposure.overlap(exposure._positions(book), comp(FA=line, FB=line), 2000.0)
+    assert out["pairs"][0]["shared"] == ["AAA", "MMM", "QQQ", "ZZZ"]
+
+
+def test_inputs_carry_the_weights_and_nothing_else():
+    """What the page needs to restate the linear breakdowns: no multiples, no
+    TER (the page already has it), and no key for a symbol with nothing to say."""
+    out = exposure.inputs(
+        {"AAA": {"fields": {"sector": "Technology", "pe": 12.0}},
+         "BBB": {"fields": {"pe": 8.0}},
+         "CCC": {"error": "no data"}},
+        {"FA": {"fields": {"sectors": {"technology": 40.0}, "ter": 0.2,
+                           "top_holdings": [{"symbol": "AAA", "name": "A",
+                                             "pct": 5.0}]}},
+         "FB": {"fields": {"ter": 0.1}}})
+    assert out == {
+        "stocks": {"AAA": {"sector": "Technology"}},
+        "funds": {"FA": {"sectors": {"technology": 40.0},
+                         "top_holdings": [{"symbol": "AAA", "name": "A",
+                                           "pct": 5.0}]}}}
+
+
 # ------------------------------------------------------------- concentration
 
 def test_equal_positions_give_an_effective_count_of_themselves(fake_book):
