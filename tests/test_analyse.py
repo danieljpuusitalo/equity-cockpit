@@ -616,11 +616,11 @@ def _row(ticker, held="OST"):
 
 
 def test_a_holding_is_found_when_the_two_vendors_punctuate_it_differently():
-    """Nordnet writes 'NOVO B', Yahoo writes 'NOVO-B.CO'. Stripping the suffix
-    gives 'NOVO-B', which is not 'NOVO B', so the position went missing and the
+    """Nordnet writes 'ERIC B', Yahoo writes 'ERIC-B.ST'. Stripping the suffix
+    gives 'ERIC-B', which is not 'ERIC B', so the position went missing and the
     board was accused of claiming a holding it really had."""
-    holdings = [_pos("NOVO B", "NOVO-B.CO", account="OST", units=3.0)]
-    [item] = analyse.join_watchlist([_row("NOVO-B.CO")], {}, holdings)
+    holdings = [_pos("ERIC B", "ERIC-B.ST", account="OST", units=3.0)]
+    [item] = analyse.join_watchlist([_row("ERIC-B.ST")], {}, holdings)
     assert item["held_actual"] == "OST"
     assert item["held_units"] == 3.0
     assert analyse.reconcile([item]) == []

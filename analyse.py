@@ -386,10 +386,10 @@ def join_watchlist(log_rows, quotes, holdings, today=None):
 def _held_index(holdings):
     """Index the broker's positions by every name the Equity Log might use.
 
-    The Log speaks Yahoo ('NOVO-B.CO'); Nordnet speaks its own symbol
-    ('NOVO B'). Stripping the suffix off the Yahoo ticker and hoping the stems
-    collide works for ADMCM and MSFT and fails for exactly the names where the
-    two vendors punctuate differently - 'NOVO-B' never equals 'NOVO B', so a
+    The Log speaks Yahoo ('ERIC-B.ST'); Nordnet speaks its own symbol
+    ('ERIC B'). Stripping the suffix off the Yahoo ticker and hoping the stems
+    collide works for a single-word ticker and fails for exactly the names where
+    the two vendors punctuate differently - 'ERIC-B' never equals 'ERIC B', so a
     real holding reported itself as unowned and raised a disagreement alert
     against a board that was right. The holding already carries the Yahoo
     symbol it was priced with; match on that first and keep the stem as a
