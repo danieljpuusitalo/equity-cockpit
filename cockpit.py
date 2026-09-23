@@ -1156,6 +1156,30 @@ def selftest():
           "; ".join(sess) if sess else "open, high, low and a point count, "
                                        "nulls dropped not zero-filled")
 
+    # 1D and 5D draw Yahoo's own intraday bars, so the chart moves with the
+    # price instead of nudging one daily candle in 250. Same two contracts as
+    # the quotes endpoint: a bucket with a null or zero in it is dropped, never
+    # zero-filled, and the symbol travels in a POST body, not a logged URL.
+    bpath = C.ROOT / "deploy" / "api" / "bars.ts"
+    intra = []
+    if not bpath.exists():
+        intra.append("deploy/api/bars.ts is gone")
+    else:
+        bsrc = bpath.read_text(encoding="utf-8")
+        if "v > 0" not in bsrc.split("function pos(", 1)[-1].split("}", 1)[0]:
+            intra.append("the bars endpoint no longer drops non-positive values")
+        if "request.method !== 'POST'" not in bsrc:
+            intra.append("the bars endpoint accepts something other than POST")
+    if "fetch('/api/bars'" not in tmpl:
+        intra.append("the page never asks for intraday bars")
+    if "state.ma[p] && !ibars" not in tmpl:
+        intra.append("daily moving averages are drawn over intraday bars")
+    if 'data-d="1"' not in tmpl or 'data-d="5"' not in tmpl:
+        intra.append("the 1D/5D range buttons are gone")
+    check("assets: 1D and 5D draw intraday candles", not intra,
+          "; ".join(intra) if intra else "real 5m/15m bars, refetched each poll, "
+                                         "nulls dropped, POST only, MAs off")
+
     # Right-aligned is correct for the numeric columns and wrong for every word
     # column, which is how six tables came to right-rag their sector, account
     # and currency cells against a hard edge. The opt-out has to exist AND be

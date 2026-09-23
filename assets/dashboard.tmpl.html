@@ -795,6 +795,8 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
   <section class="pane mid">
     <div class="symhead" id="symhead"></div>
     <div class="ranges" id="ranges">
+      <button class="rbtn" data-d="1" title="Today, 5-minute candles">1D</button>
+      <button class="rbtn" data-d="5" title="Five sessions, 15-minute candles">5D</button>
       <button class="rbtn" data-d="30">1M</button>
       <button class="rbtn" data-d="91">3M</button>
       <button class="rbtn" data-d="182">6M</button>
@@ -2757,7 +2759,7 @@ function paintBehaviour(r) {
 
 /* ----------------------------------------------------------------- chart */
 
-let chart = null, candles = null, lines = [], mas = {}, chartKey = null;
+let chart = null, candles = null, lines = [], mas = {}, chartKey = null, chartLen = 0;
 
 /* Simple moving average over closes, as a rolling sum - one pass, no window
    re-summing, so 500 bars costs 500 additions rather than 25,000.
@@ -2836,6 +2838,63 @@ const candleOpts = (T) => ({
   wickUpColor:T.upColor, wickDownColor:T.downColor,
 });
 
+// Intraday candles for the 1D and 5D ranges. The daily series moves one bar in
+// ~250 when a quote lands, so a year-wide chart looks frozen while the price
+// beside it ticks. These are Yahoo's own five- and fifteen-minute bars, fetched
+// for the one symbol on screen and refetched at most once per poll, so the
+// chart draws real up and down candles as the session trades.
+//
+// Held apart from D.history for the same reason LIVEBAR is: live figures never
+// overwrite recorded ones. A failed refetch keeps the last good bars and says
+// so; it never blanks a chart that was drawing a moment ago.
+const INTRA = new Map();          // 'sym|days' -> {bars, interval, error, at, tried}
+const INTRA_PENDING = new Set();
+const INTRA_ON = location.protocol === 'http:' || location.protocol === 'https:';
+const INTRA_STALE_MS = 55000;     // just under the 60s poll, so every tick refetches
+const intraKey = (sym, days) => sym + '|' + days;
+
+async function intraFetch(sym, days) {
+  const k = intraKey(sym, days);
+  if (!INTRA_ON || !sym || INTRA_PENDING.has(k)) return;
+  INTRA_PENDING.add(k);
+  const prev = INTRA.get(k);
+  let got;
+  try {
+    const res = await fetch('/api/bars', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({symbol: sym, range: days === 5 ? '5d' : '1d'}),
+    });
+    if (!res.ok) throw new Error('bars endpoint returned ' + res.status);
+    const j = await res.json();
+    // Re-checked here, not trusted from the endpoint: a zero or a null that
+    // got through would draw a wick to the floor.
+    const bars = (Array.isArray(j.bars) ? j.bars : []).filter((b) => Array.isArray(b)
+      && b.length >= 5 && b.slice(0, 5).every((v) => typeof v === 'number' && v > 0));
+    got = (!bars.length && prev && prev.bars.length)
+      ? Object.assign({}, prev, {error: j.error || 'empty refetch', tried: Date.now()})
+      : {bars, interval: j.interval || '', error: bars.length ? null : (j.error || 'no bars'),
+         at: new Date(), tried: Date.now()};
+  } catch (e) {
+    const why = (e && e.message) || 'intraday unavailable';
+    got = prev && prev.bars.length
+      ? Object.assign({}, prev, {error: why, tried: Date.now()})
+      : {bars: [], interval: '', error: why, at: null, tried: Date.now()};
+  } finally {
+    INTRA_PENDING.delete(k);
+  }
+  INTRA.set(k, got);
+  if (state.sym === sym && state.days === days && state.view === 'positions') {
+    const r = ROWS.find((x) => x.sym === sym);
+    if (r) paintChart(r);
+  }
+}
+
+// Yahoo's timestamps are UTC seconds and the chart library labels them as UTC.
+// Shifted by the viewer's own offset so an Amsterdam open reads 09:00, not 07:00.
+const localSec = (t) => t - new Date(t * 1000).getTimezoneOffset() * 60;
+const hhmm = (d) => d ? d.toTimeString().slice(0, 5) : '';
+
 function paintChart(r) {
   const box = $('#chart'), miss = $('#nochart');
   // The library is vendored, not fetched, so this only fires if assets/ was
@@ -2875,6 +2934,22 @@ function paintChart(r) {
   }
   miss.style.display = 'none';
 
+  // 1D and 5D draw intraday bars when there are some; otherwise they fall back
+  // to the last month of daily candles and the note under the chart says why.
+  const intraday = state.days === 1 || state.days === 5;
+  let ibars = null, inote = null;
+  if (intraday) {
+    const got = INTRA.get(intraKey(r.sym, state.days));
+    if (!INTRA_ON) {
+      inote = 'Intraday candles need the live page; showing the last month of daily candles';
+    } else {
+      if (!got || Date.now() - got.tried > INTRA_STALE_MS) intraFetch(r.sym, state.days);
+      if (got && got.bars.length) ibars = got;
+      else if (!got) inote = 'Loading intraday candles; daily candles meanwhile';
+      else inote = `No intraday data for ${r.label} (${got.error}); showing daily candles`;
+    }
+  }
+
   const T = themeOpts();
   if (!chart) {
     chart = LightweightCharts.createChart(box, Object.assign({
@@ -2896,9 +2971,10 @@ function paintChart(r) {
   // Slice by DATE, not by row count. Bars are trading days - about 252 a year -
   // so bars.slice(-365) is fifteen months of chart under a button labelled 1Y.
   let slice = bars;
-  if (state.days > 0) {
+  const span = intraday ? 30 : state.days;
+  if (span > 0) {
     const last = Date.parse(bars[bars.length - 1][0]);
-    const from = last - state.days * 86400000;
+    const from = last - span * 86400000;
     slice = bars.filter((b) => Date.parse(b[0]) >= from);
   }
   if (!slice.length) slice = bars.slice(-2);
@@ -2907,11 +2983,21 @@ function paintChart(r) {
   // moving price was unusable exactly while the price was moving. Same symbol,
   // same range, same overlays: keep their view and let only the last candle
   // move. Anything they changed themselves still gets a fresh fit.
-  const viewKey = [r.sym, state.days, state.ma[50], state.ma[200]].join('|');
-  const keep = viewKey === chartKey ? chart.timeScale().getVisibleLogicalRange() : null;
+  const viewKey = [r.sym, state.days, ibars ? 'i' : 'd', state.ma[50], state.ma[200]].join('|');
+  let keep = viewKey === chartKey ? chart.timeScale().getVisibleLogicalRange() : null;
+  const drawn = ibars ? ibars.bars.length : slice.length;
+  // A new five-minute bar arriving while the reader is looking at the right
+  // edge scrolls the view along with it, the way a trading screen does. Parked
+  // anywhere else, the view stays where they put it.
+  if (keep && keep.to >= chartLen - 1.5 && drawn > chartLen) {
+    keep = {from: keep.from + (drawn - chartLen), to: keep.to + (drawn - chartLen)};
+  }
   chartKey = viewKey;
-  candles.setData(slice.map((b) => ({time:b[0], open:b[1], high:b[2],
-                                     low:b[3], close:b[4]})));
+  chartLen = drawn;
+  chart.applyOptions({timeScale: {timeVisible: !!ibars, secondsVisible: false}});
+  candles.setData(ibars
+    ? ibars.bars.map((b) => ({time:localSec(b[0]), open:b[1], high:b[2], low:b[3], close:b[4]}))
+    : slice.map((b) => ({time:b[0], open:b[1], high:b[2], low:b[3], close:b[4]})));
 
   // Full-history MA, then clipped to the window. ISO dates compare correctly as
   // strings, so no parsing is needed here. A symbol with fewer than `period`
@@ -2919,7 +3005,9 @@ function paintChart(r) {
   const edge = slice[0][0];
   for (const p of [50, 200]) {
     if (!mas[p]) continue;
-    mas[p].setData(state.ma[p] ? sma(bars, p).filter((pt) => pt.time >= edge) : []);
+    // A daily average has no place on a five-minute axis: it would be one
+    // flat step per session. Off while intraday bars are drawn.
+    mas[p].setData(state.ma[p] && !ibars ? sma(bars, p).filter((pt) => pt.time >= edge) : []);
   }
 
   lines.forEach((l) => { try { candles.removePriceLine(l); } catch (e) {} });
@@ -2947,7 +3035,13 @@ function paintChart(r) {
   if (note) {
     const tail = bars[bars.length - 1];
     const merged = r.freshness === 'live' && LIVEBAR.has(r.sym);
-    note.textContent = merged
+    if (ibars) {
+      const lastT = new Date(ibars.bars.at(-1)[0] * 1000);
+      note.textContent = `${ibars.interval.replace('m', '-minute')} candles, last ${hhmm(lastT)}`
+        + (ibars.error ? ` · refresh failed at ${hhmm(new Date(ibars.tried))}, holding the last good bars`
+                       : ` · fetched ${hhmm(ibars.at)}`);
+    } else if (inote) note.textContent = inote;
+    else note.textContent = merged
       ? `Last candle ${tail[0]}, still forming · ${
           LIVE && LIVE.at ? LIVE.at.toTimeString().slice(0, 5) : 'live'}`
       : `Last candle ${tail[0]}, as at the build`;
