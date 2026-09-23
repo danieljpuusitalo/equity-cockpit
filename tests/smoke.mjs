@@ -75,6 +75,10 @@ globalThis.getComputedStyle = () => ({ getPropertyValue: () => '' });
 globalThis.addEventListener = () => {};
 globalThis.innerWidth = 1200;
 globalThis.innerHeight = 800;
+// The page routes on the hash and only polls for live prices over http(s), so
+// a file: location opens it on the default view with the live layer asleep.
+globalThis.location = { hash: '', protocol: 'file:' };
+globalThis.history = { pushState() {}, replaceState() {} };
 
 /* The page only paints the first row at load, so running it as-is tests one
    name out of thirty-six. This walks every one of them - a section that throws
