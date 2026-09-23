@@ -1198,6 +1198,29 @@ def selftest():
     check("config: every ISIN has a bucket", not unbucketed,
           ", ".join(p["tunnus"] for p in unbucketed))
 
+    # The rendered file is deployed. Build a payload from the REAL book - so the
+    # search below looks for numbers that actually exist - and fail if any
+    # account number reaches it, as a key or as a value (an unlabelled account
+    # falls back to its number as the `account` label). Nothing is written.
+    acct_nos = {p["account_no"] for p in positions if p.get("account_no")}
+    try:
+        blob = json.dumps(render.payload(
+            [dict(p, value_eur=p["nordnet_mv_eur"]) for p in positions],
+            [], [], {}, {}, {},
+            activity={"changes": [dict(p) for p in positions[:1]]}),
+            default=str)
+        seen = sorted(n for n in acct_nos if n in blob)
+        keyed = '"account_no"' in blob
+        check("privacy: no account number reaches the page",
+              bool(acct_nos) and not seen and not keyed,
+              "no real account numbers to search for" if not acct_nos
+              else f"payload carries {len(seen)} account number(s)"
+              + (" and the account_no key" if keyed else "") if seen or keyed
+              else f"{len(acct_nos)} searched for, none present")
+    except Exception as exc:
+        check("privacy: no account number reaches the page", False,
+              f"payload failed to build: {exc}")
+
     # Yahoo 404s a fund on the earnings endpoint, so a fund that slipped into
     # this cache means the caller's class filter has broken and every run is
     # buying guaranteed failures. Reads the cache rather than the network:

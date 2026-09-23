@@ -20,6 +20,23 @@ TEMPLATE = C.ROOT / "assets" / "dashboard.tmpl.html"
 CHARTLIB = C.ROOT / "assets" / "lightweight-charts.standalone.production.js"
 
 
+# Keys the analysis joins on and the page never reads. The rendered file is
+# deployed, so anything left in the payload is published behind the gate even
+# though nothing on screen shows it. Custody identity reaches the page as the
+# `account` label; the number stays in Python.
+PRIVATE_KEYS = frozenset({"account_no"})
+
+
+def _scrub(obj):
+    """Drop PRIVATE_KEYS at every depth, so a section added later cannot carry
+    one onto the page by being built from a position row."""
+    if isinstance(obj, dict):
+        return {k: _scrub(v) for k, v in obj.items() if k not in PRIVATE_KEYS}
+    if isinstance(obj, list):
+        return [_scrub(v) for v in obj]
+    return obj
+
+
 def payload(positions_valued, watchlist, alerts, health, fx, sources,
             history=None, coverage=None, book_return=None, indicators=None,
             exposure=None, reporting=None, activity=None):
@@ -44,7 +61,7 @@ def payload(positions_valued, watchlist, alerts, health, fx, sources,
         "irr_since": (book_return or {}).get("since"),
         "irr_note": (book_return or {}).get("note"),
     }
-    return {
+    return _scrub({
         "generated": dt.datetime.now().isoformat(timespec="seconds"),
         "holdings": holdings,
         "watchlist": watchlist,
@@ -103,7 +120,7 @@ def payload(positions_valued, watchlist, alerts, health, fx, sources,
             "csv_stale_days": C.CSV_STALE_DAYS,
             "run_stale_days": C.RUN_STALE_DAYS,
         },
-    }
+    })
 
 
 def write(data, out_dir=None):
