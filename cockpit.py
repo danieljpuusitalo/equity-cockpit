@@ -1284,6 +1284,15 @@ def selftest():
               f"in the cache: {', '.join(leaked)}" if leaked
               else f"{n} stocks cached, no funds")
 
+    # The page's own script, executed. Every check above reads the template as
+    # text; this one runs it, under tests/smoke.mjs, against the last real
+    # book re-rendered through the CURRENT template - so a template edit is
+    # tested before the next refresh, not after it. Smoke also carries the
+    # DERIVE parity check and the look-through's negative control, and twice
+    # rotted unseen while nothing ran it. Offline: it reuses the payload the
+    # last run embedded in out/dashboard.html, and renders into a temp dir.
+    check("page: the script runs clean on the last real book", *page_smoke())
+
     level, kind = analyse.parse_trigger("Price below USD 285 does the same")
     check("analyse: trigger parser", (level, kind) == (285.0, "below"),
           f"got {level} {kind}")
@@ -1314,6 +1323,43 @@ def selftest():
         print(f"  {'PASS' if ok else 'FAIL'}  {name.ljust(width)}  {detail}")
     print(f"\n  {len(checks) - failed}/{len(checks)} passed")
     return failed
+
+
+def page_smoke():
+    """(ok, detail) from tests/smoke.mjs on the last payload, current template.
+
+    A payload built by older Python can disagree with a newer port; the fix
+    for that is a `refresh`, and the detail says so rather than hiding it.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+    page = C.OUT / "dashboard.html"
+    if not page.exists():
+        return False, "no out/dashboard.html to take a payload from - run refresh once"
+    node = shutil.which("node")
+    if not node:
+        return False, "node is not on PATH"
+    html = page.read_text(encoding="utf-8")
+    m = re.search(r"const D = (\{.*?\});\n", html, re.S)
+    if not m:
+        return False, "out/dashboard.html carries no payload"
+    try:
+        data = json.loads(m.group(1).replace("<\\/", "</"))
+    except ValueError as exc:
+        return False, f"payload in out/dashboard.html does not parse: {exc}"
+    smoke = Path(__file__).resolve().parent / "tests" / "smoke.mjs"
+    with tempfile.TemporaryDirectory() as tmp:
+        html_path, _ = render.write(data, Path(tmp))
+        p = subprocess.run([node, str(smoke), str(html_path)],
+                           capture_output=True, text=True, encoding="utf-8")
+    out = (p.stdout + p.stderr).strip().splitlines()
+    if p.returncode != 0:
+        detail = " | ".join(line.strip() for line in out[:4])
+        return False, (detail.replace(str(html_path), "page")
+                       + " (payload from " + str(data.get("generated"))
+                       + "; if the Python changed since, refresh first)")
+    return True, out[-1].split("· ", 1)[-1] if out else "ran"
 
 
 # ------------------------------------------------------------------- doctor
