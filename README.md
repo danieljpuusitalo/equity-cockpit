@@ -185,11 +185,21 @@ notify.py       Telegram, with dedupe and cooldown
 cockpit.py      the entry point: run | refresh | selftest | doctor | sync-notion
 run.ps1         interpreter-pinned wrapper — what the scheduler calls
 install-task.ps1  registers/removes the two scheduled tasks
-assets/         the dashboard template + the vendored chart library
+assets/         the dashboard shell + the vendored chart library
+assets/app/     the page's CSS and JS, one file per concern, pasted into the shell
 state/          caches, heartbeat, run log, history, alerts already seen
 out/            the generated dashboard and its JSON
 tests/          23 offline tests, plus a DOM smoke harness for the page
 ```
+
+The page is still one self-contained file. `assets/dashboard.tmpl.html` holds
+the markup and one `/*@app name*/` line per part; `render.template_source()`
+pastes each `assets/app/` file in at its line, verbatim, in the order
+`render.APP_PARTS` declares. The JS is a single script scope, so order is
+meaning: a part may use what an earlier part defined. Adding a file means
+adding it to `APP_PARTS` and to the shell - `selftest` refuses a part that is
+listed in one and not the other, and a file nothing includes. Every template
+check, and `tools/palette_check.py`, reads the assembled text, never a part.
 
 `assets/lightweight-charts.standalone.production.js` is TradingView's chart
 library (Apache-2.0), **vendored on purpose**: it is inlined into the output, so

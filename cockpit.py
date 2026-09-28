@@ -609,7 +609,7 @@ _KNOWN_EIGHT = {
     "12345678", "87654321",          # portfolio.example.json, the documented fakes
     "11111111", "22222222", "99999999",   # test fixtures, visibly not real
     "00000000",                      # the all-zero UUID in the example file
-    "86400000",                      # milliseconds in a day (dashboard.tmpl.html)
+    "86400000",                      # milliseconds in a day (assets/app/core.js)
 }
 
 
@@ -763,7 +763,16 @@ def selftest():
 
     check("config: project folder exists", C.PROJECT_DIR.exists(), str(C.PROJECT_DIR))
     check("config: template present", render.TEMPLATE.exists(), str(render.TEMPLATE))
-    tmpl = render.TEMPLATE.read_text(encoding="utf-8") if render.TEMPLATE.exists() else ""
+    # Every guard below reads the assembled page, never a part file: a guard
+    # that passed against a part the shell had stopped including would be
+    # vouching for code the page does not run.
+    try:
+        tmpl = render.template_source()
+        check("assets: every app part assembled once, in order", True,
+              f"{len(render.APP_PARTS)} parts, {len(tmpl.splitlines())} lines")
+    except Exception as exc:                       # noqa: BLE001 - report, never crash
+        tmpl = ""
+        check("assets: every app part assembled once, in order", False, str(exc))
     check("config: template has data marker", render.MARKER in tmpl)
     check("config: template has chart-lib marker", render.LIB_MARKER in tmpl)
     # Vendored, not linked. If this file goes missing the page still opens but
@@ -817,8 +826,8 @@ def selftest():
     drawer = []
     if 'id="t-sheet"' in nav_block:
         drawer.append("the data trigger is back inside the view nav")
-    if 'aria-expanded' not in tmpl.split('id="t-sheet"')[0][-200:] \
-            and 'aria-expanded' not in tmpl.split('id="t-sheet"')[1][:200]:
+    before, _, after = tmpl.partition('id="t-sheet"')
+    if 'aria-expanded' not in before[-200:] and 'aria-expanded' not in after[:200]:
         drawer.append("the data trigger no longer says aria-expanded")
     check("assets: data is a drawer, not a third tab", not drawer,
           "; ".join(drawer) if drawer
@@ -1259,7 +1268,9 @@ def selftest():
               not res.failures,
               "; ".join(res.failures[:3]) if res.failures
               else f"{len(res.rows)} checks across both modes, all pass")
-    except Exception as exc:                       # noqa: BLE001 - report, never crash
+    # SystemExit too: read_tokens exits on a missing block, because it is also a
+    # command-line tool, and uncaught that ended the whole selftest mid-run.
+    except (Exception, SystemExit) as exc:         # noqa: BLE001 - report, never crash
         check("assets: palette still separable", False, f"checker failed: {exc}")
 
     # A placeholder target that renders as a bare number IS a policy to whoever
@@ -1403,7 +1414,10 @@ def page_smoke():
         return False, f"payload in out/dashboard.html does not parse: {exc}"
     smoke = Path(__file__).resolve().parent / "tests" / "smoke.mjs"
     with tempfile.TemporaryDirectory() as tmp:
-        html_path, _ = render.write(data, Path(tmp))
+        try:
+            html_path, _ = render.write(data, Path(tmp))
+        except RuntimeError as exc:
+            return False, f"the template does not render: {exc}"
         p = subprocess.run([node, str(smoke), str(html_path)],
                            capture_output=True, text=True, encoding="utf-8")
     out = (p.stdout + p.stderr).strip().splitlines()

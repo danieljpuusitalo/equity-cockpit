@@ -1,0 +1,106 @@
+/* Palette note: every colour below is checked by `py tools/palette_check.py`
+   in BOTH modes - lightness band, chroma floor, CVD separation, normal-vision
+   floor, mark contrast vs every surface it lands on, and WCAG AA for anything
+   used as text. Do not hand-tune them; change a value and re-run the checker,
+   which is also wired into `run.ps1 selftest`.
+
+   Gain is green and loss is red EVERYWHERE - text, treemap tiles, bars and
+   candle bodies. That was not true before: signed numbers were green/red while
+   the bar beside them was blue/red, so a single row said both things at once.
+
+   Moving the candles onto green put them on the same plot as the green target
+   line, so the check is now all six pairs among the four plotted hues, not the
+   two it used to be. Target and trigger additionally differ by line style and
+   carry axis labels, so that pair is never colour-alone. Nothing else on the
+   page leans on hue by itself either: down-candles are hollow, the treemap
+   keeps its sign glyph, and the diverging bars have a real zero axis. */
+:root{
+  color-scheme: light;
+  --surface-1:#fcfcfb; --surface-2:#f4f4f1; --plane:#f9f9f7;
+  --ink:#0b0b0b; --ink-2:#52514e; --muted:#6f6d67;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.11);
+  --up:#2f9e63; --down:#8c2a34;
+  --target:#4a55c8; --trigger:#8f6900;
+  --pos:#2f9e63; --neg:#8c2a34;
+  --good:#2f9e63; --warn:#fab219; --serious:#ec835a; --crit:#d03b3b;
+  --good-ink:#166b46; --warn-ink:#8a6000; --crit-ink:#9b2731;
+  --accent:#4a55c8;
+}
+@media (prefers-color-scheme: dark){ :root:where(:not([data-theme="light"])){
+  color-scheme: dark;
+  --surface-1:#1a1a19; --surface-2:#232322; --plane:#0d0d0d;
+  --ink:#e8e6e2; --ink-2:#c3c2b7; --muted:#8f8d86;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.11);
+  --up:#5bd39b; --down:#d24f3a;
+  --target:#3987e5; --trigger:#eda01d;
+  --pos:#5bd39b; --neg:#d24f3a;
+  --good:#5bd39b; --warn:#e0a72c; --serious:#e2825a; --crit:#e05a5a;
+  --good-ink:#63d8a2; --warn-ink:#e0a72c; --crit-ink:#ec7d67;
+  --accent:#3987e5;
+}}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --surface-1:#1a1a19; --surface-2:#232322; --plane:#0d0d0d;
+  --ink:#e8e6e2; --ink-2:#c3c2b7; --muted:#8f8d86;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.11);
+  --up:#5bd39b; --down:#d24f3a;
+  --target:#3987e5; --trigger:#eda01d;
+  --pos:#5bd39b; --neg:#d24f3a;
+  --good:#5bd39b; --warn:#e0a72c; --serious:#e2825a; --crit:#e05a5a;
+  --good-ink:#63d8a2; --warn-ink:#e0a72c; --crit-ink:#ec7d67;
+  --accent:#3987e5;
+}
+
+/* Type, spacing and shape. These are mode-independent, so they sit in their
+   own block rather than being repeated in all three palette blocks.
+
+   The page had 15 font sizes, 10 weights and 10 radii before this. Not 15
+   deliberate sizes - 9 of them formed a half-pixel staircase (10, 10.5, 11,
+   11.5, 12, 12.5, 13, 13.5, 14) carrying 88% of all declarations, which is
+   what a scale looks like when every rule picked its own number. Four separate
+   sizes were doing the single job of "the big number".
+
+   Collapsed to six steps plus a caret size. Half-pixels are kept where they
+   were already load-bearing: this renders at fractional DPI and 11.5px is a
+   real, distinct size, not a typo. What is gone is the neighbouring value
+   nobody could tell apart from it. */
+:root{
+  --font-ui: system-ui,-apple-system,"Segoe UI",sans-serif;
+  /* Numbers get tabular figures via .num; the family is the same, so a price
+     and its label never disagree about shape. */
+  --t-1:10.5px;  /* micro caps: column group labels, badges, estimate marks */
+  --t-2:11.5px;  /* table cells, chips, secondary text */
+  --t-3:12.5px;  /* body and default control text */
+  --t-4:13.5px;  /* emphasised row text: ticker, company, change */
+  --t-5:18px;    /* section heading */
+  --t-6:22px;    /* display: the one number a card exists to show */
+  --t-caret:9px; /* the sort/disclosure glyphs, which are icons not type */
+
+  --w-med:560; --w-semi:640; --w-bold:700;
+
+  /* Fitted to the page's own histogram rather than to a ratio: 13 distinct gap
+     values clustered around 2, 4, 6, 10 and 14, so those are the steps. A
+     tidier 4/8/16/24 scale would have moved almost every gap on the page to
+     serve an idea of neatness no reader can see.
+     Multi-value paddings are left alone here - `padding:7px 8px` is component
+     geometry, not rhythm, and is set where each component is defined. */
+  --s-1:2px; --s-2:4px; --s-3:6px; --s-4:10px; --s-5:14px; --s-6:20px;
+  /* That histogram was taken from the stylesheet, and the stylesheet is not
+     where all the spacing lives: a dozen gaps between a block and the note
+     explaining it are inline styles inside JS template strings, hardcoded at
+     8px or 9px, invisible to anything reading the CSS. It is one interval used
+     one way, so it gets one name rather than a new rung on a scale that was
+     fitted without it. */
+  --s-note:8px;
+
+  /* Line height was eight ad hoc values between 1.05 and 1.5 with no token, so
+     two cards showing the same kind of thing set it differently by accident.
+     Four steps, chosen by what the text IS rather than by how big it is. */
+  --lh-num:1.08;   /* display figures - the one number a card exists to show */
+  --lh-tight:1.2;  /* headings and labels that must not open up */
+  --lh:1.4;        /* table cells, captions, short secondary text */
+  --lh-loose:1.5;  /* prose meant to be read as sentences */
+
+  --r-sm:3px; --r-md:7px; --r-lg:10px; --r-pill:999px;
+}
+

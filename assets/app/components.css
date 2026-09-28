@@ -1,0 +1,575 @@
+/* ------------------------------------------------------------------ tape */
+/* Wraps at every width rather than at a breakpoint. The meta chip is as long as
+   the book is wide - at 955px it measured 769px on its own, which pushed the view
+   nav to left:1133 and the theme button to 1380, both off a 955px screen. That is
+   not a cosmetic overflow: Positions became unreachable. A guessed breakpoint
+   would only move where it happens, so the bar is allowed to take a second row
+   whenever the facts do not fit, and min-height keeps it at one row when they do. */
+.tape{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-3) var(--s-6);
+  min-height:52px;flex:none;padding:8px 16px;
+  background:var(--surface-1);border-bottom:1px solid var(--border);
+  position:relative;z-index:5}
+.brand{font-size:var(--t-2);font-weight:var(--w-bold);letter-spacing:.14em;color:var(--muted);
+  white-space:nowrap}
+.tape .big{font-size:var(--t-6);font-weight:var(--w-semi);letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums}
+.chip{display:inline-flex;align-items:center;gap:var(--s-3);font-size:var(--t-3);
+  color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip b{font-weight:var(--w-semi);color:var(--ink)}
+/* The meta chip is the one that has to give. Block flow rather than inline-flex
+   so it breaks at the separators and nowhere else - each fact is a .f that stays
+   whole, so a line never ends with "24" and starts with "held". */
+#t-meta{display:block;white-space:normal;min-width:0;line-height:var(--lh-loose)}
+#t-meta .f{white-space:nowrap}
+.sep{width:1px;height:22px;background:var(--border);flex:none}
+/* No flex spacer: under wrap a spacer eats the rest of its own line and pushes
+   whatever follows it onto a line of its own, which stranded the theme button
+   three rows down. An auto margin does the same right-alignment per line while
+   leaving the nav and the button adjacent, so the controls travel together. */
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.tbtn{padding:5px 11px;border:1px solid var(--border);border-radius:var(--r-md);
+  font-size:var(--t-3);color:var(--ink-2)}
+.tbtn:hover{background:var(--surface-2);color:var(--ink)}
+.tbtn[aria-pressed="true"]{background:var(--surface-2);color:var(--ink);
+  border-color:var(--axis)}
+/* The drawer trigger carries a caret so it reads as "this opens something over
+   the page" before it is pressed, rather than as one more toggle. The caret
+   turns when the drawer is up, which is the only state the button has: it is
+   not a tab and has no selected state to show. */
+.drawer::after{content:"\203A";margin-left:var(--s-2);display:inline-block;
+  transition:transform .12s ease;color:var(--muted)}
+.drawer[aria-expanded="true"]::after{transform:rotate(90deg)}
+.drawer[aria-expanded="true"]{background:var(--surface-2);color:var(--ink);
+  border-color:var(--axis)}
+
+/* --------------------------------------------------------------- banner */
+.banner{display:flex;align-items:flex-start;gap:var(--s-4);padding:9px 16px;flex:none;
+  font-size:var(--t-3);border-bottom:1px solid var(--border);background:var(--surface-2)}
+.banner .dot{margin-top:5px}
+.banner b{font-weight:var(--w-semi)}
+.banner .why{color:var(--ink-2)}
+
+/* ----------------------------------------------------------------- grid */
+.app{display:grid;grid-template-columns:264px minmax(0,1fr) 336px;
+  flex:1;min-height:0}
+.pane{min-width:0;min-height:0;display:flex;flex-direction:column;
+  background:var(--surface-1)}
+.pane + .pane{border-left:1px solid var(--border)}
+.mid{background:var(--plane)}
+.phead{display:flex;align-items:center;gap:var(--s-4);padding:10px 12px;flex:none;
+  border-bottom:1px solid var(--border)}
+.ptitle{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.12em;color:var(--muted)}
+.pbody{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden}
+
+/* ----------------------------------------------------------------- rail */
+.search{width:100%;padding:6px 9px;border:1px solid var(--border);border-radius:var(--r-md);
+  background:var(--plane);color:var(--ink);font:var(--t-3) var(--font-ui);outline:none}
+.search:focus{border-color:var(--accent)}
+.segs{display:flex;gap:var(--s-2);padding:8px 12px 4px;flex:none}
+.seg{flex:1;padding:4px 0;border-radius:var(--r-md);font-size:var(--t-2);font-weight:var(--w-semi);
+  color:var(--muted);text-align:center;border:1px solid transparent}
+.seg[aria-pressed="true"]{background:var(--surface-2);color:var(--ink);
+  border-color:var(--border)}
+.row{display:grid;grid-template-columns:1fr auto;gap:var(--s-1) 8px;align-items:center;
+  padding:7px 12px 7px 9px;border-left:3px solid transparent;cursor:pointer;
+  border-bottom:1px solid var(--grid)}
+.row:hover{background:var(--surface-2)}
+.row[aria-selected="true"]{background:var(--surface-2);border-left-color:var(--accent)}
+.row .sym{font-size:var(--t-4);font-weight:var(--w-semi);display:flex;align-items:center;gap:var(--s-2)}
+/* A hollow ring beside the filled alert dot. "Nothing is watching this" is not
+   a severity, so it gets no colour - it gets the absence of one, which is also
+   the only mark on the rail that survives every kind of colour blindness. */
+.ring{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--axis);
+  box-sizing:border-box;flex:none}
+.row .co{grid-column:1;font-size:var(--t-2);color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .px{font-size:var(--t-3);font-variant-numeric:tabular-nums;text-align:right}
+.row .chg{grid-column:2;font-size:var(--t-2);font-variant-numeric:tabular-nums;text-align:right}
+.empty{padding:22px 14px;color:var(--muted);font-size:var(--t-3)}
+
+/* ------------------------------------------------------------------ mid */
+.symhead{display:flex;align-items:baseline;gap:var(--s-5);padding:12px 16px 10px;
+  flex:none;flex-wrap:wrap}
+.symhead .tk{font-size:var(--t-6);font-weight:var(--w-bold);letter-spacing:-.02em}
+.symhead .co{color:var(--ink-2);font-size:var(--t-4)}
+.symhead .px{font-size:var(--t-6);font-weight:var(--w-semi);font-variant-numeric:tabular-nums;
+  margin-left:auto}
+.symhead .chg{font-size:var(--t-4);font-variant-numeric:tabular-nums}
+.ranges{display:flex;align-items:center;gap:var(--s-2);padding:0 16px 8px;flex:none}
+.rbtn{padding:3px 10px;border-radius:var(--r-md);font-size:var(--t-2);font-weight:var(--w-semi);
+  color:var(--muted);border:1px solid transparent}
+.rbtn:hover{color:var(--ink)}
+.rbtn[aria-pressed="true"]{background:var(--surface-1);color:var(--ink);
+  border-color:var(--border)}
+.rsep{width:1px;height:14px;background:var(--border);margin:0 6px;flex:none}
+.legend{display:flex;gap:var(--s-5);margin-left:auto;font-size:var(--t-2);color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:var(--s-2)}
+.swatch{width:14px;height:0;border-top-width:2px;border-top-style:solid;flex:none}
+.chartbox{flex:1;min-height:180px;margin:0 12px;position:relative;
+  background:var(--surface-1);border:1px solid var(--border);border-radius:var(--r-lg);
+  overflow:hidden}
+.nochart{position:absolute;inset:0;display:flex;align-items:center;
+  justify-content:center;color:var(--muted);font-size:var(--t-3);text-align:center;
+  padding:20px}
+
+/* --------------------------------------------------------- weight strip */
+.strip{flex:none;padding:10px 12px 12px}
+.striphead{display:flex;align-items:baseline;gap:var(--s-4);margin-bottom:6px}
+.strip .ptitle{font-size:var(--t-1)}
+.striphead .note{font-size:var(--t-2);color:var(--muted);margin-left:auto}
+.bars{display:flex;gap:var(--s-1);height:34px;width:100%}
+.bar{min-width:3px;border-radius:var(--r-sm);background:var(--axis);cursor:pointer;
+  position:relative}
+.bar:hover{background:var(--ink-2)}
+.bar[data-sel="1"]{background:var(--accent)}
+
+/* --------------------------------------------------------------- thesis */
+.tsec{padding:12px 14px;border-bottom:1px solid var(--grid)}
+.tsec:last-child{border-bottom:0}
+.tlabel{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.12em;color:var(--muted);
+  margin-bottom:var(--s-note)}
+/* A block, and the note that explains it. Ten inline `margin-top:8px` and
+   `margin-top:9px` in JS template strings each said this independently, plus an
+   11px and a pair of margin-bottoms that meant the same thing in the other
+   direction. Two classes say it once, and a density or theme change can now
+   reach them - an inline style cannot be overridden by anything. */
+.under{margin-top:var(--s-note)}
+.over{margin-bottom:var(--s-note)}
+/* A run-in title between two blocks inside a section, spelled `margin:16px 0
+   7px` in one place and `18px 0 7px` in another. It is one thing. */
+.tlabel.run{margin:var(--s-6) 0 var(--s-3)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:var(--s-3) 12px;font-size:var(--t-3)}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:var(--w-med)}
+.prose{font-size:var(--t-3);line-height:var(--lh-loose);color:var(--ink-2);
+  overflow-wrap:anywhere}
+/* Three columns, because the point of the section is the gap between two of
+   them. A dt may be followed by more than one dd - this is that, not a hack. */
+.trio{display:grid;grid-template-columns:auto 1fr 1fr;gap:var(--s-3) 10px;font-size:var(--t-3);
+  align-items:baseline}
+.trio dt{color:var(--muted)}
+.trio dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:var(--w-med)}
+.trio .hd{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.08em;color:var(--muted);
+  text-transform:uppercase}
+.trio .was{font-weight:var(--w-med);color:var(--ink-2)}
+.drift{font-size:var(--t-2);color:var(--muted);margin-left:4px;font-weight:var(--w-med)}
+/* A bounded number reads badly as a decimal and well as a position. The two
+   faint ticks are the 30/70 lines; the mark is today. No colour: overbought is
+   a description, not an instruction, and red would make it one. */
+.meter{display:inline-block;width:64px;height:6px;border-radius:var(--r-sm);
+  background:var(--grid);position:relative;vertical-align:middle;margin-left:8px}
+.meter u{position:absolute;top:0;width:1px;height:6px;background:var(--muted)}
+.meter i{position:absolute;top:-2px;width:2px;height:10px;background:var(--ink);
+  border-radius:var(--r-sm);margin-left:-1px}
+.badge{display:inline-block;padding:1px 8px;border-radius:var(--r-pill);font-size:var(--t-2);
+  font-weight:var(--w-semi);border:1px solid var(--border)}
+.b-buy{background:color-mix(in srgb,var(--good) 15%,transparent);color:var(--good-ink)}
+.b-watch{background:var(--surface-2);color:var(--ink-2)}
+.b-trim{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn-ink)}
+.b-exit{background:color-mix(in srgb,var(--crit) 15%,transparent);color:var(--crit-ink)}
+.alert{display:flex;gap:var(--s-4);padding:8px 0;border-bottom:1px solid var(--grid);
+  font-size:var(--t-3)}
+.alert:last-child{border-bottom:0}
+.alert .dot{margin-top:5px}
+.alert .t{font-weight:var(--w-semi)}
+/* Clamped to three lines. Unclamped, seven flags ran the card to 798px against
+   Concentration's 188px beside it - 610px of dead column. The full text is on
+   the title and in the Flags table on the Data sheet; the card is the index. */
+.alert .d{color:var(--ink-2);font-size:var(--t-3);margin-top:2px;overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;
+  overflow:hidden}
+
+/* ----------------------------------------------------------- data sheet */
+.sheet{position:fixed;inset:0;z-index:20;background:var(--plane);
+  overflow:auto;padding:20px 22px 60px;display:none}
+.sheet[data-open="1"]{display:block}
+.sheet h2{font-size:var(--t-3);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);margin:26px 0 10px}
+.sheet h2:first-of-type{margin-top:14px}
+.sheethead{display:flex;align-items:center;gap:var(--s-4);flex-wrap:wrap}
+.sheethead h1{font-size:var(--t-5);font-weight:var(--w-semi);margin:0}
+.crumb{font-size:var(--t-2);color:var(--muted);margin-right:auto}
+.back::before{content:"\2039";margin-right:var(--s-2);color:var(--muted)}
+/* Right is the right default here: most columns are numbers, and numbers align
+   on their last digit or they cannot be compared down a column. What was wrong
+   was that nothing opted out, so every text column - sector, account, currency,
+   "judged by", "reached through" - was right-ragged against a hard edge and
+   had to be read from an unpredictable left margin. Hence .t. */
+table{width:100%;border-collapse:collapse;font-size:var(--t-3);
+  line-height:var(--lh);font-variant-numeric:tabular-nums}
+th{text-align:right;font-weight:var(--w-semi);color:var(--muted);font-size:var(--t-1);
+  letter-spacing:.05em;text-transform:uppercase;padding:0 8px 8px;
+  border-bottom:1px solid var(--axis);white-space:nowrap}
+th:first-child,td:first-child,th.t,td.t{text-align:left}
+td{padding:7px 8px;border-bottom:1px solid var(--grid);text-align:right;
+  white-space:nowrap}
+td.wrap{white-space:normal;min-width:260px}
+/* The sheet scrolls as one page, so a long table takes its header off screen
+   and the reader is left guessing which column they are in. Sticky inside the
+   scroller costs nothing and removes the guess. The background is opaque
+   because rows pass underneath it. */
+thead th{position:sticky;top:0;z-index:1;background:var(--plane)}
+.scroll{overflow-x:auto}
+
+/* ------------------------------------------------------------- exposure */
+/* Composition answers a share-of-whole question, so every bar is drawn
+   against a fixed 100% track rather than scaled to the largest row. A bar
+   normalised to its biggest neighbour turns 31% and 16% into 100% and 52%,
+   which is the one distortion a composition chart must not introduce. */
+.xgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
+  gap:var(--s-4);margin-bottom:4px}
+/* .xcard's own surface rule lived here and was a near-copy of .card's, which
+   itself was a byte-for-byte copy of .stat's. All three are now the one rule
+   further down; see the note there. Only the type inside differs, and only
+   .xcard's value weight actually differed on purpose, and that override sits
+   AFTER the shared rule rather than here - both selectors are (0,1,1), so
+   source order is the whole argument. Same trap as `.chip b` above. */
+/* Namespaced .xrow, not .bar: the weight strip up at line 154 already owns
+   .bar, and a second rule on that name silently reflowed it to a grid. */
+.xrow{display:grid;grid-template-columns:168px 1fr 66px;gap:var(--s-4);
+  align-items:center;padding:3px 0;font-size:var(--t-3);cursor:default;
+  border-radius:var(--r-sm)}
+/* Only a row that can actually filter something offers to be clicked. The
+   unresolved bar looks identical and is inert, so the cursor is the only
+   honest warning the reader gets before the click that does nothing. */
+.xrow[data-fk]{cursor:pointer}
+.xrow[data-fk]:hover{background:var(--surface-2)}
+.xrow[data-on="1"]{background:color-mix(in srgb,var(--accent) 13%,transparent)}
+.xrow .n{color:var(--ink-2);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;padding-left:5px}
+.xrow[data-on="1"] .n{color:var(--ink);font-weight:var(--w-semi)}
+.xrow .t{height:11px;border-radius:var(--r-sm);background:var(--grid);overflow:hidden;
+  display:flex}
+.xrow .f{height:100%;background:var(--accent)}
+/* A second tone, deliberately not a second hue. Direct and indirect are the
+   same exposure reached two ways; a contrasting colour would read as two
+   opposed things rather than one thing counted twice over. */
+.xrow .f2{height:100%;background:color-mix(in srgb,var(--accent) 38%,transparent)}
+.xrow .p{text-align:right;font-variant-numeric:tabular-nums;font-weight:var(--w-med);
+  padding-right:5px}
+/* The mass no source could place, drawn rather than footnoted. A composition
+   chart that silently omits what it could not resolve is the chart most
+   likely to be believed and least entitled to be. */
+.xrow.un{cursor:default}
+.xrow.un:hover{background:none}
+.xrow.un .n,.xrow.un .p{color:var(--muted)}
+.xrow.un .f{background:repeating-linear-gradient(135deg,var(--axis) 0 3px,
+  transparent 3px 7px)}
+.xkey{font-size:var(--t-2);color:var(--muted);margin:1px 0 10px}
+.xcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+  gap:0 26px}
+
+/* ------------------------------------------------------ sheet as a surface */
+/* The sheet used to be one long scroll of everything. A table you cannot
+   collapse, sort or filter is a printout, and a printout goes stale the
+   moment you want a different question answered. */
+.sheetnav{position:sticky;top:-20px;z-index:3;background:var(--plane);
+  padding:8px 0 9px;margin:0 0 4px;border-bottom:1px solid var(--grid);
+  display:flex;flex-wrap:wrap;gap:var(--s-3);align-items:center}
+.navb{font-size:var(--t-2);padding:4px 11px;border-radius:var(--r-pill);
+  border:1px solid var(--border);color:var(--ink-2);background:var(--surface-1)}
+.navb:hover{border-color:var(--axis);color:var(--ink)}
+.sheet h2{cursor:pointer;user-select:none;display:flex;align-items:center;gap:var(--s-3)}
+.sheet h2::before{content:"▾";font-size:var(--t-caret);color:var(--axis);
+  transition:transform .12s}
+.sheet h2[data-shut="1"]::before{transform:rotate(-90deg)}
+.sec[data-shut="1"]{display:none}
+/* One live filter, stated in words, clearable, and applied to every table it
+   can touch. A filter that is not visible is a lie the page tells quietly. */
+.xchip{display:inline-flex;align-items:center;gap:var(--s-3);font-size:var(--t-2);
+  padding:3px 6px 3px 11px;border-radius:var(--r-pill);margin-left:auto;
+  background:color-mix(in srgb,var(--accent) 15%,transparent);
+  color:var(--ink);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent)}
+.xchip b{font-weight:var(--w-semi)}
+.xchip button{font-size:var(--t-4);line-height:1;padding:0 4px;color:var(--ink-2)}
+.xchip button:hover{color:var(--ink)}
+.xsearch{font:inherit;font-size:var(--t-2);padding:4px 9px;border-radius:var(--r-pill);
+  border:1px solid var(--border);background:var(--surface-1);color:var(--ink);
+  width:170px;outline:none}
+.xsearch:focus{border-color:var(--accent)}
+.xtog{font-size:var(--t-2);padding:4px 10px;border-radius:var(--r-pill);
+  border:1px solid var(--border);color:var(--muted);background:var(--surface-1)}
+.xtog[aria-pressed="true"]{color:var(--ink);border-color:var(--axis);
+  background:var(--surface-2)}
+/* Sortable headers. The arrow marks the column actually in force, because a
+   table sorted by something other than what you last clicked is how a reader
+   ends up reading the wrong row as the biggest. */
+th.s{cursor:pointer;user-select:none}
+th.s:hover{color:var(--ink)}
+th.s[data-dir]::after{content:"▾";margin-left:4px;font-size:var(--t-caret)}
+th.s[data-dir="1"]::after{content:"▴"}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--surface-2)}
+tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
+.sheet .empty{font-size:var(--t-3);color:var(--muted);padding:10px 0}
+/* ------------------------------------------------------------- reporting */
+.cal{display:grid;grid-template-columns:70px 1fr;gap:0 14px;align-items:start}
+.calwk{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.09em;color:var(--muted);
+  text-transform:uppercase;padding:9px 0 0}
+.calbox{border-left:2px solid var(--grid);padding:0 0 12px 14px}
+.calbox.soon{border-left-color:var(--warn)}
+.calrow{display:flex;align-items:baseline;gap:var(--s-4);padding:5px 0;
+  font-size:var(--t-3);cursor:pointer;border-radius:var(--r-sm)}
+.calrow:hover{background:var(--surface-2)}
+.calrow .d{color:var(--muted);font-size:var(--t-2);width:52px;flex:none}
+.calrow .sym{font-weight:var(--w-semi);width:88px;flex:none}
+.calrow .co{color:var(--ink-2);flex:1;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.calrow .wt{font-variant-numeric:tabular-nums;color:var(--ink-2)}
+/* Yahoo's own "this date is extrapolated" flag, carried to the surface. A
+   guessed date printed beside a confirmed one with no mark is the
+   derived-status bug this repo keeps finding in its own display layer. */
+.est{font-size:var(--t-1);color:var(--muted);border:1px solid var(--border);
+  border-radius:var(--r-sm);padding:0 4px;font-weight:var(--w-semi)}
+.beat{color:var(--good-ink);font-weight:var(--w-semi)}
+.miss{color:var(--crit-ink);font-weight:var(--w-semi)}
+
+/* ------------------------------------------------------------------ views */
+/* Two top-level views, one surface each. The cockpit used to open on a single
+   position, which meant the first thing it showed you was one name out of
+   twenty-four and nothing about the book. Overview is the altitude above the
+   rail; Positions is the rail. The data sheet stays an overlay on both,
+   because it is an appendix to whichever one you are reading. */
+.view{display:flex;flex-direction:column;flex:1;min-height:0}
+.view[hidden]{display:none}
+/* The nav and the theme button are one group so a wrap can never put them on
+   separate lines. Auto-margin on the nav alone did exactly that: the nav took
+   the right of its line and the button fell to the next one, left-aligned. */
+.tctl{display:flex;align-items:center;gap:var(--s-6);margin-left:auto}
+.vnav{display:flex;gap:var(--s-1)}
+.vbtn{padding:4px 11px;border-radius:var(--r-md);font-size:var(--t-3);font-weight:var(--w-semi);
+  color:var(--muted);border:1px solid transparent;background:none}
+.vbtn:hover{color:var(--ink-2)}
+.vbtn[aria-pressed="true"]{background:var(--surface-2);color:var(--ink);
+  border-color:var(--border)}
+
+.ov{overflow-y:auto;flex:1;padding:14px 16px 28px;background:var(--surface-1)}
+
+/* Twelve fixed tracks, not auto-fit. Auto-fit decided the column count from the
+   viewport and the cards took whatever fell out: at 1920 it resolved to six,
+   which left Concentration alone on a row and Flags alone on the last one, with
+   five empty tracks beside each. Fixed tracks let the spans be declared, so the
+   rows close: 8+4, 4+4+4, 6+6, 12. The headline band above uses the same twelve
+   tracks (4 stats x 3) so a stat edge lines up with a card edge. */
+.ovgrid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
+  gap:var(--s-5);align-items:start}
+/* Scoped as children so each span class outranks the `> *` default rather than
+   merely following it. Without that, a later tier's default silently overrides
+   an earlier tier's explicit span - they tie on specificity and order decides. */
+.ovgrid > *{grid-column:span 4}
+.ovgrid > .ov-6{grid-column:span 6}
+.ovgrid > .ov-8{grid-column:span 8}
+.ovgrid > .ov-12{grid-column:span 12}
+/* One surface, three names.
+   .card and .stat were byte-identical apart from `min-width:0`, and .xcard was
+   the same box with a different radius and 1px less padding - three rules for
+   one idea, which is exactly the state in which a fourth gets added. The names
+   stay because they mean different things in the markup (a panel, a headline
+   figure, a composition card); what they no longer do is each redescribe a
+   bordered box.
+   The label/value/note triple was written out three times too, with
+   letter-spacing .1em against .11em and line-heights 1.05, 1.1, 1.35 and 1.4 -
+   differences nobody chose. One triple now, off the scale. */
+.card,.stat,.xcard{border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:11px 13px;background:var(--surface-1);min-width:0}
+.card .k,.stat .k,.xcard .k{font-size:var(--t-1);font-weight:var(--w-bold);
+  letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}
+.card .v,.stat .v,.xcard .v{font-size:var(--t-6);font-weight:var(--w-bold);
+  letter-spacing:-.02em;margin:var(--s-2) 0 var(--s-1);
+  font-variant-numeric:tabular-nums;line-height:var(--lh-num)}
+.card .s,.stat .s,.xcard .s{font-size:var(--t-2);color:var(--ink-2);
+  line-height:var(--lh)}
+/* The one difference that was a decision: a composition card's figure is a
+   share of the book, not a headline, and sits a weight below the band's. */
+.xcard .v{font-weight:var(--w-semi)}
+.card h3{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 9px;
+  display:flex;justify-content:space-between;gap:var(--s-4);align-items:baseline}
+.card h3 .rt{font-weight:var(--w-semi);letter-spacing:.02em;text-transform:none;
+  font-size:var(--t-2)}
+
+/* The headline band. Four numbers that describe the whole book, at a size that
+   says they are the headline - not a 12px strip in the chrome. */
+.ovtop{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
+  gap:var(--s-5);margin-bottom:13px}
+.ovtop > *{grid-column:span 4}
+/* .stat's own surface and label/value/note rules were here. They are the shared
+   rule above now - .stat is what the headline band's boxes are called, not a
+   fourth description of a bordered box. */
+
+/* ---------------------------------------------------------------- treemap */
+/* Rectangles arrive from Python already placed (see treemap.py). The page
+   positions them in percent and does no layout arithmetic of its own, so the
+   picture cannot drift from the numbers beside it. */
+/* The ratio is what the picture wants; the cap is what the page can spend. At
+   full width the 21:9 box grew to ~790px tall and pushed everything else below
+   the fold, so the card that answers "what do I own" was also the card that
+   hid the rest. Capped, the treemap is the tallest thing on the page and still
+   fits above the next row on a 1080 screen. */
+.tmap{position:relative;width:100%;aspect-ratio:21/9;min-height:230px;
+  max-height:520px;
+  background:var(--plane);border-radius:var(--r-md);overflow:hidden}
+.tile{position:absolute;overflow:hidden;padding:4px 6px;cursor:default;
+  border:1px solid var(--surface-1);border-radius:var(--r-sm);
+  display:flex;flex-direction:column;justify-content:flex-start}
+.tile[data-sym]{cursor:pointer}
+.tile[data-sym]:hover{outline:2px solid var(--ink);outline-offset:-2px;z-index:2}
+.tile .tt{font-size:var(--t-2);font-weight:var(--w-bold);color:var(--ink);line-height:var(--lh-tight);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .tw{font-size:var(--t-1);color:var(--ink-2);font-variant-numeric:tabular-nums;
+  line-height:var(--lh);white-space:nowrap}
+/* Two rungs, set by fitTiles against measured pixels. `sm` drops the weight
+   line, `xs` drops both. The old `xs` rule hid .tt and left .tw showing, so
+   the smallest tiles displayed a percentage with no ticker attached to it -
+   a number labelled by nothing, which is worse than no label at all. */
+.tile.sm .tw{display:none}
+.tile.xs .tt,.tile.xs .tw{display:none}
+.tmap.empty{display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:0 var(--s-6);color:var(--muted);font-size:var(--t-3)}
+.tmapkey{display:flex;gap:var(--s-5);align-items:center;flex-wrap:wrap;
+  font-size:var(--t-2);color:var(--muted);margin-top:7px}
+/* The key is a gradient because tone() is a continuous function. Seven discrete
+   swatches implied seven buckets, which is a claim about the tiles that is not
+   true - a tile at +7% and one at +14% are different colours, not one band. */
+.ramp{display:inline-block;height:9px;width:112px;border-radius:var(--r-sm);
+  border:1px solid var(--border)}
+
+/* ------------------------------------------------------------- list cards */
+/* A ranked list with a magnitude bar. The bar is scaled to the largest row in
+   the card, which is legitimate here because the question is "which of these
+   is biggest", not "what share of the whole is this" - the opposite of the
+   composition bars up at .xrow, and the reason they are different classes. */
+.lrow{display:grid;grid-template-columns:62px 1fr 74px;gap:var(--s-4);
+  align-items:center;padding:3px 0;font-size:var(--t-3);border-radius:var(--r-sm)}
+.lrow.click{cursor:pointer}
+.lrow.click:hover{background:var(--surface-2)}
+.lrow .t{font-weight:var(--w-semi);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.lrow .track{position:relative;height:13px;background:var(--surface-2);
+  border-radius:var(--r-sm);overflow:hidden}
+/* The zero line sat at left:50% width:1px and the bars started at exactly 50%
+   too, so the first bar painted over it every time - the axis was in the markup
+   and never once visible. Cutting a 2px gutter at the centre and starting the
+   bars outside it fixes it by geometry rather than by z-index, so it holds
+   whichever way the stacking context is later rearranged. */
+.lrow .track i{position:absolute;top:0;bottom:0;border-radius:var(--r-sm)}
+.lrow .track i.p{left:calc(50% + 1px);background:var(--pos)}
+.lrow .track i.n{right:calc(50% + 1px);background:var(--neg)}
+.lrow .track .mid{position:absolute;left:calc(50% - 1px);top:0;bottom:0;width:2px;
+  background:var(--axis)}
+.lrow .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:var(--w-med)}
+.lnote{font-size:var(--t-2);color:var(--muted);margin-top:var(--s-3);line-height:var(--lh)}
+/* The sheet's composition bars reused at a third of the width. The 168px label
+   column there would leave a card here with a 30px track, so the label gives
+   way to the bar - the bar is the thing being read. */
+.card .xrow{grid-template-columns:minmax(64px,1.15fr) minmax(56px,1fr) 44px;
+  gap:var(--s-4);font-size:var(--t-3)}
+.card .xrow .n,.card .xrow .p{padding:0}
+
+/* --------------------------------------------------------- calendar strip */
+.cstrip{display:flex;gap:var(--s-3);flex-wrap:wrap}
+.cpill{border:1px solid var(--border);border-radius:var(--r-md);padding:6px 9px;
+  font-size:var(--t-2);min-width:74px}
+.cpill.soon{border-color:var(--warn)}
+.cpill .d{font-size:var(--t-1);color:var(--muted);letter-spacing:.06em;
+  text-transform:uppercase}
+.cpill .t{font-weight:var(--w-semi);margin-top:2px}
+.cpill .w{font-size:var(--t-1);color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+/* ------------------------------------------------------ narrow: two column */
+/* Below 1180px the three columns stop fitting - 264 of rail plus 336 of thesis
+   leaves the chart under 580px. The fix drops a COLUMN, not the full-height
+   model. Stacking all three panes was the old behaviour and it was measured at
+   a 1000px canvas: the app became 2589px tall, the thesis started 1077px below
+   the fold, the chart was a fixed 340px letterbox, and the rail was a 320px
+   peephole onto 2019px of names - an inner scrollbar nested inside a page that
+   also scrolled, which is the one arrangement guaranteed to trap a wheel.
+
+   Here the rail keeps its full height down the left, and the right column
+   carries the chart over the thesis. The page still does not scroll: every
+   region is its own scroll box, which is the contract the wide layout already
+   has, so narrowing the window changes the shape and not the rules. */
+@media (max-width:1180px) and (min-width:761px){
+  .app{grid-template-columns:232px minmax(0,1fr);
+    grid-template-rows:minmax(220px,1.15fr) minmax(170px,1fr);
+    grid-template-areas:"rail mid" "rail thesis"}
+  .rail{grid-area:rail;border-right:1px solid var(--border)}
+  .mid{grid-area:mid;border-bottom:1px solid var(--border)}
+  .thesis{grid-area:thesis}
+  /* The panes are no longer three siblings in one row, so the blanket rule
+     would draw a left border between the chart and the thesis, which are
+     stacked. The two borders that remain are set explicitly above. */
+  .pane + .pane{border-left:0}
+  /* The legend wraps rather than disappearing. It is the only thing on the
+     page that says what the dashed line means, and a narrow window is not a
+     reason to stop explaining a chart. */
+  .ranges{flex-wrap:wrap}
+  /* Same twelve tracks, halved spans: two cards per row instead of three, and
+     the treemap takes the full width back because at 1180px a 2/3 column is
+     under 800px and the small tiles stop being legible before the card does. */
+  .ovgrid > *{grid-column:span 6}
+  .ovgrid > .ov-8{grid-column:span 12}
+  /* The three stats stay on one row: at 1180 that is ~380px each, which is
+     wider than the widest of them needs. Halving them would leave one alone. */
+}
+
+/* ------------------------------------------------------ navigation affordances */
+.alert.click,.cpill.click{cursor:pointer}
+.alert.click:hover .t{text-decoration:underline;text-underline-offset:2px}
+.cpill.click:hover{border-color:var(--axis);background:var(--surface-2)}
+.golink{display:inline-block;margin-top:var(--s-4);padding:0;border:0;
+  background:none;color:var(--accent);font:inherit;font-size:var(--t-2);
+  cursor:pointer}
+.golink:hover{text-decoration:underline;text-underline-offset:2px}
+.tbtn kbd{font:inherit;font-size:var(--t-1);color:var(--muted);margin-left:4px;
+  padding:0 4px;border:1px solid var(--border);border-radius:var(--r-sm)}
+.pal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.28);
+  display:flex;justify-content:center;align-items:flex-start;padding:12vh 16px 16px}
+.pal[hidden]{display:none}
+.palbox{width:min(560px,100%);background:var(--surface-1);border:1px solid var(--border);
+  border-radius:var(--r-lg);box-shadow:0 12px 40px rgba(0,0,0,.22);overflow:hidden;
+  display:flex;flex-direction:column;max-height:70vh}
+#palq{border:0;border-bottom:1px solid var(--border);padding:12px 14px;
+  font:inherit;font-size:var(--t-4);background:transparent;color:var(--ink);outline:none}
+.pallist{overflow-y:auto;padding:4px 0}
+.palrow{display:flex;gap:var(--s-4);align-items:baseline;width:100%;text-align:left;
+  padding:7px 14px;border:0;background:none;color:var(--ink);font:inherit;cursor:pointer}
+.palrow[aria-selected="true"]{background:var(--surface-2)}
+.palrow .k{flex:none;width:74px;font-size:var(--t-1);color:var(--muted);
+  letter-spacing:.06em;text-transform:uppercase}
+.palrow b{font-weight:var(--w-semi)}
+.palrow .s{color:var(--ink-2);font-size:var(--t-2);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.palrow .dot{flex:none;align-self:center}
+.palempty{padding:10px 14px;color:var(--muted)}
+.palfoot{border-top:1px solid var(--border);padding:7px 14px;font-size:var(--t-1);
+  color:var(--muted)}
+
+/* ------------------------------------------------------ narrow: one column */
+/* Below 761px there is no honest two-column split left, so this tier stacks and
+   lets the PAGE scroll - the one width where that is right, because a single
+   narrow column holding three nested scroll boxes is worse than a long page.
+
+   This is a fallback, not a designed surface: the cockpit is a desktop terminal
+   and nothing here is tuned for a phone. It has not been verified in a browser
+   at this width. What it does guarantee is that no region is a peephole - the
+   rail gets half the viewport rather than a fixed 320px, so the inner scroll is
+   never a tenth of its own content. */
+@media (max-width:760px){
+  body{overflow:auto;display:block}
+  .view{display:block}
+  .view[hidden]{display:none}
+  .ov{overflow:visible}
+  .app{grid-template-columns:1fr;height:auto}
+  .pane + .pane{border-left:0;border-top:1px solid var(--border)}
+  .pbody{overflow:visible}
+  .rail .pbody{max-height:50vh;overflow-y:auto}
+  .chartbox{height:320px;flex:none}
+  /* The tape wraps at every width now; narrow only buys back the side padding. */
+  .tape{padding:8px 12px}
+  .ranges{flex-wrap:wrap}
+  /* One card per row. The stats stay paired: they are four short numbers and
+     stacking them costs four screens of scroll to say what two lines can. */
+  .ovgrid > *,.ovgrid > .ov-6,.ovgrid > .ov-8{grid-column:span 12}
+  .ovtop > *{grid-column:span 12}
+}

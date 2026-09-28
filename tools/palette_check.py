@@ -52,7 +52,18 @@ import re
 import sys
 from pathlib import Path
 
-TEMPLATE = Path(__file__).resolve().parent.parent / "assets" / "dashboard.tmpl.html"
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def template_text() -> str:
+    """The assembled page, through the same function the renderer uses.
+
+    The tokens live in assets/app/tokens.css today, but reading that file
+    directly would keep passing if the shell stopped including it.
+    """
+    sys.path.insert(0, str(ROOT))
+    import render
+    return render.template_source()
 
 # The page asks its colours to do two different jobs, and the original palette
 # failed both by conflating them.
@@ -379,7 +390,7 @@ def main() -> int:
     if args.pair:
         return score_pair(*args.pair)
 
-    tokens = read_tokens(TEMPLATE.read_text(encoding="utf-8"))
+    tokens = read_tokens(template_text())
     res = evaluate(tokens)
 
     if args.report:

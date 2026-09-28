@@ -1,0 +1,34 @@
+*{box-sizing:border-box}
+html,body{height:100%}
+/* A column flex, not height:calc(100% - 52px - 37px). The banner is present on
+   some runs and not others and its height depends on how many problems there
+   are, so anything that subtracts a fixed number is wrong on most mornings. */
+body{margin:0;background:var(--plane);color:var(--ink);overflow:hidden;
+  display:flex;flex-direction:column;
+  font:var(--t-4)/1.45 var(--font-ui);
+  -webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+/* Text uses the -ink tokens, marks use --pos/--neg. They are different jobs:
+   a mark can be the only channel and owes CVD separation, text always carries
+   a sign glyph and instead owes WCAG AA against the surface. .dn-t used to
+   borrow the mark colour, which is why it never paid the text contrast. */
+.up-t{color:var(--good-ink)} .dn-t{color:var(--crit-ink)}
+/* `.chip b` below sets a colour and is (0,1,1); these are (0,1,0), so without
+   the scoped pair the chip wins and every signed number on the tape renders
+   ink-black - the headline P/L, the flag count, a stale CSV, the unwatched
+   share. They were all colourless until this was measured in the light theme. */
+.chip b.up-t{color:var(--good-ink)} .chip b.dn-t{color:var(--crit-ink)}
+
+/* Freshness mark. The slot is a fixed width and is rendered even when it is
+   empty, so a column cannot shift sideways the moment quotes arrive. It sits to
+   the LEFT of the price in the numeric cells: a right-aligned column has to keep
+   its digits on the right edge, and hanging a glyph off that edge breaks the
+   alignment the tabular figures exist to provide. */
+.fr{display:inline-block;width:0.9em;margin-right:var(--s-1);text-align:center;
+  font-style:normal;font-size:var(--t-1);line-height:1;vertical-align:0.08em}
+.fr-live{color:var(--good-ink)}
+.fr-build{color:var(--muted)}
+.fr-stale{color:var(--warn-ink)}
+.fr-none{color:transparent}
+

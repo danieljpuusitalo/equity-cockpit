@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import datetime as dt
 
 import config as C
@@ -15,6 +16,20 @@ import overview as overview_mod
 MARKER = "/*__DATA__*/"
 LIB_MARKER = "/*__CHARTLIB__*/"
 TEMPLATE = C.ROOT / "assets" / "dashboard.tmpl.html"
+# The template is a shell: markup, plus one `/*@app name*/` line per part where
+# that part's text goes. The parts are plain files so each can be read and
+# edited on its own; the page is still one file, because they are pasted back
+# in, verbatim and in this order, before anything else looks at the text.
+# The order is declared here and the shell must agree with it line for line -
+# the script is one scope, so moving a part moves what is defined before what.
+APP_DIR = C.ROOT / "assets" / "app"
+APP_PARTS = (
+    "tokens.css", "base.css", "components.css",
+    "core.js", "derive.js", "rows.js", "tape.js",
+    "view-positions.js", "view-data.js", "view-overview.js",
+    "router.js", "palette.js", "boot.js", "live.js",
+)
+INCLUDE = re.compile(r"^/\*@app ([\w.-]+)\*/$")
 # TradingView Lightweight Charts, vendored rather than linked. A CDN <script>
 # tag is a dependency that breaks silently the day the URL moves; a file in this
 # folder does not. Update it by replacing the file - there is no build step.
@@ -26,6 +41,44 @@ CHARTLIB = C.ROOT / "assets" / "lightweight-charts.standalone.production.js"
 # though nothing on screen shows it. Custody identity reaches the page as the
 # `account` label; the number stays in Python.
 PRIVATE_KEYS = frozenset({"account_no"})
+
+
+def template_source() -> str:
+    """The whole page template, parts pasted into the shell.
+
+    The one text every reader sees: the renderer, each selftest guard, and
+    tools/palette_check.py. A guard that read a part file directly could pass
+    against a part the shell no longer includes, so none of them do.
+
+    Refuses rather than guesses: a part the shell names twice, out of order or
+    not at all, and a file in assets/app/ that nothing includes, are all
+    errors. The last one matters most - an orphaned file is code that looks
+    live in the editor and never reaches the page.
+    """
+    shell = TEMPLATE.read_text(encoding="utf-8").split("\n")
+    named = [m.group(1) for m in map(INCLUDE.match, shell) if m]
+    if tuple(named) != APP_PARTS:
+        raise RuntimeError(
+            f"{TEMPLATE.name} includes {named}, but render.APP_PARTS declares "
+            f"{list(APP_PARTS)} - the two must list the same parts in the same order.")
+    on_disk = {p.name for p in APP_DIR.iterdir() if p.is_file()} if APP_DIR.exists() else set()
+    orphans = sorted(on_disk - set(APP_PARTS))
+    missing = sorted(set(APP_PARTS) - on_disk)
+    if orphans or missing:
+        raise RuntimeError(
+            f"assets/app/ does not match render.APP_PARTS - "
+            f"not included: {orphans or 'none'}; missing: {missing or 'none'}.")
+    out = []
+    for i, line in enumerate(shell):
+        m = INCLUDE.match(line)
+        if m:
+            body = (APP_DIR / m.group(1)).read_text(encoding="utf-8")
+            if not body.endswith("\n"):
+                body += "\n"
+            out.append(body[:-1])
+        else:
+            out.append(line)
+    return "\n".join(out)
 
 
 def _scrub(obj):
@@ -200,7 +253,7 @@ def write(data, out_dir=None):
     json_path.write_text(json.dumps(sidecar, indent=1, ensure_ascii=False,
                                     default=str), encoding="utf-8")
 
-    template = TEMPLATE.read_text(encoding="utf-8")
+    template = template_source()
     for marker in (MARKER, LIB_MARKER):
         if marker not in template:
             raise RuntimeError(

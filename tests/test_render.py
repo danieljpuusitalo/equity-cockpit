@@ -1,10 +1,13 @@
-"""render.pack_history: the columnar form the page unpacks at load.
+"""render: the columnar history the page unpacks at load, and the template
+assembled from its parts.
 
 Symbols and prices are invented. Nothing here is a real position.
 """
 import datetime as dt
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -78,3 +81,55 @@ def test_sig_handles_absent_and_zero():
     assert render._sig(0) == 0
     assert render._sig(123456.7) == 123460
     assert render._sig(0.0123456) == 0.012346
+
+
+# --- template_source: the parts pasted back into the shell -------------------
+
+def _page(tmp_path, monkeypatch, parts, shell_names, extra=()):
+    app = tmp_path / "app"
+    app.mkdir()
+    for name, body in parts.items():
+        (app / name).write_text(body, encoding="utf-8")
+    for name in extra:
+        (app / name).write_text("stray\n", encoding="utf-8")
+    shell = tmp_path / "shell.html"
+    shell.write_text("<head>\n" + "".join(f"/*@app {n}*/\n" for n in shell_names)
+                     + "</foot>\n", encoding="utf-8")
+    monkeypatch.setattr(render, "TEMPLATE", shell)
+    monkeypatch.setattr(render, "APP_DIR", app)
+    monkeypatch.setattr(render, "APP_PARTS", tuple(parts))
+
+
+def test_parts_are_pasted_verbatim_in_declared_order(tmp_path, monkeypatch):
+    _page(tmp_path, monkeypatch, {"a.css": "x{}\n", "b.js": "one\ntwo\n"}, ["a.css", "b.js"])
+    assert render.template_source() == "<head>\nx{}\none\ntwo\n</foot>\n"
+
+
+def test_a_part_without_a_final_newline_does_not_eat_the_next_line(tmp_path, monkeypatch):
+    _page(tmp_path, monkeypatch, {"a.js": "last"}, ["a.js"])
+    assert render.template_source() == "<head>\nlast\n</foot>\n"
+
+
+def test_shell_order_must_match_the_declared_order(tmp_path, monkeypatch):
+    _page(tmp_path, monkeypatch, {"a.js": "1\n", "b.js": "2\n"}, ["b.js", "a.js"])
+    with pytest.raises(RuntimeError, match="same order"):
+        render.template_source()
+
+
+def test_a_part_the_shell_forgot_is_refused(tmp_path, monkeypatch):
+    _page(tmp_path, monkeypatch, {"a.js": "1\n", "b.js": "2\n"}, ["a.js"])
+    with pytest.raises(RuntimeError):
+        render.template_source()
+
+
+def test_an_orphan_file_in_app_is_refused(tmp_path, monkeypatch):
+    _page(tmp_path, monkeypatch, {"a.js": "1\n"}, ["a.js"], extra=["forgotten.js"])
+    with pytest.raises(RuntimeError, match="forgotten.js"):
+        render.template_source()
+
+
+def test_the_real_page_assembles():
+    text = render.template_source()
+    assert render.MARKER in text and render.LIB_MARKER in text
+    assert text.count('<script id="app">') == 1
+    assert "/*@app " not in text
