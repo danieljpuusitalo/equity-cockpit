@@ -873,6 +873,35 @@ def selftest():
           f"template lost: {', '.join(der)}" if der
           else "recompute, boot parity check, live call and row rebuild all present")
 
+    # A tick paints the surface on screen and marks the rest; showing a
+    # surface paints it first if a tick left it marked. Both halves are needed
+    # and each fails silently: drop the marks and a hidden drawer opens one
+    # tick behind the tape above it (measured: the stale price came back with
+    # nothing logged); call paintSheet from repaint again and the page quietly
+    # goes back to rebuilding thirteen hidden tables every minute.
+    rp = tmpl.split("function repaint() {", 1)
+    rp = rp[1].split("let inflight", 1)[0] if len(rp) == 2 else ""
+    so = tmpl.split("function sheetOpen(open) {", 1)
+    so = so[1].split("\nfunction ", 1)[0] if len(so) == 2 else ""
+    sv = tmpl.split("function setView(v) {", 1)
+    sv = sv[1].split("\nfunction ", 1)[0] if len(sv) == 2 else ""
+    lazy = []
+    if not rp:
+        lazy.append("repaint() not found")
+    else:
+        if "paintSurface(shownSurface())" not in rp or "UNPAINTED.add(" not in rp:
+            lazy.append("repaint no longer marks then paints the shown surface")
+        for direct in ("paintSheet(", "paintOverview(", "select("):
+            if direct in rp:
+                lazy.append(f"repaint calls {direct}) directly")
+    if "UNPAINTED.has('sheet')" not in so or "flushSurface()" not in so:
+        lazy.append("sheetOpen no longer paints what a tick left behind")
+    if "UNPAINTED.has(v)" not in sv:
+        lazy.append("setView no longer paints what a tick left behind")
+    check("assets: a tick paints only what is on screen", not lazy,
+          "; ".join(lazy) if lazy
+          else "hidden surfaces marked on tick, painted on the way in")
+
     # The look-through follows a price only while three things hold together:
     # the build carries the weights, the recompute uses them, and the parity
     # walk checks them. Lose the first and the page quietly falls back to "as

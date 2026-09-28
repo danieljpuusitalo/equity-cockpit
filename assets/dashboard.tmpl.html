@@ -859,6 +859,26 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
 <script id="app">
 const D = /*__DATA__*/;
 
+// History ships columnar (render.pack_history) because two years of bars as
+// row arrays were two thirds of the page. Unpacked once, here, back into the
+// {fetched, bars:[[date,o,h,l,c]]} shape everything below was written against,
+// before anything reads it. Dates are rebuilt in UTC so a day gap never meets a
+// DST boundary.
+(function unpackHistory() {
+  const H = D.history || {};
+  for (const sym of Object.keys(H)) {
+    const s = H[sym];
+    if (!s || !Array.isArray(s.dd)) continue;
+    const rows = [];
+    let t = s.d0 ? Date.parse(s.d0 + 'T00:00:00Z') : NaN;
+    for (let i = 0; i < s.dd.length && t === t; i++) {
+      t += s.dd[i] * 86400000;
+      rows.push([new Date(t).toISOString().slice(0, 10), s.o[i], s.h[i], s.l[i], s.c[i]]);
+    }
+    H[sym] = {fetched: s.fetched, bars: rows};
+  }
+})();
+
 /* Everything below displays; nothing decides. Any number you see was computed
    in Python and is in the payload - if a figure is wrong, fix analyse.py. */
 
@@ -4060,8 +4080,31 @@ function watchTiles(box) {
 // hidden box. That refusal is only safe because of the call below: un-hide
 // first, then paint, so the construction that was skipped at boot happens here
 // against a container that has a real width. Do not reorder these two.
+// Surfaces a live tick changed while they were off screen. A tick used to
+// rebuild the Overview, the positions pane and all thirteen drawer tables every
+// minute whether or not any of them was showing - measured at ~50ms of
+// innerHTML per tick for the two hidden ones alone. It now paints what is on
+// screen and marks the rest; the mark is cleared by painting on the way in, so
+// a surface is never shown holding an older tick than the one beside it.
+const UNPAINTED = new Set();
+function shownSurface() {
+  return SHEET ? 'sheet' : (state.view || 'overview');
+}
+function paintSurface(s) {
+  UNPAINTED.delete(s);
+  if (s === 'sheet') paintSheet();
+  else if (s === 'overview') paintOverview();
+  else if (s === 'positions' && typeof ROWS !== 'undefined' && ROWS.length
+           && state.sym) select(state.sym);
+}
+function flushSurface() {
+  const s = shownSurface();
+  if (UNPAINTED.has(s)) paintSurface(s);
+}
+
 function setView(v) {
   state.view = v;
+  if (!SHEET && UNPAINTED.has(v)) paintSurface(v);
   for (const n of document.querySelectorAll('#vnav .vbtn[data-view]'))
     n.setAttribute('aria-pressed', String(n.getAttribute('data-view') === v));
   const o = $('#v-overview'), p = $('#v-positions');
@@ -4219,9 +4262,10 @@ function sheetOpen(open) {
     // scrolled. Coming back to the drawer at the top of a twelve-section
     // document, having just been two thirds of the way down it, reads as the
     // page having lost your place - which it had.
+    if (UNPAINTED.has('sheet')) paintSurface('sheet');
     s.scrollTop = SHEETSCROLL;
     paintCrumb();
-  }
+  } else flushSurface();
   if (open) { syncHash(true); SHEETPUSHED = !ROUTING; }
   else { syncHash(); SHEETPUSHED = false; }
 }
@@ -4756,11 +4800,11 @@ syncHash();
   function repaint() {
     try {
       paintTape();
-      paintOverview();
-      paintSheet();
-      if (typeof ROWS !== 'undefined' && ROWS.length && state && state.sym) {
-        select(state.sym);
-      }
+      // Only the surface on screen; the others are marked and painted on the
+      // way in (paintSurface). Every tick marks all three before painting one,
+      // so nothing hidden can skip a tick and come back one tick behind.
+      for (const s of ['overview', 'positions', 'sheet']) UNPAINTED.add(s);
+      paintSurface(shownSurface());
     } catch (e) {
       // A repaint that throws must not leave a half-updated page claiming to
       // be live.

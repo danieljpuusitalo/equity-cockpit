@@ -6,6 +6,7 @@ plane, mail to yourself, or keep in a folder for five years and still read.
 from __future__ import annotations
 
 import json
+import math
 import datetime as dt
 
 import config as C
@@ -37,6 +38,59 @@ def _scrub(obj):
     return obj
 
 
+def _sig(x, digits=5):
+    """Round to significant figures. A candle drawn 300px tall cannot show the
+    sixth figure, and the payload pays for every one of them 20,000 times."""
+    if x is None or x != x or x == 0:
+        return x if x == 0 else None
+    q = round(x, digits - 1 - int(math.floor(math.log10(abs(x)))))
+    return int(q) if q == int(q) else q
+
+
+# Symbols the book does not hold ship one year of bars, not two. The chart's
+# ALL range is a question about something you own; for a watchlist name the
+# year is the whole of the argument the chart is making.
+WATCH_ONLY_DAYS = 366
+
+
+def pack_history(history, held):
+    """Columnar daily bars: {fetched, d0, dd, o, h, l, c}.
+
+    `d0` is the first date, `dd` each bar's gap in days from the one before
+    (0 for the first), so a date costs one or two bytes instead of thirteen.
+    Prices keep five significant figures, except the LAST bar, which stays
+    exact: its close is the build-time price every other number on the page
+    was derived from, and the live candle widens from it.
+
+    Volume is dropped. The page never drew it - `D.indicators` carries the
+    relative-volume figure, computed in Python off the unpacked cache.
+    """
+    out = {}
+    for sym, series in (history or {}).items():
+        bars = (series or {}).get("bars") or []
+        if bars and sym not in held:
+            cut = str(dt.date.fromisoformat(bars[-1][0])
+                      - dt.timedelta(days=WATCH_ONLY_DAYS))
+            bars = [b for b in bars if b[0] >= cut]
+        if not bars:
+            out[sym] = {"fetched": (series or {}).get("fetched"), "d0": None,
+                        "dd": [], "o": [], "h": [], "l": [], "c": []}
+            continue
+        days = [dt.date.fromisoformat(b[0]) for b in bars]
+        cols = {k: [] for k in "ohlc"}
+        last = len(bars) - 1
+        for i, b in enumerate(bars):
+            for j, k in enumerate("ohlc", start=1):
+                cols[k].append(b[j] if i == last else _sig(b[j]))
+        out[sym] = {
+            "fetched": series.get("fetched"),
+            "d0": bars[0][0],
+            "dd": [0] + [(days[i] - days[i - 1]).days for i in range(1, len(days))],
+            **cols,
+        }
+    return out
+
+
 def payload(positions_valued, watchlist, alerts, health, fx, sources,
             history=None, coverage=None, book_return=None, indicators=None,
             exposure=None, reporting=None, activity=None, lookthrough=None):
@@ -65,10 +119,11 @@ def payload(positions_valued, watchlist, alerts, health, fx, sources,
         "generated": dt.datetime.now().isoformat(timespec="seconds"),
         "holdings": holdings,
         "watchlist": watchlist,
-        # symbol -> {fetched, bars:[[date,o,h,l,c], ...]}, in the symbol's own
+        # symbol -> columnar daily bars (see pack_history), in the symbol's own
         # quote currency. Targets and triggers from Notion are in that same
         # currency, so the chart draws all three without converting anything.
-        "history": history or {},
+        # The page unpacks it once, at load, back into {fetched, bars}.
+        "history": pack_history(history, {h.get("yahoo") for h in holdings}),
         # Per-holding: is it monitored, by which standard, and what is missing.
         # Stocks answer to a thesis, funds to a target weight - see
         # analyse.coverage for why those are different questions.
