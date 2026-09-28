@@ -10,6 +10,7 @@ import math
 import re
 import datetime as dt
 
+import analyse
 import config as C
 import overview as overview_mod
 
@@ -146,7 +147,8 @@ def pack_history(history, held):
 
 def payload(positions_valued, watchlist, alerts, health, fx, sources,
             history=None, coverage=None, book_return=None, indicators=None,
-            exposure=None, reporting=None, activity=None, lookthrough=None):
+            exposure=None, reporting=None, activity=None, lookthrough=None,
+            performance=None):
     """The single object the page renders. Nothing is computed in the browser
     that could have been computed here - the page displays, it does not decide."""
     total_value = round(sum(h["value_eur"] or 0 for h in positions_valued), 2)
@@ -211,7 +213,15 @@ def payload(positions_valued, watchlist, alerts, health, fx, sources,
         # `comparable` is true; the rest of the time it means the question
         # could not be asked, and the page must say which. See activity.py.
         "activity": activity or {},
+        # Each alert carries its triage tier (act / watch / tailwind), and the
+        # counts come from analyse.alert_counts, the one function every
+        # surface reads - two surfaces once counted the same list two ways.
         "alerts": alerts,
+        "alert_counts": analyse.alert_counts(alerts),
+        # The book over time: curve, TWR per period, the ACWI shadow, risk
+        # and attribution - see performance.py. Absent, not empty, when the
+        # build did not compute it; the page must say which.
+        "performance": performance,
         "health": health,
         "fx": fx,
         "sources": sources,

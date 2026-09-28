@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 import sys
 import json
+import math
 import argparse
 import subprocess
 import datetime as dt
@@ -30,6 +31,7 @@ import reporting
 import indicators
 import render
 import notify
+import performance
 
 HEARTBEAT = C.STATE / "last_run.json"
 # Deliberately a different file from HEARTBEAT. See refresh() for why the two
@@ -162,6 +164,19 @@ def append_history(record):
     C.STATE.mkdir(parents=True, exist_ok=True)
     with HISTORY.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, default=str) + "\n")
+
+
+def read_history():
+    """Every recorded run, oldest first. A line that does not parse is
+    skipped, not fatal: one torn write must not blank the record."""
+    rows = []
+    if HISTORY.exists():
+        for line in HISTORY.read_text(encoding="utf-8").splitlines():
+            try:
+                rows.append(json.loads(line))
+            except ValueError:
+                continue
+    return rows
 
 
 def earnings_cache_leaks(cached, funds):
@@ -310,6 +325,9 @@ def _cycle(mode, quiet=False, verbose=True):
     log_rows, log_meta = sources.equity_log(cached_only=cached)
     say(f"  Equity Log: {len(log_rows)} rows ({log_meta['mode']}"
         + (", not re-read" if cached else "") + ")")
+    if log_meta.get("problem_raw"):
+        # Printed, so it lands in run.log; the alert itself carries a sentence.
+        print(f"  Equity Log live read failed: {log_meta['problem_raw']}")
 
     fx, fx_problems = sources.fx_rates()
     symbols = sorted({p["yahoo"] for p in positions if p["yahoo"]}
@@ -322,6 +340,16 @@ def _cycle(mode, quiet=False, verbose=True):
         symbols, cached_only=cached)
     say(f"  History: {len(history)}/{len(symbols)} symbols "
         f"({pulled} pulled from Yahoo, {len(history)-pulled} from cache)")
+
+    # Reference series nobody holds: the FX pairs (for the book's EUR value on
+    # past days) and the benchmark. Fetched through the same cache, and kept
+    # out of `history`, which the page draws and cuts to a year for names not
+    # held - the curve needs every day of them.
+    ref_symbols = sorted(set(C.FX_PAIRS.values()) | {C.BENCHMARK["symbol"]})
+    ref_history, ref_problems, ref_pulled = sources.price_history(
+        ref_symbols, cached_only=cached)
+    say(f"  Reference: {len(ref_history)}/{len(ref_symbols)} series "
+        f"(FX pairs + {C.BENCHMARK['symbol']}; {ref_pulled} pulled)")
 
     # Multiples are a stock question. Funds are asked nothing - Yahoo returns
     # nothing for them anyway, and the coverage model judges them by weight.
@@ -471,6 +499,17 @@ def _cycle(mode, quiet=False, verbose=True):
     # and nothing else, and it is the only alert on the board that can be
     # raised by something Daniel did rather than by something the market did.
     alerts = alerts + activity.alerts(moves, watchlist)
+    alerts = analyse.triage(alerts)
+
+    perf = performance.build(
+        lots, {p["isin"]: p["yahoo"] for p in positions}, history, ref_history,
+        C.FX_PAIRS, C.BENCHMARK, holdings=holdings, recorded=read_history())
+    all_ = (perf["periods"] or {}).get("ALL")
+    say(f"  Performance: curve over {perf['n_included']}/{perf['n_lots']} lots "
+        f"({perf['cost_covered_pct']}% of cost)"
+        + (f" from {all_['from']}; benchmark "
+           + (perf['benchmark']['absent'] or "present")
+           if all_ else "; no curve"))
     data = render.payload(holdings, watchlist, alerts, state, fx, {
         "nordnet_export_date": csv_date,
         "nordnet_export_age_days": csv_age,
@@ -503,7 +542,7 @@ def _cycle(mode, quiet=False, verbose=True):
     }, history=history, coverage=cover, book_return=book_return,
        indicators=indicators.snapshot_all(history), exposure=exposures,
        reporting=reports, activity=moves,
-       lookthrough=exposure.inputs(funda, comp))
+       lookthrough=exposure.inputs(funda, comp), performance=perf)
 
     over = data["overview"]
     day, alloc = over["day"], over["allocation"]
@@ -952,6 +991,63 @@ def selftest():
     if tmpl.count("atBuild(LOOKTHRU_WHY)") != 1 or tmpl.count("lookMark())") < 4:
         lt.append(f"{tmpl.count('atBuild(LOOKTHRU_WHY)')} bare look-through marks, "
                   f"{tmpl.count('lookMark())')} lookMark call sites")
+    # The book's time dimension, run on a two-name fixture book rather than
+    # read off the last build, so a regression shows here before it shows as a
+    # plausible-looking curve. The two negative controls: a price moved must
+    # move the curve and the attribution; benchmark bars removed must give "no
+    # benchmark", never a zero excess. Plus the wiring the build depends on.
+    def _pf(bump=1.0, bench=True):
+        day = lambda i: (dt.date(2025, 1, 1) + dt.timedelta(days=i)).isoformat()
+        bars = lambda xs: {"bars": [[day(i), x, x, x, x, 0] for i, x in enumerate(xs)]}
+        wave = [100 * (1 + 0.02 * math.sin(i * 0.7)) for i in range(40)]
+        return performance.build(
+            [{"isin": "A", "units": 1, "cost_eur": 100, "bought": day(0), "ccy": "EUR"},
+             {"isin": "B", "units": 1, "cost_eur": 50, "bought": day(5), "ccy": "EUR"}],
+            {"A": "A.X", "B": "B.X"},
+            {"A.X": bars(wave), "B.X": bars([50 * bump * (1 + 0.01 * i) for i in range(40)])},
+            {"BENCH": bars(wave)} if bench else {}, {},
+            {"symbol": "BENCH", "label": "b", "ccy": "EUR"})
+    pf = []
+    base, moved, blind = _pf(), _pf(bump=1.1), _pf(bench=False)
+    if base.get("basis") != "held-lots":
+        pf.append(f"the curve no longer states its basis ({base.get('basis')!r})")
+    if base["curve"]["value"] == moved["curve"]["value"]:
+        pf.append("a moved price did not move the curve")
+    if base["attribution"]["ALL"] == moved["attribution"]["ALL"]:
+        pf.append("a moved price did not move the attribution")
+    if base["periods"]["ALL"]["excess_pp"] is None:
+        pf.append("a present benchmark produced no excess")
+    if any(s and s["excess_pp"] is not None for s in blind["periods"].values()):
+        pf.append("no benchmark bars still produced an excess")
+    with open(__file__, encoding="utf-8") as fh:
+        src = fh.read()
+    if ("performance=" + "perf)") not in src:
+        pf.append("the build no longer passes performance to render.payload")
+    if ("C.BENCHMARK" + '["symbol"]') not in src:
+        pf.append("the build no longer fetches the benchmark")
+    check("performance: curve, benchmark and attribution answer to their inputs",
+          not pf, "; ".join(pf) if pf
+          else "basis stated, a moved price moves curve and attribution, "
+               "no benchmark bars give no excess")
+
+    # One count for every surface, and the page restates the tier the way
+    # Python does - the parity walk in smoke compares the field.
+    tr = []
+    probe = [{"level": "good", "key": "decay:X:5"}, {"level": "warning", "key": "k"},
+             {"level": "warning", "key": "h", "health": True}]
+    if [a["tier"] for a in analyse.triage(probe)] != ["act", "watch", "tailwind"]:
+        tr.append(f"triage gave {[a['tier'] for a in analyse.triage(probe)]}")
+    if render.payload([], [], probe, {}, {}, {}).get("alert_counts") != \
+            analyse.alert_counts(probe):
+        tr.append("render.payload does not carry analyse.alert_counts")
+    if ("alerts = " + "analyse.triage(alerts)") not in src:
+        tr.append("the build no longer triages the alert list")
+    if "D.alert_counts = alertCounts(D.alerts)" not in tmpl \
+            or "push(...triage([...found, ...appended]))" not in tmpl:
+        tr.append("DERIVE.alerts no longer restates the tier and the counts")
+    check("alerts: triaged into act / watch / tailwind, counted once", not tr,
+          "; ".join(tr) if tr else "tiers derived in Python and restated on the page")
+
     check("assets: the look-through follows a price", not lt,
           "; ".join(lt) if lt
           else "weights emitted, five breakdowns restated and parity-walked, "

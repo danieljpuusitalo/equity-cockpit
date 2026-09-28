@@ -180,6 +180,7 @@ portfolio.example.json  the committed schema for the above. Safe. No real holdin
 config.py       thresholds, paths, Notion schema. Says nothing about what you own
 sources.py      every external boundary. A source that fails degrades; it never raises
 analyse.py      pure computation. No I/O. Everything worth testing lives here
+performance.py  the book over time: held-lots curve, TWR, ACWI shadow, risk, attribution
 render.py       builds the data blob and writes the dashboard
 notify.py       Telegram, with dedupe and cooldown
 cockpit.py      the entry point: run | refresh | selftest | doctor | sync-notion

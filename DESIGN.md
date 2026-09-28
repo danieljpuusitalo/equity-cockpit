@@ -239,8 +239,18 @@ likely to hit.
 - **Tax-loss harvesting suggestions.** The OST makes it moot.
 - **A hosted/shared version.** Holdings, cost basis and account numbers are
   personal financial data and stay on this machine.
-- **Performance attribution, benchmarking, factor analysis.** Those are the
-  things every other tracker already does well.
+- **Factor analysis.** Still not built; the things every other tracker already
+  does well are not what this one is for.
+
+**Reversed 2026-09-28: performance attribution and benchmarking are now built**
+(`performance.py`). This list used to exclude them on the same argument as
+factor analysis. Daniel asked for analytical rigour in the redesign and chose
+the benchmark himself (MSCI ACWI in EUR, `config.BENCHMARK`). What made it
+worth doing here rather than in "every other tracker": none of them sees the
+lots, so none can build a curve whose basis is stated (`held-lots`), whose
+exclusions are counted, and whose benchmark line is the ACWI bought with the
+book's own flows on the book's own days. The join identity above is unchanged;
+the time dimension sits beside it, not over it.
 
 ---
 

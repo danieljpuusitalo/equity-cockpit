@@ -770,3 +770,38 @@ def alerts(watchlist, holdings, health, cover=None):
     order = {"critical": 0, "warning": 1, "good": 2}
     found.sort(key=lambda a: order.get(a["level"], 3))
     return found
+
+
+# ------------------------------------------------------------------ triage
+
+# Three tiers, because "flag" meant three different things on one list: a
+# trigger that has fired, a thing to keep an eye on, and good news. Upside
+# widening was counted as a flag beside a broken feed. The tier is DERIVED from
+# level and key, never stored, so the alert producers stay as they are.
+TIERS = ("act", "watch", "tailwind")
+
+
+def tier(alert):
+    if alert.get("level") == "critical" or alert.get("health"):
+        return "act"
+    if alert.get("level") == "good":
+        return "tailwind"
+    return "watch"
+
+
+def triage(alerts):
+    """Every alert with its tier attached, in tier order, level order within."""
+    order = {t: i for i, t in enumerate(TIERS)}
+    out = [{**a, "tier": tier(a)} for a in alerts]
+    out.sort(key=lambda a: order[a["tier"]])      # stable: level order survives
+    return out
+
+
+def alert_counts(alerts):
+    """The one count every surface reads. Two surfaces once counted the same
+    list their own way and disagreed (10 flags against 11 open)."""
+    counts = {t: 0 for t in TIERS}
+    for a in alerts:
+        counts[tier(a)] += 1
+    counts["total"] = sum(counts[t] for t in TIERS)
+    return counts

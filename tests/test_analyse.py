@@ -1225,3 +1225,43 @@ def test_the_rule_is_blind_to_what_anything_is_currently_worth():
     for isin in holdings:
         holdings[isin]["value_eur"] = 999_999.0 if isin == "S1" else 1.0
     assert PT.plan(holdings, klass)[0] == PT.plan(*_fixture_book())[0]
+
+
+# ------------------------------------------------------------------ triage
+
+def _alerts():
+    return [
+        {"level": "good", "key": "decay:X:5", "title": "upside widened"},
+        {"level": "warning", "key": "trigger-near:X", "title": "near"},
+        {"level": "warning", "key": "notion", "title": "feed down", "health": True},
+        {"level": "critical", "key": "trigger-hit:Y", "title": "hit"},
+        {"level": "info", "key": None, "title": "print soon"},
+    ]
+
+
+def test_good_news_is_a_tailwind_not_a_flag():
+    tiers = {a["title"]: a["tier"] for a in analyse.triage(_alerts())}
+    assert tiers == {"upside widened": "tailwind", "near": "watch",
+                     "feed down": "act", "hit": "act", "print soon": "watch"}
+
+
+def test_triage_orders_by_tier_and_keeps_every_alert():
+    out = analyse.triage(_alerts())
+    assert [a["tier"] for a in out] == ["act", "act", "watch", "watch", "tailwind"]
+    assert len(out) == len(_alerts())
+
+
+def test_one_count_for_every_surface():
+    counts = analyse.alert_counts(_alerts())
+    assert counts == {"act": 2, "watch": 2, "tailwind": 1, "total": 5}
+    assert analyse.alert_counts(analyse.triage(_alerts())) == counts
+
+
+def test_notion_failure_reads_as_a_sentence_not_an_exception():
+    raw = "ConnectionError: HTTPSConnectionPool(host='api.notion.com', port=443)"
+    text = sources._notion_sentence(raw, {"mode": "cache", "age_days": 2})
+    assert "HTTPSConnectionPool" not in text
+    assert text == "Notion could not be reached. Showing the cached copy from 2 days ago."
+    assert "expired" in sources._notion_sentence("HTTP 401 unauthorized", {"mode": "cache", "age_days": 0})
+    assert sources._notion_sentence("HTTP 500", {"mode": "missing"}).endswith(
+        "No cached copy either, so the board is empty.")

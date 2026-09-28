@@ -864,8 +864,26 @@ const DERIVE = (function () {
     // must see the restated list, not the boot-time one.
     D.alerts = D.alerts || [];
     D.alerts.length = 0;
-    D.alerts.push(...found, ...appended);
+    D.alerts.push(...triage([...found, ...appended]));
+    D.alert_counts = alertCounts(D.alerts);
     return true;
+  }
+
+  // analyse.tier / triage / alert_counts. Derived from level and the health
+  // mark, never stored, so every surface that counts reads one function.
+  const TIERS = ['act', 'watch', 'tailwind'];
+  const tierOf = (a) => a.level === 'critical' || a.health ? 'act'
+    : a.level === 'good' ? 'tailwind' : 'watch';
+  function triage(list) {
+    const out = list.map((a) => Object.assign({}, a, {tier: tierOf(a)}));
+    out.sort((a, b) => TIERS.indexOf(a.tier) - TIERS.indexOf(b.tier));
+    return out;
+  }
+  function alertCounts(list) {
+    const c = {act: 0, watch: 0, tailwind: 0};
+    for (const a of list) c[tierOf(a)] += 1;
+    c.total = c.act + c.watch + c.tailwind;
+    return c;
   }
 
   // Today on this machine's calendar, as Python's date.today() reads it.

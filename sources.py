@@ -956,13 +956,40 @@ def equity_log(cached_only=False):
                  "rows": rows}, indent=1, ensure_ascii=False), encoding="utf-8")
             return rows, {"mode": "live", "age_days": 0, "problem": None}
         cached = _equity_log_cached()
-        cached[1]["problem"] = f"live read failed ({problem}); using cache"
+        cached[1]["problem"] = _notion_sentence(problem, cached[1])
+        # The vendor's own words go to the run log, not to the page or to
+        # Telegram: "ConnectionError: HTTPSConnectionPool(host=...)" is a
+        # diagnosis for whoever fixes it, and a wall of noise to whoever reads it.
+        cached[1]["problem_raw"] = problem
         return cached
     rows, meta = _equity_log_cached()
     meta["problem"] = meta["problem"] or (
         "no NOTION_TOKEN - using cached log. Run `cockpit.py sync-notion` "
         "in Claude to refresh, or add a token for hands-off updates.")
     return rows, meta
+
+
+def _notion_sentence(problem, meta):
+    """One readable sentence for a failed live read. `problem` is what
+    _equity_log_live returned: "HTTP <code>: <body>" or "<Exception>: <text>";
+    `meta` is what the cache fallback found, which decides how it ends."""
+    age_days = meta.get("age_days")
+    copy = ("no cached copy either, so the board is empty"
+            if meta.get("mode") == "missing" else
+            "the cached copy" if age_days is None else
+            "today's cached copy" if age_days == 0 else
+            f"the cached copy from {age_days} day{'s' if age_days != 1 else ''} ago")
+    if meta.get("mode") != "missing":
+        copy = "showing " + copy
+    cap = lambda t: t[:1].upper() + t[1:]
+    text = problem or ""
+    if text.startswith("HTTP "):
+        code = text[5:8]
+        if code in ("401", "403"):
+            return (f"Notion refused the token (HTTP {code}) - it may have expired "
+                    f"or lost access to the Equity Log. {cap(copy)}.")
+        return f"Notion answered HTTP {code} instead of the Equity Log. {cap(copy)}."
+    return f"Notion could not be reached. {cap(copy)}."
 
 
 def _equity_log_live(token):

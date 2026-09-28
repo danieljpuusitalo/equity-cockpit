@@ -94,6 +94,13 @@ TARGET_BASIS = {isin: (h.get("target_basis") or "policy")
 FX_PAIRS = {"USD": "EURUSD=X", "SEK": "EURSEK=X", "DKK": "EURDKK=X",
             "NOK": "EURNOK=X", "GBP": "EURGBP=X"}
 
+# --- Benchmark ---
+# MSCI ACWI in EUR, through iShares' UCITS tracker on Xetra (accumulating, so
+# its price is a total return). Chosen by Daniel, 2026-09-28; confirmed that
+# Yahoo serves two years of EUR bars for it. Fetched beside the FX pairs as a
+# reference series nobody holds - see performance.py for what is derived.
+BENCHMARK = {"symbol": "IUSQ.DE", "label": "MSCI ACWI (EUR)", "ccy": "EUR"}
+
 # --- Notion ---
 # Live reads need NOTION_TOKEN (a Notion internal integration token) in the
 # environment or in .env next to this file. Without it the cockpit falls back
