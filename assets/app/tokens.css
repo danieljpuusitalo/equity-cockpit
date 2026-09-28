@@ -74,6 +74,7 @@
   --t-4:13.5px;  /* emphasised row text: ticker, company, change */
   --t-5:18px;    /* section heading */
   --t-6:22px;    /* display: the one number a card exists to show */
+  --t-hero:34px; /* the book's value on Home - the one number the page opens on */
   --t-caret:9px; /* the sort/disclosure glyphs, which are icons not type */
 
   --w-med:560; --w-semi:640; --w-bold:700;

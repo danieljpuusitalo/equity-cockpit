@@ -27,7 +27,7 @@ APP_DIR = C.ROOT / "assets" / "app"
 APP_PARTS = (
     "tokens.css", "base.css", "components.css",
     "core.js", "derive.js", "rows.js", "tape.js",
-    "view-positions.js", "view-data.js", "view-overview.js",
+    "view-positions.js", "view-data.js", "view-overview.js", "view-home.js",
     "router.js", "palette.js", "boot.js", "live.js",
 )
 INCLUDE = re.compile(r"^/\*@app ([\w.-]+)\*/$")

@@ -7,35 +7,43 @@
 /*@app components.css*/
 </style>
 
-<header class="tape">
-  <span class="brand">EQUITY COCKPIT</span>
-  <span class="big" id="t-value">—</span>
-  <span class="chip" id="t-pl"></span>
-  <span class="sep"></span>
-  <span class="chip" id="t-meta"></span>
-  <div class="tctl">
+<div class="shell">
+<!-- The rail is the page's one navigation. It used to be a row of buttons at
+     the right end of a header that also carried every fact about the book, so
+     the header wrapped whenever the facts grew and the nav moved with it. Now
+     the views sit in a fixed place and the header carries one status line. -->
+<aside class="side" id="side">
+  <div class="sbrand"><span class="brand">EQUITY COCKPIT</span></div>
+  <div class="sval">
+    <span class="big" id="t-value">—</span>
+    <span class="chip" id="t-pl"></span>
+  </div>
   <nav class="vnav" id="vnav">
-    <button class="vbtn" data-view="overview" aria-pressed="true">Overview</button>
-    <button class="vbtn" data-view="positions" aria-pressed="false">Positions</button>
+    <button class="vbtn" data-view="home" aria-pressed="true" title="Home (1)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span class="l">Home</span><kbd>1</kbd></button>
+    <button class="vbtn" data-view="positions" aria-pressed="false" title="Positions (2)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="l">Positions</span><kbd>2</kbd></button>
+    <button class="vbtn" data-view="overview" aria-pressed="false" title="Allocation (3)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="10" height="11" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="15" y="11" width="6" height="10" rx="1"/><rect x="3" y="16" width="10" height="5" rx="1"/></svg><span class="l">Allocation</span><kbd>3</kbd></button>
   </nav>
-  <!-- Data used to sit inside the nav above, styled as a third peer, and it is
-       not one: it is an overlay over whichever view is up. A control that looks
-       like a tab and behaves like a drawer teaches the reader a rule the page
-       then breaks, and there was no way back from it but a Close button in a
-       far corner. It is now outside the nav, shaped like the other utility
-       buttons, and says aria-expanded rather than aria-pressed - which is the
-       difference between "this surface is showing" and "you are on this tab". -->
-  <!-- One box that reaches everything: every held and watched name, both
-       views and each drawer section. The page grew thirteen sections and two
-       views faster than it grew ways between them. -->
-  <button class="tbtn" id="t-jump" aria-haspopup="dialog" aria-controls="pal"
-    title="Find a position or a section. Keys: Ctrl K or / to open, 1 Overview, 2 Positions, D the data drawer, Esc to close">Jump to&hellip; <kbd>Ctrl K</kbd></button>
-  <button class="tbtn drawer" id="t-sheet" aria-expanded="false"
-    aria-controls="sheet">All data</button>
+  <div class="sfoot">
+  <!-- Data is a drawer, not a view, so it sits outside the nav above and says
+       aria-expanded rather than aria-pressed - the difference between "this
+       surface is showing" and "you are on this tab". -->
+  <button class="sbtn drawer" id="t-sheet" aria-expanded="false"
+    aria-controls="sheet" title="All data (D)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M3 15h18M9 4v16"/></svg><span class="l">All data</span></button>
+  <!-- One box that reaches everything: every held and watched name, the views
+       and each drawer section. -->
+  <button class="sbtn" id="t-jump" aria-haspopup="dialog" aria-controls="pal"
+    title="Find a position or a section. Keys: Ctrl K or / to open, 1 Home, 2 Positions, 3 Allocation, D the data drawer, Esc to close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg><span class="l">Jump to&hellip;</span><kbd>Ctrl K</kbd></button>
   <!-- Label and pressed state are both set by themeLabel() at boot, from what
        is actually rendered. This text is only what shows if the script dies. -->
-  <button class="tbtn" id="t-theme" aria-pressed="false">Theme</button>
+  <button class="sbtn" id="t-theme" aria-pressed="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg><span class="l">Theme</span></button>
   </div>
+</aside>
+<div class="main">
+<!-- One line of status. The dot is the worst thing true right now; hovering it
+     names everything that went into it. -->
+<header class="tape">
+  <span class="dot sdot" id="t-dot"></span>
+  <span class="chip" id="t-meta"></span>
 </header>
 <div id="t-banner"></div>
 <div class="pal" id="pal" role="dialog" aria-label="Jump to" hidden>
@@ -44,12 +52,15 @@
       placeholder="Ticker, company or section" aria-controls="pallist">
     <div class="pallist" id="pallist" role="listbox"></div>
     <div class="palfoot">&uarr;&darr; move &middot; Enter open &middot; Esc close
-      &middot; elsewhere: 1 Overview &middot; 2 Positions &middot; D data drawer
+      &middot; elsewhere: 1 Home &middot; 2 Positions &middot; 3 Allocation &middot; D data drawer
       &middot; &uarr;&darr; step the rail</div>
   </div>
 </div>
 
-<div class="view" id="v-overview">
+<div class="view" id="v-home">
+  <div class="home" id="home"></div>
+</div>
+<div class="view" id="v-overview" hidden>
   <div class="ov">
     <div class="ovtop" id="ovtop"></div>
     <div class="ovgrid" id="ovgrid"></div>
@@ -122,6 +133,8 @@
   </aside>
 </div>
 </div>
+</div>
+</div>
 
 <div class="sheet" id="sheet">
   <div class="sheethead">
@@ -153,6 +166,7 @@ const D = /*__DATA__*/;
 /*@app view-positions.js*/
 /*@app view-data.js*/
 /*@app view-overview.js*/
+/*@app view-home.js*/
 /*@app router.js*/
 /*@app palette.js*/
 /*@app boot.js*/

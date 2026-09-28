@@ -147,7 +147,7 @@
       // Only the surface on screen; the others are marked and painted on the
       // way in (paintSurface). Every tick marks all three before painting one,
       // so nothing hidden can skip a tick and come back one tick behind.
-      for (const s of ['overview', 'positions', 'sheet']) UNPAINTED.add(s);
+      for (const s of ['home', 'overview', 'positions', 'sheet']) UNPAINTED.add(s);
       paintSurface(shownSurface());
     } catch (e) {
       // A repaint that throws must not leave a half-updated page claiming to

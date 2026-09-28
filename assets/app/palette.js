@@ -9,8 +9,10 @@ const PAL = {items: [], i: 0};
 
 function palAll() {
   const out = [
-    {kind: 'View', label: 'Overview', sub: 'the book at a glance', go: () => {
-      sheetOpen(false); setView('overview'); }},
+    {kind: 'View', label: 'Home', sub: 'performance, what needs you, what is next',
+      go: () => { sheetOpen(false); setView('home'); }},
+    {kind: 'View', label: 'Allocation', sub: 'treemap, concentration, sector and geography',
+      go: () => { sheetOpen(false); setView('overview'); }},
     {kind: 'View', label: 'Positions', sub: 'rail, chart and thesis', go: () => {
       sheetOpen(false); setView('positions'); }},
   ];
@@ -126,8 +128,9 @@ try {
     }
     if (typing || e.ctrlKey || e.metaKey || e.altKey || palIsOpen()) return;
     if (e.key === '/') { e.preventDefault(); palOpen(true); return; }
-    if (e.key === '1') { sheetOpen(false); setView('overview'); return; }
+    if (e.key === '1') { sheetOpen(false); setView('home'); return; }
     if (e.key === '2') { sheetOpen(false); setView('positions'); return; }
+    if (e.key === '3') { sheetOpen(false); setView('overview'); return; }
     if (e.key === 'd' || e.key === 'D') { sheetOpen(!SHEET); return; }
   });
 } catch (e) {}
@@ -139,7 +142,9 @@ try {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     const tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-    if (palIsOpen() || SHEET) return;
+    // Only on Positions: elsewhere the rail is hidden, and stepping it would
+    // repaint a surface nobody is looking at.
+    if (palIsOpen() || SHEET || state.view !== 'positions') return;
     const rows = visible();
     const i = rows.findIndex((r) => r.sym === state.sym);
     const next = rows[Math.min(rows.length - 1, Math.max(0, i + (e.key === 'ArrowDown' ? 1 : -1)))];

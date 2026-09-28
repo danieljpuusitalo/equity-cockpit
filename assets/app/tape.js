@@ -16,41 +16,35 @@ function paintTape() {
   const live = s.equity_log_mode === 'live';
   const flags = (D.alerts || []).filter((a) => !a.health).length;
   const stale = s.nordnet_export_age_days > (D.thresholds || {}).csv_stale_days;
-  // Coverage sits on the tape rather than three clicks away because it is the
-  // one number that says how much of this page is decoration. A position with
-  // no thesis and no target weight cannot be judged by anything here.
   const nCov = (COV.rows || []).length;
   const nMon = nCov - (COV.n_uncovered || 0);
-  const covChip = nCov
-    ? `<span title="${eur(COV.value_uncovered_eur)} of ${eur(COV.value_total_eur)} sits in
-        ${COV.n_uncovered} positions with no thesis (stocks) or no target weight (funds)."
-        ><b>${nMon}</b>/${nCov} monitored<span style="color:var(--muted)"> · </span><b
-        class="${COV.pct_uncovered > 0 ? 'dn-t' : ''}">${(COV.pct_uncovered || 0).toFixed(0)}%</b>
-        of value unwatched</span>`
-    : '';
+  // Two lines of status, not eight. The header used to carry every fact about
+  // the book and wrapped onto a second row whenever the facts grew. What stays
+  // visible is what changes how the rest of the page should be read: the price
+  // clock, the live state, and - only when it is true - a stale export. The
+  // rest is one hover away on the dot. Coverage also stays a visible line: it
+  // is raised as a flag, so it is listed under Needs you whenever it is short.
+  const facts = [
+    `${held.size} held · ${watch.size} watched`,
+    `${flags} flag${flags === 1 ? '' : 's'}`,
+    nCov ? `${nMon}/${nCov} monitored, ${(COV.pct_uncovered || 0).toFixed(0)}% of value unwatched` : '',
+    `CSV ${s.nordnet_export_age_days}d old`,
+    `Notion ${live ? 'live' : 'cached'}`,
+    s.run_mode === 'refresh' ? `intraday refresh; board last read ${s.last_full_run || ''}` : 'full run',
+  ].filter(Boolean);
   $('#t-meta').innerHTML = [
-    `<b>${held.size}</b> held`,
-    `<b>${watch.size}</b> watched`,
-    `<b class="${flags ? 'dn-t' : ''}">${flags}</b> flag${flags === 1 ? '' : 's'}`,
-    covChip,
     // The clock the prices were taken at. Without it an afternoon page and a
     // breakfast page are indistinguishable, which is the whole reason the
-    // intraday refresh exists - and a page that refreshed but does not say so
-    // is no more trustworthy than one that did not.
-    `Priced <b title="${esc(D.generated || '')}${s.run_mode === 'refresh'
-        ? ` · intraday refresh; board last read ${esc(s.last_full_run || '')}`
-        : ' · full run'}">${esc((D.generated || '').slice(11, 16))}</b>`,
+    // intraday refresh exists.
+    `As of <b title="${esc(D.generated || '')}">${esc((D.generated || '').slice(11, 16))}</b>`,
     // The live chip sits BESIDE the render clock and never replaces it. The
     // render clock is the recorded figure - the evidence of when this file was
     // built - and overwriting it with a live time would destroy the only
-    // signal that the underlying book is old (CLAUDE.md rule 3). A page whose
-    // prices are two seconds old and whose positions are four days old should
-    // say both, not average them into one reassuring number.
+    // signal that the underlying book is old (CLAUDE.md rule 3).
     liveChip(),
-    `CSV <b class="${stale ? 'dn-t' : ''}">${s.nordnet_export_age_days}d</b>`,
-    `Notion <b>${live ? 'live' : 'cached'}</b>`,
+    stale ? `CSV <b class="dn-t">${s.nordnet_export_age_days}d old</b>` : '',
   ].filter(Boolean).map((f) => `<span class="f">${f}</span>`)
-   .join('<span style="color:var(--axis);margin:0 8px">·</span>');
+   .join('<span class="msep">·</span>');
 
   // A failed parity check is a health problem, not a console warning. If the
   // JS recompute disagrees with the Python that produced this file, every
@@ -72,6 +66,14 @@ function paintTape() {
     problems.unshift({level: 'warning', title:
       `${st.coverage_unmatched + st.reporting_unmatched} rows could not be `
       + `rejoined to a holding and still show build-time figures`});
+  }
+  // The dot is the worst thing true right now, and its title is everything.
+  const dotLevel = problems.some((p) => p.level === 'critical') ? 'critical'
+    : (problems.length || stale || (LIVE && LIVE.error && !LIVE.carried)) ? 'warning' : 'good';
+  const dot = $('#t-dot');
+  if (dot) {
+    dot.style.background = LEVEL[dotLevel];
+    dot.setAttribute('title', facts.concat(problems.map((p) => p.title)).join('\n'));
   }
   if (problems.length) {
     const worst = problems.some((p) => p.level === 'critical') ? 'critical' : 'warning';

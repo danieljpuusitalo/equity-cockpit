@@ -103,6 +103,32 @@ const WALK = `
   scan('data sheet', document.querySelector('#sheetbody').innerHTML);
   scan('overview headline', document.querySelector('#ovtop').innerHTML);
   scan('overview grid', document.querySelector('#ovgrid').innerHTML);
+  // Home, in every period. Each period slices the curve and the attribution
+  // differently, and the one with a two-point curve is the one that divides by
+  // a zero span - so all seven are painted, not just the one that opens.
+  const perf = D.performance || {};
+  for (const [p] of PERIODS) {
+    state.hp = p;
+    paintHome();
+    const h = document.querySelector('#home').innerHTML || '';
+    scan('home ' + p, h);
+    if (((perf.curve || {}).dd || []).length > 1 && !h.includes('id="hplot"'))
+      bad.push('home ' + p + ': the payload has a curve and none was drawn');
+    if (perf.benchmark && !perf.benchmark.absent && !h.includes('class="hshadow"'))
+      bad.push('home ' + p + ': the benchmark is present and its shadow was not drawn');
+  }
+  state.hp = null;
+  paintHome();
+  // Needs you counts what alert_counts counts. Two surfaces once counted the
+  // same list their own way and disagreed; this one draws a line per alert
+  // and the number above it comes from the payload, so they must agree.
+  const home = document.querySelector('#home').innerHTML || '';
+  for (const t of ['act', 'watch', 'tailwind']) {
+    const n = (home.match(new RegExp('class="need" data-tier="' + t + '"', 'g')) || []).length;
+    const want = (D.alert_counts || {})[t];
+    if (n !== want) bad.push('needs you: ' + n + ' ' + t + ' line(s) drawn, alert_counts says ' + want);
+  }
+  const needs = (home.match(/class="need" data-tier=/g) || []).length;
   // The treemap is the one picture on the page that is laid out in Python, so
   // a tile count that disagrees with the payload means the page dropped
   // rectangles on the floor - a map with a hole in it and no legend.
@@ -191,7 +217,7 @@ const WALK = `
   }
   globalThis.__smoke = {rows: ROWS.length, tiles: drawn, bad: bad,
                         parity: PARITY.checked, moved: moved, flagged: flagged,
-                        linked: linked};
+                        linked: linked, needs: needs};
 })();`;
 
 try {
@@ -210,5 +236,5 @@ if (s.bad.length) {
 console.log(`SMOKE OK  ${path} · ${s.rows} rows painted, ${s.tiles} treemap `
   + `tiles drawn, ${s.parity} fields at parity with Python, look-through `
   + `moved under a perturbed fund: ${s.moved}, trigger flag followed a pushed `
-  + `price: ${s.flagged}, ${s.linked} flags link to their position, jump box `
+  + `price: ${s.flagged}, ${s.linked} flags link to their position, home paints all 7 periods with ${s.needs} needs-you lines matching alert_counts, jump box `
   + `reaches every name, no runtime errors`);

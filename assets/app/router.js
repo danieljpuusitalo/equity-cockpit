@@ -13,11 +13,12 @@
 // a surface is never shown holding an older tick than the one beside it.
 const UNPAINTED = new Set();
 function shownSurface() {
-  return SHEET ? 'sheet' : (state.view || 'overview');
+  return SHEET ? 'sheet' : (state.view || 'home');
 }
 function paintSurface(s) {
   UNPAINTED.delete(s);
   if (s === 'sheet') paintSheet();
+  else if (s === 'home') paintHome();
   else if (s === 'overview') paintOverview();
   else if (s === 'positions' && typeof ROWS !== 'undefined' && ROWS.length
            && state.sym) select(state.sym);
@@ -32,7 +33,8 @@ function setView(v) {
   if (!SHEET && UNPAINTED.has(v)) paintSurface(v);
   for (const n of document.querySelectorAll('#vnav .vbtn[data-view]'))
     n.setAttribute('aria-pressed', String(n.getAttribute('data-view') === v));
-  const o = $('#v-overview'), p = $('#v-positions');
+  const h = $('#v-home'), o = $('#v-overview'), p = $('#v-positions');
+  if (h) h.hidden = v !== 'home';
   if (o) o.hidden = v !== 'overview';
   if (p) p.hidden = v !== 'positions';
   if (v === 'positions') {
@@ -46,9 +48,11 @@ function setView(v) {
 // What the drawer is sitting on top of. Both the crumb and the back button read
 // from state.view rather than from each other, so they cannot disagree about
 // where closing the drawer will land you.
-const VIEWNAME = {overview: 'Overview', positions: 'Positions'};
+// The Overview's route and id stay 'overview' so old links still land; what it
+// is called on screen is Allocation, because Home is the overview now.
+const VIEWNAME = {home: 'Home', overview: 'Allocation', positions: 'Positions'};
 function paintCrumb() {
-  const under = VIEWNAME[state.view] || 'Overview';
+  const under = VIEWNAME[state.view] || 'Home';
   const c = $('#t-crumb');
   if (c) c.textContent = 'over ' + under;
   const b = $('#t-close');
@@ -128,7 +132,7 @@ let ROUTING = false;      // applying a route must never write one back
 function routeOf() {
   if (SHEET) return '#/data' + (SS.at ? '/' + SS.at : '');
   if (state.view === 'positions' && state.sym) return '#/positions/' + state.sym;
-  return '#/' + (state.view || 'overview');
+  return '#/' + (state.view || 'home');
 }
 
 function syncHash(push) {
@@ -150,7 +154,7 @@ function applyHash() {
     .filter(Boolean);
   ROUTING = true;
   try {
-    const head = (parts[0] || 'overview').toLowerCase();
+    const head = (parts[0] || 'home').toLowerCase();
     if (head === 'data') {
       const sec = parts[1];
       if (sec) SS.at = sec;
@@ -162,8 +166,10 @@ function applyHash() {
     if (head === 'positions') {
       setView('positions');
       if (parts[1] && ROWSYM.has(parts[1])) select(parts[1]);
-    } else {
+    } else if (head === 'overview' || head === 'allocation') {
       setView('overview');
+    } else {
+      setView('home');
     }
   } finally { ROUTING = false; }
 }
@@ -378,7 +384,12 @@ function themeLabel() {
   if (!b) return;
   const dark = isDark();
   b.setAttribute('aria-pressed', String(dark));
-  b.textContent = dark ? 'Switch to light' : 'Switch to dark';
+  const label = dark ? 'Switch to light' : 'Switch to dark';
+  // The label is a span beside an icon; writing the button's own text would
+  // take the icon with it, and the collapsed rail shows only the icon.
+  const l = b.querySelector && b.querySelector('.l');
+  if (l) l.textContent = label; else b.textContent = label;
+  b.setAttribute('title', label);
 }
 
 on('#t-theme', 'click', () => {

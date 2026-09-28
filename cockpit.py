@@ -906,6 +906,47 @@ def selftest():
           f"template lost: {', '.join(ov)}" if ov
           else "grid, view switch and treemap container all present")
 
+    # Home is the landing surface now, and it fails the same silent way: lose
+    # the container or the paint call and the page opens on a blank plane with
+    # every test green. Three parts, each named down to the call.
+    #   - built and routed: the view, its container, and the surface switch
+    #     that paints it (a tick marks it; nothing else would ever repaint it);
+    #   - the curve says what it is a curve OF: the basis caption reads the
+    #     payload's own coverage fields, so a curve over 51 of 57 lots cannot
+    #     be read as the whole book;
+    #   - Needs you counts with the one counter. The header figure reads
+    #     D.alert_counts; a second count of D.alerts in this view is exactly
+    #     how two surfaces came to disagree (10 flags against 11 open).
+    hv = tmpl.split("function paintHome() {", 1)
+    hv = hv[1].split("\nfunction ", 1)[0].split("\non(", 1)[0] if len(hv) == 2 else ""
+    bs = tmpl.split("function basisHtml() {", 1)
+    bs = bs[1].split("\nfunction ", 1)[0] if len(bs) == 2 else ""
+    nd = tmpl.split("function needsHtml() {", 1)
+    nd = nd[1].split("\nfunction ", 1)[0] if len(nd) == 2 else ""
+    ps = tmpl.split("function paintSurface(s) {", 1)
+    ps = ps[1].split("\nfunction ", 1)[0] if len(ps) == 2 else ""
+    home = [h for h in ('id="v-home"', 'id="home"') if h not in tmpl]
+    if not hv:
+        home.append("paintHome() not found")
+    if "paintHome()" not in ps:
+        home.append("paintSurface no longer paints home")
+    tk = tmpl.split("function repaint() {", 1)
+    tk = tk[1].split("let inflight", 1)[0] if len(tk) == 2 else ""
+    if "'home'" not in tk:
+        home.append("a tick no longer marks home")
+    for f in ("PERF.n_included", "PERF.n_lots", "PERF.cost_covered_pct", "PERF.excluded"):
+        if f not in bs:
+            home.append(f"the curve basis no longer reads {f}")
+    if "basisHtml()" not in hv:
+        home.append("the curve basis is no longer printed")
+    if "D.alert_counts" not in nd or "D.alert_counts" not in hv:
+        home.append("Needs you no longer counts from D.alert_counts")
+    if ".length}" in nd or "list.length :" in nd:
+        home.append("Needs you prints a count of its own")
+    check("assets: home is built, says its basis and counts once", not home,
+          "; ".join(home) if home
+          else "view, paint and tick wired; basis from 4 payload fields; one counter")
+
     # Once prices arrive in the browser, every figure derived from a price has
     # to be re-derived there too, or the page shows a live tape above a
     # build-time book and says nothing about the difference. DERIVE is the one
