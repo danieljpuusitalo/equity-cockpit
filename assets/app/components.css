@@ -325,8 +325,32 @@ tr.click{cursor:pointer}
 tr.click:hover td{background:var(--surface-2)}
 tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
 .sheet .empty{font-size:var(--t-3);color:var(--muted);padding:10px 0}
+/* The drawer in the views' own system: each section a card on the plane, its
+   heading the card label rather than a louder rule of its own. A section
+   that already lays out its own cards (the exposure grid) stays on the plane,
+   because a card inside a card is a frame around a frame. The heading keeps
+   its caret and its click: it is still what collapses the section. */
+.sheet h2{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.11em;
+  margin:var(--s-6) 0 var(--s-3)}
+.sheet h2:first-of-type{margin-top:var(--s-5)}
+.sheet .sec:not(:has(.xgrid)){border:1px solid var(--border);border-radius:var(--r-lg);
+  background:var(--surface-1);padding:4px 13px 8px}
+.sheet .sec:not(:has(.xgrid)) thead th{background:var(--surface-1);padding-top:9px}
+.sheet .sec tr:last-child td{border-bottom:0}
+@media (max-width:760px){
+  /* The top stays 20px: .sheetnav sticks at top:-20px to sit flush. */
+  .sheet{padding:20px 12px 48px}
+  .sheet .sec:not(:has(.xgrid)){padding:2px 9px 6px}
+}
 /* ------------------------------------------------------------- reporting */
-.cal{display:grid;grid-template-columns:70px 1fr;gap:0 14px;align-items:start}
+/* minmax(0,1fr), not 1fr: a bare 1fr track floors at its content's width, and
+   a row of date, ticker, company and weight pushed the calendar 86px past a
+   390px screen. The company name is the part built to ellipsize; let it. */
+.cal{display:grid;grid-template-columns:70px minmax(0,1fr);gap:0 14px;align-items:start}
+@media (max-width:760px){
+  .cal{grid-template-columns:minmax(0,1fr)}
+  .calbox{padding-left:var(--s-4)}
+}
 .calwk{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.09em;color:var(--muted);
   text-transform:uppercase;padding:9px 0 0}
 .calbox{border-left:2px solid var(--grid);padding:0 0 12px 14px}
@@ -827,3 +851,14 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
   .research{overflow:visible;padding:12px 12px 24px}
   .lanes{grid-template-columns:minmax(0,1fr)}
 }
+
+/* ------------------------------------------------------------------- tick */
+/* A figure a live tick moved (paintTicked, router.js). Held for 150ms, then
+   let go; background only, so nothing reflows. The accent, not green or red:
+   the tint says "this changed", and the number already says which way. */
+@keyframes tick{
+  0%,17%{background-color:color-mix(in srgb,var(--accent) 22%,transparent)}
+  100%{background-color:transparent}
+}
+.tick{animation:tick 900ms ease-out 1}
+@media (prefers-reduced-motion:reduce){.tick{animation:none}}

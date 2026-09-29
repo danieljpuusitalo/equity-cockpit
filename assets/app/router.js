@@ -30,6 +30,38 @@ function flushSurface() {
   if (UNPAINTED.has(s)) paintSurface(s);
 }
 
+// Which figures a live tick moved. The paint functions rebuild their markup
+// from scratch and cannot say what changed, so the surface is read before and
+// after: every leaf holding a digit, in document order, compared by position.
+// When the count differs the layout moved (a row appeared, a filter changed)
+// and position no longer means the same figure, so nothing is tinted rather
+// than tinting the wrong thing. Background only: no reflow, and the accent,
+// never gain or loss green or red, because a moved number is not a good one.
+const TINT_BOX = {home: '#v-home', holdings: '#v-holdings', overview: '#v-overview',
+  research: '#v-research', positions: '#v-positions', sheet: '#sheetbody'};
+function figures(box) {
+  const out = [];
+  for (const el of box ? box.querySelectorAll('*') : []) {
+    if (!el.childElementCount && /\d/.test(el.textContent)) out.push(el);
+  }
+  return out;
+}
+function tickDiff(before, after) {
+  if (before.length !== after.length) return [];
+  const moved = [];
+  for (let i = 0; i < after.length; i++) if (before[i] !== after[i]) moved.push(i);
+  return moved;
+}
+function paintTicked(s) {
+  const box = $(TINT_BOX[s]);
+  const before = figures(box).map((el) => el.textContent);
+  paintSurface(s);
+  const after = figures(box);
+  for (const i of tickDiff(before, after.map((el) => el.textContent))) {
+    after[i].classList.add('tick');
+  }
+}
+
 function setView(v) {
   state.view = v;
   if (!SHEET && UNPAINTED.has(v)) paintSurface(v);

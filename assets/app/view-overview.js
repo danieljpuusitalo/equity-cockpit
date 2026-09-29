@@ -46,6 +46,24 @@ function symOfAlert(a) {
 const stat = (k, v, s) => `<div class="stat"><div class="k">${esc(k)}</div>
   <div class="v">${v}</div><div class="s">${s || ''}</div></div>`;
 
+// The fee figure sums only the funds whose TER is known, so with none known
+// its zero is an unanswered question, not a cheap book. No funds at all is a
+// real zero - but only when something classed the book: fund or stock comes
+// from the coverage rows, and without them every name is neither. Shared with
+// the data sheet so the two cannot disagree.
+function feeDrag(f) {
+  f = f || {};
+  const classed = ((D.coverage || {}).rows || []).length > 0;
+  if (!f.fund_value_eur) return f.fund_value_eur === 0 && classed
+    ? {known: false, v: `${eur(0)}/yr`, s: 'no fund in the book'}
+    : {known: false, v: '—', s: classed ? 'not computed'
+        : 'not computed: nothing in this build says which names are funds'};
+  if (!f.covered_eur) return {known: false, v: '—', s: 'no fund in the book publishes a TER'};
+  return {known: true, v: `${eur(f.annual_eur)}/yr`,
+    s: `${num(f.book_ter_pct, 2)}% of the book a year · ${
+      num(f.resolved_pct, 0)}% of fund value has a published TER`};
+}
+
 // Composition bars, reusing .xrow and its cross-filter attributes so a sector
 // clicked here means the same thing as a sector clicked in the data sheet.
 const ovbars = (rows, kind, limit) => (rows || []).slice(0, limit).map((r) => {
@@ -191,12 +209,10 @@ function paintOverview() {
     stat('Beta to ACWI', bp ? num(bp.p.beta, 2) : '—',
       bp ? `correlation ${num(bp.p.corr, 2)} · over ${esc(bp.k)}`
         : (B && B.absent ? 'no benchmark in this build' : 'not estimated')),
-    stat('Effective positions', num(conc.effective_n, 1),
-      `of ${conc.n || 0} held · the largest is ${num(conc.top1_pct, 1)}% of the book`),
-    stat('Fee drag', fees.annual_eur == null ? '—' : `${eur(fees.annual_eur)}/yr`,
-      fees.annual_eur == null ? 'no fund in the book publishes a TER'
-        : `${num(fees.book_ter_pct, 2)}% of the book a year · ${
-            num(fees.resolved_pct, 0)}% of fund value has a published TER`),
+    stat('Effective positions', conc.n ? num(conc.effective_n, 1) : '—',
+      conc.n ? `of ${conc.n} held · the largest is ${num(conc.top1_pct, 1)}% of the book`
+        : 'nothing held'),
+    stat('Fee drag', feeDrag(fees).v, feeDrag(fees).s),
   ].join('');
 
   // No size class here. Which labels fit is a pixel question and this runs
@@ -291,7 +307,7 @@ function paintOverview() {
   const frows = (fees.rows || []).filter((r) => r.annual_eur != null)
     .sort((a, b) => b.annual_eur - a.annual_eur).slice(0, 4);
   const nNoTer = (fees.rows || []).filter((r) => r.ter_pct == null).length;
-  cards.push(card('Fees', fees.annual_eur == null ? '' : `${eur(fees.annual_eur)}/yr`,
+  cards.push(card('Fees', feeDrag(fees).known ? `${eur(fees.annual_eur)}/yr` : '',
     `<dl class="kv">
       <dt>Of the book</dt><dd>${num(fees.book_ter_pct, 3)}%</dd>
       <dt>Of the fund sleeve</dt><dd>${num(fees.sleeve_ter_pct, 3)}%</dd>

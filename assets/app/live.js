@@ -150,7 +150,7 @@
       for (const s of ['home', 'holdings', 'overview', 'research', 'positions', 'sheet']) {
         UNPAINTED.add(s);
       }
-      paintSurface(shownSurface());
+      paintTicked(shownSurface());
     } catch (e) {
       // A repaint that throws must not leave a half-updated page claiming to
       // be live.

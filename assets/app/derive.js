@@ -741,9 +741,16 @@ const DERIVE = (function () {
   // Python's formatting, not JS's. They differ in exactly the places a flag
   // lives: a tie rounds to even in Python and away from zero in toFixed, and
   // str(120.0) is "120.0" where String(120) is "120".
+  // A tie is read off the exact decimal expansion of the double, never off
+  // x * 10^d: that multiply rounds, and 8.65 (really 8.65000000000000035...)
+  // became exactly 86.5 and was sent half-to-even as 8.6 where Python, which
+  // formats the exact value, prints 8.7. toFixed(100) is exact for any double
+  // above 2^-48, far below the smallest figure a flag carries.
   const pyFixed = (x, d) => {
-    const m = Math.pow(10, d), t = x * m;
-    return Math.abs(t % 1) === 0.5 ? (2 * Math.round(t / 2) / m).toFixed(d) : x.toFixed(d);
+    const s = Math.abs(x).toFixed(100), i = s.indexOf('.') + 1 + d;
+    if (s[i] !== '5' || !/^0*$/.test(s.slice(i + 1))) return x.toFixed(d);
+    const m = Math.pow(10, d), t = x * m;   // exact here: a true tie is k + 0.5
+    return (2 * Math.round(t / 2) / m).toFixed(d);
   };
   const pyRound = (x) => Math.abs(x % 1) === 0.5 ? 2 * Math.round(x / 2) : Math.round(x);
   const pyComma = (x) => pyFixed(x, 0).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -1078,7 +1085,7 @@ const DERIVE = (function () {
   }
 
   return {all, parity, stats: () => STATS,
-          squarify, fold, dayMove, allocation, concentration};
+          squarify, fold, dayMove, allocation, concentration, pyFixed};
 })();
 
 // Run at boot, before anything reads D - so the very first paint is already the

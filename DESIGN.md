@@ -229,6 +229,31 @@ works, instead of hardcoding a path that will be wrong after the next upgrade.
 `selftest` checks this first, because it is the failure the scheduler is most
 likely to hit.
 
+### 10. The polish rules (redesign phase 7, 2026-09-29)
+
+- **A tick tints what moved, and only that.** `paintTicked` snapshots every leaf
+  that holds a digit, repaints the view on screen, and marks the leaves whose
+  text changed. If the number of figures changed, the layout changed and nothing
+  is tinted — a tint on the wrong cell is worse than none. The tint is the
+  accent, never green or red: those mean gain and loss, and a price that moved
+  down is not a loss flash.
+- **An unknown is not a zero, on screen either.** Fee drag reads `€0/yr` only
+  when the book is classified and holds no fund. With no coverage it reads
+  `not computed`, and with funds but no published TER it says so. The same rule
+  runs through every card: an empty section explains itself. `tests/smoke.mjs`
+  paints eight hollowed payloads and fails on a zero or a caption that has
+  nothing to caption.
+- **No skeletons.** Every view paints synchronously from data already in the
+  page, in tens of milliseconds, so there is never a loading frame to fill. A
+  skeleton would be decoration pretending to be a state.
+- **The page rounds like Python.** `DERIVE.pyFixed` decides a half-even tie from
+  the exact decimal expansion of the double, not from `x * 10^d`: that product
+  rounds 8.65 (stored just above the tie) to exactly 86.5 and made the page
+  print `+8.6%` where Python printed `+8.7%`. Pinned in smoke against values
+  checked with Python's own `format()`.
+- **The Data drawer stays a drawer**, restyled into the card system: one card
+  per section, sticky headers on the card surface.
+
 ---
 
 ## What is deliberately not built

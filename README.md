@@ -41,21 +41,24 @@ something is new**. Open the dashboard when you want it:
 
 ### Reading the page
 
-It is one screen in three panes, and picking a name on the left drives the other
-two.
+Five views, on the rail at the left (keys `1`–`5`):
 
-| Pane | What it is for |
+| View | What it is for |
 |---|---|
-| **Left** | every name you hold or watch. Filter by `All / Held / Watch / Flagged`, or type in the box. A coloured dot means that name has a flag. Arrow keys walk the list. |
-| **Middle** | two years of daily candles, with your **target** drawn as a solid green line and your **trigger** as a dashed amber one, both labelled on the price axis. `1M 3M 6M 1Y ALL` reframe it. The strip underneath is every position sized by weight — click a block to jump to it. |
-| **Right** | what you decided. Verdict, tier, target, upside now against upside at the time you wrote it, how far the thesis has drifted, the trigger in your own words, and any flags on that name. |
+| **Home** | the book in one screen: value, P/L, the value curve with its basis stated underneath, and three cards — **Needs you**, **Movers**, **Upcoming**. |
+| **Holdings** | every name you hold or watch as one sortable table. |
+| **Positions** | one name at a time: two years of daily candles with your **target** (solid green) and **trigger** (dashed amber), and what you decided — verdict, tier, upside now against upside when you wrote it, the trigger in your own words, any flags. |
+| **Risk** | concentration, exposure, fee drag and coverage, each card linking to the table behind it. |
+| **Research** | the Equity Log as a board: one card per Log row, in lanes by verdict (`Buy-worthy / Watch / Pass`), marked with the flags the build raised. |
 
-The top bar carries the whole book: value, P/L, how many names, how many flags,
-how old the CSV is, and whether Notion was read live or from cache. A row under
-it appears only when something needs attention.
+**Data** (top right) opens every number on the page as plain tables in a drawer —
+holdings, the Equity Log, flags, and where each figure came from. **Dark** flips
+the theme.
 
-**Data** (top right) opens every number on the page as plain tables — holdings,
-the Equity Log, flags, and where each figure came from. **Dark** flips the theme.
+When the page is served with live prices, a figure that moved on the last tick
+flashes briefly in the accent colour; nothing else does, and the flash is off
+under reduced motion. A card with nothing to show says why (`not computed`,
+`no fund in the book publishes a TER`) rather than showing a zero.
 
 Manual commands, from this folder:
 

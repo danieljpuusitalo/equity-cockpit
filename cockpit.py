@@ -1044,6 +1044,28 @@ def selftest():
           else "both views routed, ticked and booted; marks from alerts, not held "
                "from coverage, rifts from health; risk reads PERF.risk, absent says so")
 
+    # The polish pass. A tick tints what it moved, through the one repaint the
+    # live module makes; the tint is the accent, never gain or loss, and stands
+    # down for reduced motion. An empty fee sleeve is not a free one: the drag
+    # figure goes through feeDrag on both surfaces that print it.
+    pp = []
+    if "paintTicked(shownSurface())" not in tk or "paintSurface(shownSurface())" in tk:
+        pp.append("a live tick no longer repaints through paintTicked")
+    if "tickDiff(" not in _body("function paintTicked(s) {"):
+        pp.append("paintTicked no longer diffs before and after")
+    css_ = tmpl.split("</style>")[0]
+    kf = re.search(r"@keyframes tick\{(.*?)\n\}", css_, re.S)
+    if not kf or "--accent" not in kf.group(1) or re.search(r"--(up|down|pos|neg|good|crit)", kf.group(1)):
+        pp.append("the tick tint is not the accent")
+    if not re.search(r"prefers-reduced-motion:\s*reduce\)\{\.tick\{animation:none", css_):
+        pp.append("the tick tint ignores reduced motion")
+    if "feeDrag(fees)" not in po or "feeDrag(XF)" not in _body("function paintSheet() {"):
+        pp.append("a fee-drag figure no longer goes through feeDrag")
+    check("assets: a tick tints what moved, and an unknown fee is not a zero", not pp,
+          "; ".join(pp) if pp
+          else "live repaint diffs through paintTicked; accent tint, off under reduced "
+               "motion; both fee-drag figures go through feeDrag")
+
     # Once prices arrive in the browser, every figure derived from a price has
     # to be re-derived there too, or the page shows a live tape above a
     # build-time book and says nothing about the difference. DERIVE is the one
@@ -1075,7 +1097,9 @@ def selftest():
     if not rp:
         lazy.append("repaint() not found")
     else:
-        if "paintSurface(shownSurface())" not in rp or "UNPAINTED.add(" not in rp:
+        # paintTicked paints through paintSurface; the tint rides on top.
+        if ("paintTicked(shownSurface())" not in rp or "UNPAINTED.add(" not in rp
+                or "paintSurface(s)" not in _body("function paintTicked(s) {")):
             lazy.append("repaint no longer marks then paints the shown surface")
         for direct in ("paintSheet(", "paintOverview(", "select("):
             if direct in rp:

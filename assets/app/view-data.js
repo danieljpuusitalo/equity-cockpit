@@ -275,7 +275,7 @@ function paintSheet() {
         + atBuild('each multiple is the vendor’s own figure at the '
           + 'vendor’s own asof; one holding quotes in pence, so a naive '
           + 'price-over-earnings rescale would be out by a factor of a hundred'))}
-      ${xcard('Fund fee drag', eur(XF.annual_eur) + '/yr',
+      ${xcard('Fund fee drag', feeDrag(XF).v, !feeDrag(XF).known ? feeDrag(XF).s :
         `${num(XF.sleeve_ter_pct,3)}% of the fund sleeve ·
          ${num(XF.book_ter_pct,3)}% of the book ·
          ${num(XF.resolved_pct,0)}% of fund value has a published TER`)}

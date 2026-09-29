@@ -422,7 +422,124 @@ try {
   process.exit(1);
 }
 
+/* Every card has to survive its source answering with nothing. The walk above
+   runs on the last real book, where every source answered; a card that throws
+   on an empty section or prints "undefined" for a missing one is invisible
+   there and turns up the morning Yahoo or Notion has a bad day. So the page is
+   run again on hollowed copies of the same payload: each group of sections set
+   to the empty value of its own type, then all of them at once, then a book
+   with no positions at all. The script's top-level consts live in the
+   Function's own scope, so each run is a fresh page. */
+const HOLLOW = `
+;(function () {
+  const bad = [];
+  const junk = ['undefined', 'NaN', '[object Object]', 'Infinity'];
+  const look = (where, sel) => {
+    const h = document.querySelector(sel).innerHTML || '';
+    for (const t of junk) if (h.includes(t)) bad.push(where + ': printed "' + t + '"');
+  };
+  const paint = (where, fn, sel) => {
+    try { fn(); look(where, sel); } catch (e) { bad.push(where + ': threw ' + e.message); }
+  };
+  for (const [p] of PERIODS) { state.hp = p; paint('home ' + p, paintHome, '#home'); }
+  state.hp = null;
+  // Absent is not zero, in the two places a hollow payload used to print one:
+  // a caption describing a curve that was not drawn, and a fee drag of nothing
+  // when no fund's TER was known or nothing said which names were funds.
+  if (!HC && document.querySelector('#home').innerHTML.includes('rebuilt from'))
+    bad.push('home: the curve caption printed with no curve');
+  paint('holdings', paintHoldings, '#holdings');
+  paint('risk', paintOverview, '#ovtop');
+  const FE = (D.exposure || {}).fees || {};
+  const classed = ((D.coverage || {}).rows || []).length > 0;
+  if ((!classed || (FE.fund_value_eur && !FE.covered_eur))
+      && /Fee drag[\\s\\S]*?€0\\/yr/.test(document.querySelector('#ovtop').innerHTML))
+    bad.push('risk: a fee drag of zero where no TER was known');
+  look('risk grid', '#ovgrid');
+  for (const f of ['all', 'held', 'unheld', 'look']) {
+    RS.f = f;
+    paint('research ' + f, paintResearch, '#research');
+  }
+  RS.f = 'all';
+  paint('data', paintSheet, '#sheetbody');
+  paint('tape', paintTape, '#t-meta');
+  for (const r of ROWS) paint('position ' + r.sym, () => select(r.sym), '#thesis');
+  globalThis.__hollow = bad;
+})();`;
+const DATA = /const D = (\{.*?\});\r?\n/s;
+const real = JSON.parse(js.match(DATA)[1]);
+// What render.payload() actually emits for a source that answered nothing:
+// performance and lookthrough are absent (null), everything else is the empty
+// of its own type. A hollow shape Python cannot produce would test the shim.
+const ABSENT = new Set(['performance', 'lookthrough']);
+const emptyOf = (v, k) => ABSENT.has(k) ? null
+  : Array.isArray(v) ? [] : v && typeof v === 'object' ? {} : null;
+const GROUPS = {
+  'no performance': ['performance'],
+  'no exposure': ['exposure', 'lookthrough'],
+  'no Equity Log': ['watchlist', 'alerts', 'coverage'],
+  'no price history': ['history', 'indicators', 'returns'],
+  'no reporting or activity': ['reporting', 'activity'],
+  'no overview': ['overview'],
+};
+const hollowOf = (keys, noBook) => {
+  const H = JSON.parse(JSON.stringify(real));
+  for (const k of keys) H[k] = emptyOf(H[k], k);
+  // alert_counts says what alerts holds; emptying one without the other would
+  // test a disagreement Python cannot produce, not an empty source.
+  if (keys.includes('alerts')) H.alert_counts = {act: 0, watch: 0, tailwind: 0, total: 0};
+  if (noBook) { H.holdings = []; H.totals = {}; }
+  return H;
+};
+const cases = Object.entries(GROUPS).map(([n, k]) => [n, hollowOf(k)]);
+const every = [].concat(...Object.values(GROUPS));
+cases.push(['every optional section empty', hollowOf(every)]);
+cases.push(['no positions at all', hollowOf(every, true)]);
+const hollowBad = [];
+for (const [name, H] of cases) {
+  nodes.clear();
+  globalThis.__hollow = null;
+  const src = js.replace(DATA, () => 'const D = ' + JSON.stringify(H) + ';\n');
+  try {
+    new Function(src + HOLLOW)();
+  } catch (e) {
+    hollowBad.push(name + ': the page threw at load: ' + e.message);
+    continue;
+  }
+  for (const b of globalThis.__hollow || ['the hollow walk never ran'])
+    hollowBad.push(name + ' | ' + b);
+}
+
+/* The tick tint picks figures by position, so the diff it rests on must tint
+   exactly what moved, and nothing at all once the layout moved under it:
+   tinting by position after a row appeared would light up the wrong numbers.
+   The unchanged pair is the control - a diff that marks everything passes the
+   moved case on its own. */
+nodes.clear();
+new Function(js + ';globalThis.__tick = [tickDiff(["1","2","3"], ["1","2","3"]).join(),'
+  + 'tickDiff(["1","2","3"], ["1","9","3"]).join(), tickDiff(["1","2"], ["1","2","3"]).join()];')();
+/* Python's own format() answers, each read back from Python together with
+   the exact stored value (Decimal(x)): 8.65 is stored a hair ABOVE the tie and
+   rounds up; 0.35 and 2.675 are stored a hair BELOW and round down; 0.25, 2.5
+   and -2.25 are exact ties and go to even. 8.65 is the control - a formatter
+   that sends every apparent tie to even passes the other five, and that was
+   the bug that printed +8.6% beside Python's +8.7%. */
+const PYF = [[8.65, 1, '8.7'], [0.35, 1, '0.3'], [2.675, 2, '2.67'],
+             [0.25, 1, '0.2'], [2.5, 0, '2'], [-2.25, 1, '-2.2']];
+nodes.clear();
+new Function(js + ';globalThis.__pyf = ' + JSON.stringify(PYF)
+  + '.map(([x, d]) => DERIVE.pyFixed(x, d));')();
+PYF.forEach(([x, d, want], i) => {
+  const got = (globalThis.__pyf || [])[i];
+  if (got !== want) hollowBad.push(`pyFixed(${x}, ${d}) gave ${got}, Python gives ${want}`);
+});
+const tk = globalThis.__tick || [];
+if (tk[0] !== '' || tk[1] !== '1' || tk[2] !== '')
+  hollowBad.push('tick: tickDiff marked ' + JSON.stringify(tk)
+    + ', expected nothing, only index 1, and nothing after a layout change');
+
 const s = globalThis.__smoke || {rows: 0, bad: ['the walk never ran']};
+s.bad = s.bad.concat(hollowBad);
 if (s.bad.length) {
   console.error(`SMOKE FAIL  ${path}: ${s.bad.length} problem(s)`);
   for (const b of s.bad.slice(0, 20)) console.error(`  ${b}`);
@@ -436,4 +553,4 @@ console.log(`SMOKE OK  ${path} · ${s.rows} rows painted, ${s.tiles} treemap `
   + `period cell followed a moved attribution: ${s.periodMoved}, relative line rebased and gated: ${s.relOk}, `
   + `research draws ${s.research} cards and follows its flags and gaps: ${s.resMoved}, `
   + `risk draws ${s.rrows} contribution rows and ${s.cells} correlation cells, follows a moved share: ${s.riskMoved}, jump box `
-  + `reaches every name, no runtime errors`);
+  + `reaches every name, ${cases.length} hollowed payloads paint every view clean, no runtime errors`);

@@ -313,6 +313,9 @@ function paintHome() {
   const P = (PERF.periods || {})[p] || {};
   const t = D.totals || {}, day = OV.day || {};
   const c = D.alert_counts || {};
+  // First, because it sets HC: the caption describes a curve and has nothing
+  // to describe when there is none.
+  const curve = curveHtml(p);
   box.innerHTML = `
     <section class="hhero">
       <div class="hhead">
@@ -321,16 +324,16 @@ function paintHome() {
           <div class="hv">${eur(t.value_eur)}</div>
           <div class="hs">${day.pct == null ? 'no position has a previous close'
             : `<span class="${cls(day.value_eur)}">${day.value_eur > 0 ? '+' : ''}${
-                eur(day.value_eur)} (${pct(day.pct)})</span> today`}
-            · <span class="${cls(P.twr_pct)}">${pct(P.twr_pct, 1)}</span> ${
-              p === 'ALL' ? 'since the first lot' : 'over ' + esc(p)}</div>
+                eur(day.value_eur)} (${pct(day.pct)})</span> today`}${P.twr_pct == null ? ''
+            : ` · <span class="${cls(P.twr_pct)}">${pct(P.twr_pct, 1)}</span> ${
+              p === 'ALL' ? 'since the first lot' : 'over ' + esc(p)}`}</div>
         </div>
         <div class="hper" role="group" aria-label="Period">${PERIODS.map(([k, l]) =>
           `<button class="rbtn" data-hp="${k}" aria-pressed="${k === p}">${esc(l)}</button>`
         ).join('')}</div>
       </div>
-      ${curveHtml(p)}
-      <div class="hcap">${basisHtml()}</div>
+      ${curve}
+      ${HC ? `<div class="hcap">${basisHtml()}</div>` : ''}
     </section>
     <section class="kpis">${kpiHtml(p)}</section>
     <div class="hgrid2">
