@@ -13,8 +13,10 @@ function palAll() {
       go: () => { sheetOpen(false); setView('home'); }},
     {kind: 'View', label: 'Holdings', sub: 'every held name in one sortable table',
       go: () => { sheetOpen(false); setView('holdings'); }},
-    {kind: 'View', label: 'Allocation', sub: 'treemap, concentration, sector and geography',
+    {kind: 'View', label: 'Risk', sub: 'volatility, correlation, risk share, currency, fees, overlap',
       go: () => { sheetOpen(false); setView('overview'); }},
+    {kind: 'View', label: 'Research', sub: 'the Equity Log as a board: triggers, upside, checks due',
+      go: () => { sheetOpen(false); setView('research'); }},
     {kind: 'View', label: 'Positions', sub: 'rail, chart and thesis', go: () => {
       sheetOpen(false); setView('positions'); }},
   ];
@@ -134,6 +136,7 @@ try {
     if (e.key === '2') { sheetOpen(false); setView('holdings'); return; }
     if (e.key === '3') { sheetOpen(false); setView('positions'); return; }
     if (e.key === '4') { sheetOpen(false); setView('overview'); return; }
+    if (e.key === '5') { sheetOpen(false); setView('research'); return; }
     if (e.key === 'd' || e.key === 'D') { sheetOpen(!SHEET); return; }
   });
 } catch (e) {}

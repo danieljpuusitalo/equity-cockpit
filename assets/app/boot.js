@@ -3,6 +3,7 @@ paintTape();
 paintHome();
 paintHoldings();
 paintOverview();
+paintResearch();
 paintSheet();
 // Positions is painted at boot even though Home is what opens, so the
 // first switch is instant. The rail, the head, the thesis and the weight strip

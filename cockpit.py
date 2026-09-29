@@ -1002,6 +1002,48 @@ def selftest():
           else "view, route, tick and boot wired; period from attribution pct; "
                "absent sorts last; risk says not estimated; relative line gated")
 
+    # Research and Risk, the same way. Research is a board over the Equity Log
+    # that must decide nothing: its marks come from D.alerts (the flags Python
+    # raised), its "not held" from coverage, its Held disagreement from the
+    # health problem cockpit.py raised. A board that re-tested a threshold
+    # locally could disagree with Needs you about what is near a trigger.
+    # Risk must read PERF.risk and print an unestimated share as absent.
+    rr = []
+    for h in ('id="v-research"', 'id="research"', 'data-view="research"'):
+        if h not in tmpl:
+            rr.append(f"template lost {h}")
+    pr_ = _body("function paintResearch() {")
+    if not pr_:
+        rr.append("paintResearch() not found")
+    if "paintResearch()" not in ps:
+        rr.append("paintSurface no longer paints research")
+    if "'research'" not in tk:
+        rr.append("a tick no longer marks research")
+    if "#v-research" not in _body("function setView(v) {"):
+        rr.append("setView no longer shows and hides #v-research")
+    if "head === 'research'" not in _body("function applyHash() {"):
+        rr.append("applyHash has no #/research route")
+    if len(bt) != 2 or "paintResearch();" not in bt[1].split("applyHash();", 1)[0]:
+        rr.append("boot no longer paints research")
+    if "D.alerts" not in _body("function flagsByTicker() {") or "flagsByTicker()" not in pr_:
+        rr.append("research marks no longer come from D.alerts")
+    if "problems" not in _body("function heldRifts() {") or "heldRifts()" not in pr_:
+        rr.append("research no longer reads the Held health problems")
+    if "researched_not_held" not in pr_:
+        rr.append("research no longer reads coverage.researched_not_held")
+    if re.search(r"trigger_gap_pct\s*[<>]", pr_ + _body("function rsCard(w, fl, rift, notHeld) {")):
+        rr.append("research re-tests the trigger distance itself")
+    rh = _body("function riskHtml() {")
+    if "PERF.risk" not in rh or "not estimated" not in rh:
+        rr.append("the risk grid no longer reads PERF.risk or says 'not estimated'")
+    po = _body("function paintOverview() {")
+    if "book_vol_pct" not in po or "betaPeriod()" not in po:
+        rr.append("the Risk headline lost volatility or beta")
+    check("assets: research and risk are built, routed, and decide nothing", not rr,
+          "; ".join(rr) if rr
+          else "both views routed, ticked and booted; marks from alerts, not held "
+               "from coverage, rifts from health; risk reads PERF.risk, absent says so")
+
     # Once prices arrive in the browser, every figure derived from a price has
     # to be re-derived there too, or the page shows a live tape above a
     # build-time book and says nothing about the difference. DERIVE is the one

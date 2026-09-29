@@ -404,7 +404,7 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
    says they are the headline - not a 12px strip in the chrome. */
 .ovtop{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
   gap:var(--s-5);margin-bottom:13px}
-.ovtop > *{grid-column:span 4}
+.ovtop > *{grid-column:span 3}
 /* .stat's own surface and label/value/note rules were here. They are the shared
    rule above now - .stat is what the headline band's boxes are called, not a
    fourth description of a bordered box. */
@@ -521,8 +521,9 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
      under 800px and the small tiles stop being legible before the card does. */
   .ovgrid > *{grid-column:span 6}
   .ovgrid > .ov-8{grid-column:span 12}
-  /* The three stats stay on one row: at 1180 that is ~380px each, which is
-     wider than the widest of them needs. Halving them would leave one alone. */
+  /* Four risk stats, two by two: at 1180 a quarter is under 250px and the
+     notes under each figure wrap to four lines. */
+  .ovtop > *{grid-column:span 6}
 }
 
 /* ------------------------------------------------------ navigation affordances */
@@ -583,7 +584,7 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
   /* One card per row. The stats stay paired: they are four short numbers and
      stacking them costs four screens of scroll to say what two lines can. */
   .ovgrid > *,.ovgrid > .ov-6,.ovgrid > .ov-8{grid-column:span 12}
-  .ovtop > *{grid-column:span 12}
+  .ovtop > *{grid-column:span 6}
 }
 
 /* ------------------------------------------------------------------- home */
@@ -746,4 +747,83 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .hgrid2{grid-template-columns:minmax(0,1fr)}
   .tape{padding:6px 12px}
+}
+
+/* ------------------------------------------------------------------- risk */
+/* Correlation matrix. A grid of cells rather than a canvas so each cell can
+   carry its pair in a title, and capped in width because a 21x21 matrix that
+   takes a whole 1920 column is a wall, not a picture. */
+/* At phone width twenty-odd columns meet their labels: the matrix scrolls
+   inside its card rather than pushing past it. */
+.corr{display:grid;gap:var(--s-1);max-width:560px;font-size:var(--t-1);color:var(--muted);
+  align-items:center;overflow-x:auto}
+.corr i{display:block;aspect-ratio:1;border-radius:var(--r-sm);min-width:0}
+.corr i.dg{background:var(--grid)}
+.corr .cl{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;
+  overflow:hidden;max-height:64px;justify-self:center}
+.corr .rl{white-space:nowrap;padding-right:6px;text-align:right}
+.corr .rl.click{cursor:pointer}
+.corr .rl.click:hover{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
+/* Risk share against weight: two thin bars on one scale per name. */
+.rrow{display:grid;grid-template-columns:62px 1fr 92px;gap:var(--s-4);align-items:center;
+  padding:3px 0;font-size:var(--t-3);border-radius:var(--r-sm)}
+.rrow.click{cursor:pointer}
+.rrow.click:hover{background:var(--surface-2)}
+.rrow .t{font-weight:var(--w-semi);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rrow .rb{display:flex;flex-direction:column;gap:var(--s-1)}
+.rrow .rb i,.rkey i{display:block;height:5px;border-radius:var(--r-sm)}
+.rrow .rb i.w,.rkey i.w{background:var(--axis)}
+.rrow .rb i.r,.rkey i.r{background:var(--accent)}
+/* Scoped under .card so a row value outranks `.card .v`, the headline figure. */
+.card .lrow .v,.card .rrow .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:var(--w-med);
+  font-size:inherit;letter-spacing:normal;margin:0;line-height:inherit}
+.rrow .na,.rk .na{color:var(--muted);font-weight:var(--w-med)}
+.rkey{display:flex;gap:var(--s-5);margin-top:var(--s-3);font-size:var(--t-1);color:var(--muted)}
+.rkey span{display:flex;align-items:center;gap:var(--s-2)}
+.rkey i{width:18px}
+.lrow .c{color:var(--ink-2);font-size:var(--t-2);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.lrow.ov2{grid-template-columns:minmax(0,1fr) auto 56px}
+
+/* --------------------------------------------------------------- research */
+.research{overflow-y:auto;flex:1;padding:16px 20px 32px;background:var(--plane);
+  display:flex;flex-direction:column;gap:var(--s-5)}
+.rbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
+  gap:var(--s-3) var(--s-5)}
+.rsum{font-size:var(--t-3);color:var(--ink-2);line-height:var(--lh)}
+.rsegs{padding:0;border:0}
+.rsegs .seg{flex:none;padding:4px 10px}
+.rsegs .seg b{font-weight:var(--w-semi);color:var(--muted);margin-left:var(--s-1)}
+.lanes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s-5);
+  align-items:start}
+.lane{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface-1);
+  padding:11px 13px;display:flex;flex-direction:column;gap:var(--s-4);min-width:0}
+.lane h3{margin:0;display:flex;justify-content:space-between;align-items:baseline;
+  font-size:var(--t-2);color:var(--muted);font-weight:var(--w-semi)}
+.rcard{border:1px solid var(--border);border-radius:var(--r-md);background:var(--plane);
+  padding:9px 11px;min-width:0}
+.rcard.click{cursor:pointer}
+.rcard.click:hover{border-color:var(--axis)}
+.rcard header{display:flex;align-items:baseline;gap:var(--s-3);margin-bottom:var(--s-3)}
+.rcard header b{font-size:var(--t-4);font-weight:var(--w-semi)}
+.rcard .hb{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--accent)}
+.rcard .co{flex:1;min-width:0;color:var(--muted);font-size:var(--t-2);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.rk{display:grid;grid-template-columns:auto 1fr;gap:var(--s-1) 10px;margin:0;
+  font-size:var(--t-2);font-variant-numeric:tabular-nums}
+.rk dt{color:var(--muted)}
+.rk dd{margin:0;color:var(--ink-2);min-width:0}
+.rk b{color:var(--ink);font-weight:var(--w-semi)}
+.rk .od{color:var(--warn-ink);font-weight:var(--w-semi)}
+.rmarks{display:flex;flex-wrap:wrap;gap:var(--s-2) var(--s-3);margin-top:var(--s-3)}
+.rmark{display:inline-flex;align-items:center;gap:var(--s-2);font-size:var(--t-1);
+  color:var(--ink-2);padding:1px 7px 1px 5px;border:1px solid var(--border);
+  border-radius:var(--r-pill)}
+@media (max-width:1180px) and (min-width:761px){
+  .lanes{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:760px){
+  .research{overflow:visible;padding:12px 12px 24px}
+  .lanes{grid-template-columns:minmax(0,1fr)}
 }

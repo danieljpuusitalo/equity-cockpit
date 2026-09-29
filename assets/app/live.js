@@ -147,7 +147,7 @@
       // Only the surface on screen; the others are marked and painted on the
       // way in (paintSurface). Every tick marks all three before painting one,
       // so nothing hidden can skip a tick and come back one tick behind.
-      for (const s of ['home', 'holdings', 'overview', 'positions', 'sheet']) {
+      for (const s of ['home', 'holdings', 'overview', 'research', 'positions', 'sheet']) {
         UNPAINTED.add(s);
       }
       paintSurface(shownSurface());

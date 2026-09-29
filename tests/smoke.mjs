@@ -320,7 +320,95 @@ const WALK = `
     if (!th.includes('of book risk') && !th.includes('not estimated'))
       bad.push('thesis ' + r.sym + ': no book-risk line, neither a figure nor "not estimated"');
   }
+  // Research: one card per Log row under All, and Held plus Not held is the
+  // whole Log - a row that belongs to neither filter has fallen off the board.
+  const resBox = () => document.querySelector('#research').innerHTML || '';
+  const cardOf = (t) => (resBox().split('data-tk="' + t + '"')[1] || '').split('</article>')[0];
+  const nW = (D.watchlist || []).length;
+  const resN = {};
+  for (const f of ['all', 'held', 'unheld', 'look']) {
+    RS.f = f;
+    paintResearch();
+    scan('research ' + f, resBox());
+    resN[f] = (resBox().match(/<article class="rcard/g) || []).length;
+  }
+  if (resN.all !== nW) bad.push('research: ' + resN.all + ' cards drawn, ' + nW + ' rows on the Log');
+  if (resN.held + resN.unheld !== nW) bad.push('research: held ' + resN.held + ' + not held '
+    + resN.unheld + ' is not the ' + nW + ' on the Log');
+  RS.f = 'all';
+  // Negative controls. The marks are read off D.alerts and D.health, so a flag
+  // or a Held problem put there has to appear on its card, and taken away has
+  // to leave it; the trigger distance is the payload's, so moving it moves
+  // the card. A board that re-tested thresholds or cached a paint fails here.
+  let resMoved = 'skipped';
+  const rw = (D.watchlist || []).find((w) => w.trigger_level != null && !w.trigger_hit
+    && w.trigger_gap_pct != null) || (D.watchlist || [])[0];
+  if (rw) {
+    const keepA = D.alerts, keepH = (D.health || {}).problems;
+    D.alerts = (keepA || []).concat([{level: 'warning', key: 'trigger-near:' + rw.ticker,
+                                      title: 'smoke'}]);
+    D.health = D.health || {};
+    D.health.problems = (keepH || []).concat([{key: 'held-' + rw.ticker + '-mismatch',
+                                               title: 'smoke rift'}]);
+    paintResearch();
+    const withFlag = cardOf(rw.ticker);
+    D.alerts = keepA; D.health.problems = keepH;
+    paintResearch();
+    const without = cardOf(rw.ticker);
+    if (!withFlag.includes('near trigger')) bad.push('research: a trigger-near flag for '
+      + rw.ticker + ' did not mark its card');
+    if (!withFlag.includes('Held disagrees')) bad.push('research: a held problem for '
+      + rw.ticker + ' did not mark its card');
+    if (without.includes('smoke')) bad.push('research: a removed flag is still on the card');
+    if (rw.trigger_gap_pct != null) {
+      const keepG = rw.trigger_gap_pct;
+      rw.trigger_gap_pct = keepG + 13.7;
+      paintResearch();
+      const moved = cardOf(rw.ticker);
+      rw.trigger_gap_pct = keepG;
+      paintResearch();
+      if (moved === without) bad.push('research: moving ' + rw.ticker
+        + ' trigger distance left its card unchanged');
+      resMoved = moved === without ? 'no' : 'yes';
+    }
+  }
+  // Risk: one row per estimated name, a full matrix, and an absent share
+  // printed as absent. Then the share itself is moved and must move the row.
+  paintOverview();
+  const RK = PERF.risk || {};
+  const ovg = () => document.querySelector('#ovgrid').innerHTML || '';
+  const rrows = (ovg().match(/class="rrow/g) || []).length;
+  if (rrows !== (RK.contribution || []).length) bad.push('risk: ' + rrows
+    + ' contribution rows drawn, ' + (RK.contribution || []).length + ' in the payload');
+  const nS = (RK.symbols || []).length;
+  const cells = nS > 1 ? (ovg().split('class="corr"')[1] || '').split('class="tmapkey"')[0]
+    .match(/<i /g) || [] : [];
+  if (nS > 1 && cells.length !== nS * nS) bad.push('risk: ' + cells.length
+    + ' correlation cells drawn, ' + nS * nS + ' in the matrix');
+  let riskMoved = 'skipped';
+  const rc0 = (RK.contribution || []).find((c) => c.rc_pct != null);
+  if (rc0) {
+    const rowOf = () => (ovg().slice(ovg().indexOf('class="rrow'))
+      .split('<div class="t">' + esc(labOf(rc0.symbol)) + '</div>')[1]
+      || '').split('</div></div>')[0];
+    const was = rowOf();
+    const keep = rc0.rc_pct;
+    rc0.rc_pct = keep + 11.1;
+    paintOverview();
+    const now = rowOf();
+    rc0.rc_pct = null;
+    paintOverview();
+    const gone = rowOf();
+    rc0.rc_pct = keep;
+    paintOverview();
+    if (was === now) bad.push('risk: moving ' + rc0.symbol + ' share of risk left its row unchanged');
+    if (!gone.includes('not estimated')) bad.push('risk: an absent share of risk for '
+      + rc0.symbol + ' was not printed as not estimated');
+    riskMoved = was !== now && gone.includes('not estimated') ? 'yes' : 'no';
+  }
   globalThis.__smoke = {rows: ROWS.length, tiles: drawn, bad: bad,
+                        research: resN.all, resMoved: resMoved, rrows: rrows,
+                        cells: cells.length, riskMoved: riskMoved,
                         parity: PARITY.checked, moved: moved, flagged: flagged,
                         linked: linked, needs: needs, held: heldN,
                         holdPainted: holdPainted, periodMoved: periodMoved,
@@ -345,5 +433,7 @@ console.log(`SMOKE OK  ${path} · ${s.rows} rows painted, ${s.tiles} treemap `
   + `moved under a perturbed fund: ${s.moved}, trigger flag followed a pushed `
   + `price: ${s.flagged}, ${s.linked} flags link to their position, home paints all 7 periods with ${s.needs} needs-you lines matching alert_counts, `
   + `holdings paints ${s.held} names in ${s.holdPainted} period/grouping states, `
-  + `period cell followed a moved attribution: ${s.periodMoved}, relative line rebased and gated: ${s.relOk}, jump box `
+  + `period cell followed a moved attribution: ${s.periodMoved}, relative line rebased and gated: ${s.relOk}, `
+  + `research draws ${s.research} cards and follows its flags and gaps: ${s.resMoved}, `
+  + `risk draws ${s.rrows} contribution rows and ${s.cells} correlation cells, follows a moved share: ${s.riskMoved}, jump box `
   + `reaches every name, no runtime errors`);
