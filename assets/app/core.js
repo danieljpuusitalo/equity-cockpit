@@ -25,8 +25,20 @@
 const $  = (s) => document.querySelector(s);
 const esc = (s) => String(s == null ? '' : s)
   .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-const eur = (n) => n == null ? '—' : '€' + Number(n).toLocaleString('en-GB',
-  {maximumFractionDigits:0});
+// The sign goes before the symbol: toLocaleString on a negative printed
+// "€-58". A loss that rounds to nothing carries no sign.
+const eur = (n) => n == null ? '—' : (Math.round(n) < 0 ? '-' : '') + '€'
+  + Math.abs(Number(n)).toLocaleString('en-GB', {maximumFractionDigits:0});
+// A euro CHANGE - P/L, attribution, a delta - says which way in both
+// directions, the same as pct does. A level (value, cost) never takes a +.
+const eurs = (n) => n == null ? '—' : (Math.round(n) > 0 ? '+' : '') + eur(n);
+// A share of the book to one place, from the euros rather than from the
+// two-place weight_pct beside them: 17.95178 stored as 17.95 and rounded
+// again printed 17.9 next to the holdings table's 18.0 for the same line.
+const bookPct = (o) => {
+  const t = (D.totals || {}).value_eur;
+  return num(o.value_eur != null && t > 0 ? o.value_eur / t * 100 : o.weight_pct, 1);
+};
 const px  = (n) => n == null ? '—' : Number(n).toLocaleString('en-GB',
   {minimumFractionDigits:2, maximumFractionDigits:2});
 const pct = (n, dp) => n == null ? '—' :

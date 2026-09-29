@@ -119,7 +119,7 @@ function paintSheet() {
       <td>${fresh(p.freshness)}${px(p.price)}</td>
       <td class="${cls(p.day_pct)}">${pct(p.day_pct,1)}</td>
       <td>${eur(p.value_eur)}</td><td>${eur(p.cost_eur)}</td>
-      <td class="${cls(p.pl_eur)}">${eur(p.pl_eur)}</td>
+      <td class="${cls(p.pl_eur)}">${eurs(p.pl_eur)}</td>
       <td class="${cls(p.pl_pct)}">${pct(p.pl_pct,1)}</td>
       <td>${p.weight.toFixed(1)}%</td><td>${pct(p.off_high,1)}</td></tr>`).join('')}
     </tbody></table></div></div>`;
@@ -168,7 +168,7 @@ function paintSheet() {
       data-sym="${esc(c.yahoo || c.ticker)}">
       <td>${esc(c.ticker)}</td><td>${c.covered ? 'yes' : '<b>no</b>'}</td>
       <td>${esc(c.gap || '')}</td>
-      <td>${eur(c.value_eur)}</td><td>${num(c.weight_pct,1)}%</td>
+      <td>${eur(c.value_eur)}</td><td>${bookPct(c)}%</td>
       <td>${esc(c.klass)}</td>
       <td class="t">${c.klass === 'stock' ? 'thesis' : 'allocation'}</td>
       <td>${c.target_weight_pct == null ? '—' : num(c.target_weight_pct,1) + '%'
@@ -436,7 +436,7 @@ function paintSheet() {
           <span class="co">${esc(r.name)}${r.estimated
             ? ' <span class="est">est. date</span>' : ''}</span>
           <span class="wt">${r.eps_estimate == null ? ''
-            : 'cons. ' + num(r.eps_estimate, 2) + ' · '}${num(r.weight_pct,1)}%
+            : 'cons. ' + num(r.eps_estimate, 2) + ' · '}${bookPct(r)}%
             of book</span></div>`).join('')}
       </div>`).join('')}</div>`}
     ${(RC.unknown || []).length ? `<div class="xkey under">
@@ -464,7 +464,7 @@ function paintSheet() {
         : r.surprise_pct < 0 ? 'miss' : ''}">${pct(r.surprise_pct,1)}</td>
       <td>${rec.n ? `${rec.beats}B / ${rec.misses}M of ${rec.n}` : '—'}</td>
       <td class="${cls(g.revenue_yoy_pct)}">${pct(g.revenue_yoy_pct,1)}</td>
-      <td class="t">${esc(g.period || '—')}</td><td>${num(r.weight_pct,1)}%</td>
+      <td class="t">${esc(g.period || '—')}</td><td>${bookPct(r)}%</td>
       </tr>`; }).join('')}</tbody></table></div>
     <div class="prose under">Surprise is against analyst
       consensus, not against the thesis — a beat is a fact about expectations.
@@ -595,7 +595,7 @@ function paintSheet() {
         <td class="t">${esc(KIND[c.kind] || c.kind)}${c.why
           ? ` <span class="est" title="${esc(c.why)}">?</span>` : ''}</td>
         <td>${num(c.units_before, 4)}</td><td>${num(c.units_after, 4)}</td>
-        <td>${eur(c.cost_delta)}</td>
+        <td>${eurs(c.cost_delta)}</td>
         <td class="t">${(c.lots_closed || []).map((l) => esc(l.bought))
           .join(', ') || '—'}</td>
         <td class="t">${esc(c.account)}</td><td class="t">${esc(c.name)}</td>

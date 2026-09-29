@@ -91,7 +91,7 @@ function holdCell(k, r, pp) {
     return `<td class="${cls(v)}">${v == null ? na : pct(v, 1)}</td>`;
   }
   if (k === 'spark') return `<td class="t">${spark(spark30(r)) || na}</td>`;
-  if (k === 'pl') return `<td class="${cls(h.pl_eur)}">${eur(h.pl_eur)}</td>`;
+  if (k === 'pl') return `<td class="${cls(h.pl_eur)}">${eurs(h.pl_eur)}</td>`;
   if (k === 'plp') return `<td class="${cls(h.pl_pct)}">${pct(h.pl_pct, 1)}</td>`;
   if (k === 'irr') {
     const rr = irrOf(r);

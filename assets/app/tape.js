@@ -11,7 +11,7 @@ function paintTape() {
   // they are measured against.
   $('#t-value').textContent = eur(t.value_eur);
   $('#t-pl').innerHTML = `<b class="${cls(t.pl_pct)}"
-    title="Since purchase, against ${eur(t.cost_eur)} of cost">${pct(t.pl_pct)}</b>`;
+    title="Since purchase, against ${eur(t.cost_eur)} of cost">${pct(t.pl_pct, 1)}</b>`;
 
   const live = s.equity_log_mode === 'live';
   const flags = (D.alerts || []).filter((a) => !a.health).length;

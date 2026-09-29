@@ -149,7 +149,7 @@ function paintThesis(r) {
     <dt>Account${h.accounts.length > 1 ? 's' : ''}</dt><dd>${esc(h.accounts.join(', '))}</dd>
     <dt>Value</dt><dd>${eur(h.value_eur)}</dd>
     <dt>Cost</dt><dd>${eur(h.cost_eur)}</dd>
-    <dt>P/L</dt><dd class="${cls(h.pl_pct)}">${pct(h.pl_pct, 1)} · ${eur(h.pl_eur)}</dd>
+    <dt>P/L</dt><dd class="${cls(h.pl_pct)}">${pct(h.pl_pct, 1)} · ${eurs(h.pl_eur)}</dd>
     ${(() => { const rr = (D.returns || {})[h.sym] || {};
        return rr.irr_pct != null
          ? `<dt>Annualised</dt><dd class="${cls(rr.irr_pct)}">${pct(rr.irr_pct, 1)}/yr
@@ -294,7 +294,7 @@ function paintMissing(r) {
         ? '—' : num(c.drift_pts, 1) + ' pts'}</dd></dl>`;
   return `<div class="tsec"><div class="tlabel">WHAT'S MISSING</div>
     <dl class="kv">
-      <dt>At stake</dt><dd>${eur(c.value_eur)} · ${num(c.weight_pct, 1)}% of the book</dd>
+      <dt>At stake</dt><dd>${eur(c.value_eur)} · ${bookPct(c)}% of the book</dd>
       <dt>Judged by</dt><dd>${stock ? 'a thesis' : 'an allocation'}</dd>
     </dl>
     <div class="prose under">${esc(cap(c.gap) || 'Not monitored.')}${

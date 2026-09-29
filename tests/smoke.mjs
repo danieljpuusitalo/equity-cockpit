@@ -533,6 +533,19 @@ PYF.forEach(([x, d, want], i) => {
   const got = (globalThis.__pyf || [])[i];
   if (got !== want) hollowBad.push(`pyFixed(${x}, ${d}) gave ${got}, Python gives ${want}`);
 });
+/* Units. A loss reads -€58, never €-58; a euro change carries its sign both
+   ways and a level never does; a sub-euro change prints no sign at all. The
+   book weight is taken from the euros: 17.95178 stored as 17.95 and rounded
+   again reads 17.9 beside 18.0 for the same line - the stored 17.95 is the
+   control, the value a formatter reading weight_pct would print. */
+nodes.clear();
+new Function(js + ';globalThis.__fmt = [eur(-58), eurs(-58), eurs(1071), eur(1071),'
+  + 'eur(-0.4), eurs(0.4), bookPct({value_eur: D.totals.value_eur * 0.1795178, weight_pct: 17.95})];')();
+const FMT = ['-€58', '-€58', '+€1,071', '€1,071', '€0', '€0', '18.0'];
+const fm = globalThis.__fmt || [];
+FMT.forEach((want, i) => {
+  if (fm[i] !== want) hollowBad.push(`format ${i}: gave ${fm[i]}, want ${want}`);
+});
 const tk = globalThis.__tick || [];
 if (tk[0] !== '' || tk[1] !== '1' || tk[2] !== '')
   hollowBad.push('tick: tickDiff marked ' + JSON.stringify(tk)

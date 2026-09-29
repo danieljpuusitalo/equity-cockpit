@@ -236,7 +236,7 @@ function kpiHtml(p) {
       `time-weighted, from ${esc(P.from || '—')}`, spark(IX)),
     kpi(`vs ${BENCH.symbol ? 'ACWI' : 'benchmark'}`,
       P.excess_pp == null ? '—' : `<span class="${cls(P.excess_pp)}">${
-        (P.excess_pp > 0 ? '+' : '') + num(P.excess_pp, 1)}pp</span>`,
+        (P.excess_pp > 0 ? '+' : '') + num(P.excess_pp, 1)} pts</span>`,
       P.bench_pct == null ? (BENCH.absent ? 'no benchmark series' : 'not computed')
         : `ACWI ${pct(P.bench_pct, 1)} over the same days`,
       spark(rel, {zero: true})),
@@ -247,8 +247,8 @@ function kpiHtml(p) {
       P.beta == null ? 'annualised' : `annualised · β ${num(P.beta, 2)} · ρ ${num(P.corr, 2)}`),
     kpi('Annualised', ot.irr_pct == null ? '—' : signed(ot.irr_pct, (v) => pct(v, 1)),
       ot.irr_since ? `money-weighted since ${esc(ot.irr_since)}` : esc(ot.irr_note || 'not computed')),
-    kpi('Total P/L', signed(t.pl_eur, eur),
-      `${pct(t.pl_pct)} on ${eur(t.cost_eur)} of cost`),
+    kpi('Total P/L', signed(t.pl_eur, eurs),
+      `${pct(t.pl_pct, 1)} on ${eur(t.cost_eur)} of cost`),
   ].join('');
 }
 
@@ -277,7 +277,7 @@ function moversHtml(p) {
   const top = rows.filter((r) => r.eur > 0).slice(0, 5);
   const bot = rows.filter((r) => r.eur < 0).slice(-5);
   const as = (r) => ({sym: r.symbol, ticker: r.symbol, eur: r.eur});
-  return lrows(top.concat(bot).map(as), (r) => r.eur, (r) => eur(r.eur))
+  return lrows(top.concat(bot).map(as), (r) => r.eur, (r) => eurs(r.eur))
     + `<div class="hnote">Euros each position added or took away over the
        period. ${rows.length - top.length - bot.length > 0
          ? `${rows.length - top.length - bot.length} more in between.` : ''}</div>`;
@@ -300,7 +300,7 @@ function upcomingHtml() {
         ? ' · estimated by Yahoo, not confirmed by the company' : ''}">
       <span class="d">${esc(String(r.date).slice(5))}${r.estimated ? ' ~' : ''}</span>
       <span class="n">${esc(r.symbol)}</span>
-      <span class="w">${num(r.weight_pct, 1)}%</span>
+      <span class="w">${bookPct(r)}%</span>
       <span class="in">${r.days === 0 ? 'today' : `in ${r.days}d`}</span></li>`;
   }).join('')}</ol>` + (rows.some((r) => r.estimated)
     ? '<div class="hnote">~ is a date Yahoo estimated.</div>' : '') + unk;
@@ -323,8 +323,8 @@ function paintHome() {
           <div class="k">Book value</div>
           <div class="hv">${eur(t.value_eur)}</div>
           <div class="hs">${day.pct == null ? 'no position has a previous close'
-            : `<span class="${cls(day.value_eur)}">${day.value_eur > 0 ? '+' : ''}${
-                eur(day.value_eur)} (${pct(day.pct)})</span> today`}${P.twr_pct == null ? ''
+            : `<span class="${cls(day.value_eur)}">${
+                eurs(day.value_eur)} (${pct(day.pct)})</span> today`}${P.twr_pct == null ? ''
             : ` · <span class="${cls(P.twr_pct)}">${pct(P.twr_pct, 1)}</span> ${
               p === 'ALL' ? 'since the first lot' : 'over ' + esc(p)}`}</div>
         </div>

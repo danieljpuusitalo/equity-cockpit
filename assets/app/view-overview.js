@@ -225,9 +225,9 @@ function paintOverview() {
       style="left:${k.x}%;top:${k.y}%;width:${k.w}%;height:${k.h}%;
              background:${tone(k.pl_pct)}"
       title="${esc(k.name || k.ticker)} · ${eur(k.value_eur)} · ${
-        num(k.weight_pct, 1)}% of book · ${pct(k.pl_pct)} since purchase">
+        bookPct(k)}% of book · ${pct(k.pl_pct, 1)} since purchase">
       <div class="tt">${esc(k.ticker)}</div>
-      <div class="tw">${num(k.weight_pct, 1)}% · ${pct(k.pl_pct)}</div></div>`;
+      <div class="tw">${bookPct(k)}% · ${pct(k.pl_pct, 1)}</div></div>`;
   }).join('');
   // Sampled from tone() rather than listed, so the key cannot drift from the
   // function the tiles are actually painted with.
@@ -282,7 +282,7 @@ function paintOverview() {
     con.n_unknown ? `${con.n_known} of ${con.n_known + con.n_unknown} priced`
                   : `${con.n_known || 0} positions`,
     lrows((con.best || []).concat(con.worst || []), (r) => r.pl_eur,
-      (r) => eur(r.pl_eur), (r) => `${num(r.share_pct, 1)}% of gross movement`)
+      (r) => eurs(r.pl_eur),(r) => `${num(r.share_pct, 1)}% of gross movement`)
     + `<div class="lnote">Attributed in euros, not percent. A 60% gain on the
        smallest position is a rounding error; 12% on the largest one is the
        year.${con.n_unknown ? ` ${con.n_unknown} position${
