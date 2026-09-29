@@ -20,8 +20,9 @@
   </div>
   <nav class="vnav" id="vnav">
     <button class="vbtn" data-view="home" aria-pressed="true" title="Home (1)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span class="l">Home</span><kbd>1</kbd></button>
-    <button class="vbtn" data-view="positions" aria-pressed="false" title="Positions (2)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="l">Positions</span><kbd>2</kbd></button>
-    <button class="vbtn" data-view="overview" aria-pressed="false" title="Allocation (3)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="10" height="11" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="15" y="11" width="6" height="10" rx="1"/><rect x="3" y="16" width="10" height="5" rx="1"/></svg><span class="l">Allocation</span><kbd>3</kbd></button>
+    <button class="vbtn" data-view="holdings" aria-pressed="false" title="Holdings (2)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M3 14h18M8 9v11"/></svg><span class="l">Holdings</span><kbd>2</kbd></button>
+    <button class="vbtn" data-view="positions" aria-pressed="false" title="Position detail (3)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="l">Positions</span><kbd>3</kbd></button>
+    <button class="vbtn" data-view="overview" aria-pressed="false" title="Allocation (4)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="10" height="11" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="15" y="11" width="6" height="10" rx="1"/><rect x="3" y="16" width="10" height="5" rx="1"/></svg><span class="l">Allocation</span><kbd>4</kbd></button>
   </nav>
   <div class="sfoot">
   <!-- Data is a drawer, not a view, so it sits outside the nav above and says
@@ -32,7 +33,7 @@
   <!-- One box that reaches everything: every held and watched name, the views
        and each drawer section. -->
   <button class="sbtn" id="t-jump" aria-haspopup="dialog" aria-controls="pal"
-    title="Find a position or a section. Keys: Ctrl K or / to open, 1 Home, 2 Positions, 3 Allocation, D the data drawer, Esc to close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg><span class="l">Jump to&hellip;</span><kbd>Ctrl K</kbd></button>
+    title="Find a position or a section. Keys: Ctrl K or / to open, 1 Home, 2 Holdings, 3 Positions, 4 Allocation, D the data drawer, Esc to close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg><span class="l">Jump to&hellip;</span><kbd>Ctrl K</kbd></button>
   <!-- Label and pressed state are both set by themeLabel() at boot, from what
        is actually rendered. This text is only what shows if the script dies. -->
   <button class="sbtn" id="t-theme" aria-pressed="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg><span class="l">Theme</span></button>
@@ -52,13 +53,16 @@
       placeholder="Ticker, company or section" aria-controls="pallist">
     <div class="pallist" id="pallist" role="listbox"></div>
     <div class="palfoot">&uarr;&darr; move &middot; Enter open &middot; Esc close
-      &middot; elsewhere: 1 Home &middot; 2 Positions &middot; 3 Allocation &middot; D data drawer
+      &middot; elsewhere: 1 Home &middot; 2 Holdings &middot; 3 Positions &middot; 4 Allocation &middot; D data drawer
       &middot; &uarr;&darr; step the rail</div>
   </div>
 </div>
 
 <div class="view" id="v-home">
   <div class="home" id="home"></div>
+</div>
+<div class="view" id="v-holdings" hidden>
+  <div class="hold" id="holdings"></div>
 </div>
 <div class="view" id="v-overview" hidden>
   <div class="ov">
@@ -104,6 +108,9 @@
       <span class="rsep"></span>
       <button class="rbtn" data-ma="50" aria-pressed="true">MA50</button>
       <button class="rbtn" data-ma="200" aria-pressed="true">MA200</button>
+      <span class="rsep"></span>
+      <button class="rbtn" data-rel="book" aria-pressed="false">vs book</button>
+      <button class="rbtn" data-rel="bench" aria-pressed="false">vs ACWI</button>
       <span class="legend">
         <span><i class="swatch" style="border-top-color:var(--target)"></i>Target</span>
         <span><i class="swatch" style="border-top-color:var(--trigger);
@@ -167,6 +174,7 @@ const D = /*__DATA__*/;
 /*@app view-data.js*/
 /*@app view-overview.js*/
 /*@app view-home.js*/
+/*@app view-holdings.js*/
 /*@app router.js*/
 /*@app palette.js*/
 /*@app boot.js*/

@@ -365,6 +365,11 @@ def attribution(curve, period):
 
     Sums exactly to the book's own change less flows over the same period,
     which is the check `tests/test_performance.py` makes.
+
+    `pct` is the name's own EUR price return over the same window - what one
+    unit did, independent of when this book bought it or how many it holds.
+    None when either end has no price (the listing started inside the
+    window, or the currency has no bar): absent, never a flat 0%.
     """
     b = base_index(curve["dates"], period)
     if b is None:
@@ -372,7 +377,10 @@ def attribution(curve, period):
     rows = []
     for sym, vals in curve["sym_value"].items():
         pnl = vals[-1] - vals[b] - sum(curve["sym_flow"][sym][b + 1:])
-        rows.append({"symbol": sym, "eur": round(pnl, 2)})
+        p = curve["sym_price"].get(sym) or []
+        p0, p1 = (p[b], p[-1]) if len(p) > b else (None, None)
+        pct = (p1 / p0 - 1.0) * 100.0 if p0 and p1 else None
+        rows.append({"symbol": sym, "eur": round(pnl, 2), "pct": _r(pct)})
     rows.sort(key=lambda r: r["eur"])
     return rows
 

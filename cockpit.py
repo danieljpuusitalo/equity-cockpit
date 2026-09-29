@@ -947,6 +947,61 @@ def selftest():
           "; ".join(home) if home
           else "view, paint and tick wired; basis from 4 payload fields; one counter")
 
+    # Holdings and the Position detail additions fail the same silent ways as
+    # Home: a view nobody routes to, a table nobody repaints on a tick, or a
+    # figure that quietly turns absent into zero. Each part names its site.
+    #   - built, routed and tick-marked: container, paintSurface, the repaint
+    #     marks, setView's hide, applyHash's branch, boot's first paint;
+    #   - the period column reads performance.py's own pct, nothing local;
+    #   - absent sorts last, in both directions (holdSort);
+    #   - the sparkline reads barsFor, the series the chart draws;
+    #   - the risk row reads PERF.risk and says "not estimated", never 0;
+    #   - the relative line is refused when the build carries no benchmark.
+    def _body(sig):
+        b = tmpl.split(sig, 1)
+        return b[1].split("\nfunction ", 1)[0].split("\non(", 1)[0] if len(b) == 2 else ""
+    hd = []
+    for h in ('id="v-holdings"', 'id="holdings"', 'data-view="holdings"'):
+        if h not in tmpl:
+            hd.append(f"template lost {h}")
+    ph = _body("function paintHoldings() {")
+    if not ph:
+        hd.append("paintHoldings() not found")
+    if "paintHoldings()" not in ps:
+        hd.append("paintSurface no longer paints holdings")
+    if "'holdings'" not in tk:
+        hd.append("a tick no longer marks holdings")
+    if "#v-holdings" not in _body("function setView(v) {"):
+        hd.append("setView no longer shows and hides #v-holdings")
+    if "head === 'holdings'" not in _body("function applyHash() {"):
+        hd.append("applyHash has no #/holdings route")
+    bt = tmpl.split("\nthemeLabel();\npaintTape();", 1)
+    if len(bt) != 2 or "paintHoldings();" not in bt[1].split("applyHash();", 1)[0]:
+        hd.append("boot no longer paints holdings")
+    pp_ = _body("function periodPct(p) {")
+    if "PERF.attribution" not in pp_ or "a.pct" not in pp_:
+        hd.append("the period column no longer reads attribution[p].pct")
+    hs_ = _body("function holdSort(rows, pp) {")
+    if "nx ? 1 : -1" not in hs_:
+        hd.append("holdSort no longer sorts absent figures last")
+    if "barsFor(r)" not in _body("function spark30(r) {"):
+        hd.append("the 30-day spark no longer reads barsFor")
+    rk = _body("function riskRow(sym) {")
+    if "PERF.risk" not in rk or "not estimated" not in rk:
+        hd.append("the risk row no longer reads PERF.risk or says 'not estimated'")
+    if "riskRow(h.sym)" not in _body("function paintThesis(r) {"):
+        hd.append("THE POSITION no longer prints the risk row")
+    rw = _body("function relWhy(which) {")
+    if "BENCH.absent" not in rw or "CURVE.n" not in rw:
+        hd.append("relWhy no longer refuses a missing benchmark or curve")
+    pc = _body("function paintChart(r) {")
+    if "relWhy(" not in pc or "state.rel" not in pc:
+        hd.append("paintChart no longer gates the relative line")
+    check("assets: holdings is built, routed, and blank means absent", not hd,
+          "; ".join(hd) if hd
+          else "view, route, tick and boot wired; period from attribution pct; "
+               "absent sorts last; risk says not estimated; relative line gated")
+
     # Once prices arrive in the browser, every figure derived from a price has
     # to be re-derived there too, or the page shows a live tape above a
     # build-time book and says nothing about the difference. DERIVE is the one
@@ -1037,19 +1092,31 @@ def selftest():
     # plausible-looking curve. The two negative controls: a price moved must
     # move the curve and the attribution; benchmark bars removed must give "no
     # benchmark", never a zero excess. Plus the wiring the build depends on.
-    def _pf(bump=1.0, bench=True):
+    def _pf(bump=1.0, bench=True, last=1.0):
         day = lambda i: (dt.date(2025, 1, 1) + dt.timedelta(days=i)).isoformat()
         bars = lambda xs: {"bars": [[day(i), x, x, x, x, 0] for i, x in enumerate(xs)]}
         wave = [100 * (1 + 0.02 * math.sin(i * 0.7)) for i in range(40)]
+        b = [50 * bump * (1 + 0.01 * i) for i in range(40)]
+        b[-1] *= last
         return performance.build(
             [{"isin": "A", "units": 1, "cost_eur": 100, "bought": day(0), "ccy": "EUR"},
              {"isin": "B", "units": 1, "cost_eur": 50, "bought": day(5), "ccy": "EUR"}],
             {"A": "A.X", "B": "B.X"},
-            {"A.X": bars(wave), "B.X": bars([50 * bump * (1 + 0.01 * i) for i in range(40)])},
+            {"A.X": bars(wave), "B.X": bars(b)},
             {"BENCH": bars(wave)} if bench else {}, {},
             {"symbol": "BENCH", "label": "b", "ccy": "EUR"})
     pf = []
     base, moved, blind = _pf(), _pf(bump=1.1), _pf(bench=False)
+    # The per-name period return Holdings prints. Only B's last close moves, so
+    # B's figure must move and A's must not - a pct lifted from somewhere else,
+    # or computed off the book rather than the name, fails one side or the other.
+    tilt = _pf(last=1.05)
+    pct_of = lambda res, s: next((a.get("pct") for a in res["attribution"]["ALL"]
+                                  if a["symbol"] == s), None)
+    if pct_of(base, "B.X") is None or pct_of(base, "B.X") == pct_of(tilt, "B.X"):
+        pf.append("a moved close did not move that name's attribution pct")
+    if pct_of(base, "A.X") != pct_of(tilt, "A.X"):
+        pf.append("moving one name's close moved another name's attribution pct")
     if base.get("basis") != "held-lots":
         pf.append(f"the curve no longer states its basis ({base.get('basis')!r})")
     if base["curve"]["value"] == moved["curve"]["value"]:
@@ -1069,6 +1136,7 @@ def selftest():
     check("performance: curve, benchmark and attribution answer to their inputs",
           not pf, "; ".join(pf) if pf
           else "basis stated, a moved price moves curve and attribution, "
+               "a moved close moves only its own name's pct, "
                "no benchmark bars give no excess")
 
     # One count for every surface, and the page restates the tier the way

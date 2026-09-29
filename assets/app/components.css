@@ -678,6 +678,36 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
 .tl .w,.tl .in{color:var(--muted);text-align:right}
 .tl li.soon .in{color:var(--warn-ink);font-weight:var(--w-semi)}
 
+/* --------------------------------------------------------------- holdings */
+/* One table, every held name. The name column stays put while the figures
+   scroll under it, because a row read without its name is a row of numbers
+   about nobody. */
+.hold{overflow-y:auto;flex:1;padding:16px 20px 32px;background:var(--plane);
+  display:flex;flex-direction:column;gap:var(--s-4)}
+.hbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
+  gap:var(--s-3) var(--s-5)}
+.hcols{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2)}
+.hcols .k{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted);margin-right:var(--s-2)}
+.hold .scroll{border:1px solid var(--border);border-radius:var(--r-lg);
+  background:var(--surface-1)}
+.htab thead th{background:var(--surface-1);padding-top:10px}
+.htab td.hn,.htab th:first-child{position:sticky;left:0;z-index:1;background:var(--surface-1)}
+.htab thead th:first-child{z-index:2}
+.htab tr.click:hover td.hn{background:var(--surface-2)}
+.htab .hn b{font-weight:var(--w-semi)}
+.htab .hn .dot{margin-left:var(--s-2)}
+.htab .hn .co{display:block;font-size:var(--t-2);color:var(--muted);max-width:220px;
+  overflow:hidden;text-overflow:ellipsis}
+.htab .ccy{font-size:var(--t-1);color:var(--muted);margin-left:var(--s-1)}
+.htab .na{color:var(--muted)}
+.htab .spark{display:block}
+.htab tr.hgrp td{font-size:var(--t-1);font-weight:var(--w-bold);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted);text-align:left;padding-top:14px;
+  background:var(--surface-1)}
+.htab tr.hgrp td span{margin-left:var(--s-2);color:var(--ink-2)}
+.rbtn[disabled]{opacity:.45;cursor:not-allowed}
+
 /* ------------------------------------------------ rail and home, narrower */
 /* The rail keeps its labels only while the page can spare the width. Below
    1440 Positions' three panes need it more than the words do, so the rail
@@ -709,6 +739,8 @@ tr[data-on="1"] td{background:color-mix(in srgb,var(--accent) 13%,transparent)}
     text-align:center;justify-content:center}
   .vbtn .l,.sbtn .l{flex:none}
   .home{overflow:visible;padding:12px 12px 24px}
+  .hold{overflow:visible;padding:12px 12px 24px}
+  .htab .hn .co{max-width:120px}
   .hplot{margin-left:38px}
   .haxis{margin-left:38px}
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}

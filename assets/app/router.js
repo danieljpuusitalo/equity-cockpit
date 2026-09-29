@@ -19,6 +19,7 @@ function paintSurface(s) {
   UNPAINTED.delete(s);
   if (s === 'sheet') paintSheet();
   else if (s === 'home') paintHome();
+  else if (s === 'holdings') paintHoldings();
   else if (s === 'overview') paintOverview();
   else if (s === 'positions' && typeof ROWS !== 'undefined' && ROWS.length
            && state.sym) select(state.sym);
@@ -34,7 +35,9 @@ function setView(v) {
   for (const n of document.querySelectorAll('#vnav .vbtn[data-view]'))
     n.setAttribute('aria-pressed', String(n.getAttribute('data-view') === v));
   const h = $('#v-home'), o = $('#v-overview'), p = $('#v-positions');
+  const hd = $('#v-holdings');
   if (h) h.hidden = v !== 'home';
+  if (hd) hd.hidden = v !== 'holdings';
   if (o) o.hidden = v !== 'overview';
   if (p) p.hidden = v !== 'positions';
   if (v === 'positions') {
@@ -50,7 +53,8 @@ function setView(v) {
 // where closing the drawer will land you.
 // The Overview's route and id stay 'overview' so old links still land; what it
 // is called on screen is Allocation, because Home is the overview now.
-const VIEWNAME = {home: 'Home', overview: 'Allocation', positions: 'Positions'};
+const VIEWNAME = {home: 'Home', holdings: 'Holdings', overview: 'Allocation',
+                  positions: 'Positions'};
 function paintCrumb() {
   const under = VIEWNAME[state.view] || 'Home';
   const c = $('#t-crumb');
@@ -91,8 +95,14 @@ on('#segs', 'click', (e) => {
 on('#ranges', 'click', (e) => {
   const b = e.target && e.target.closest && e.target.closest('.rbtn');
   if (!b) return;
-  const p = b.getAttribute('data-ma');
-  if (p) {
+  const p = b.getAttribute('data-ma'), rel = b.getAttribute('data-rel');
+  if (rel) {
+    // One comparison at a time, and pressing the one in force takes it off.
+    // Two relative lines on one left axis would be two rebasings to read apart.
+    state.rel = state.rel === rel ? null : rel;
+    for (const n of document.querySelectorAll('#ranges .rbtn[data-rel]'))
+      n.setAttribute('aria-pressed', String(n.getAttribute('data-rel') === state.rel));
+  } else if (p) {
     // MA buttons toggle independently; range buttons are mutually exclusive.
     // Sharing one handler means sharing one repaint, but not one selection rule.
     state.ma[p] = !state.ma[p];
@@ -166,6 +176,8 @@ function applyHash() {
     if (head === 'positions') {
       setView('positions');
       if (parts[1] && ROWSYM.has(parts[1])) select(parts[1]);
+    } else if (head === 'holdings') {
+      setView('holdings');
     } else if (head === 'overview' || head === 'allocation') {
       setView('overview');
     } else {

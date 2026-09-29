@@ -1,6 +1,7 @@
 themeLabel();
 paintTape();
 paintHome();
+paintHoldings();
 paintOverview();
 paintSheet();
 // Positions is painted at boot even though Home is what opens, so the

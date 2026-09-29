@@ -215,9 +215,116 @@ const WALK = `
       else linked++;
     }
   }
+  // Holdings, in every period, flat and grouped. One row per held name either
+  // way: a group that drops the names whose class is unknown loses them from
+  // the only table that lists everything.
+  const heldN = ROWS.filter((r) => r.isHeld).length;
+  const holdBox = () => document.querySelector('#holdings').innerHTML || '';
+  const holdOrder = () => [...holdBox().matchAll(/<tr class="click" data-sym="([^"]*)"/g)]
+    .map((m) => m[1]);
+  const holdRow = (sym) => (holdBox().split('data-sym="' + sym + '"')[1] || '')
+    .split('</tr>')[0];
+  let holdPainted = 0;
+  for (const [p] of PERIODS) {
+    for (const g of [false, true]) {
+      HS.p = p; HS.group = g;
+      paintHoldings();
+      scan('holdings ' + p + (g ? ' grouped' : ''), holdBox());
+      const n = holdOrder().length;
+      if (n !== heldN) bad.push('holdings ' + p + (g ? ' grouped' : '') + ': '
+        + n + ' rows drawn, ' + heldN + ' held');
+      holdPainted++;
+    }
+  }
+  // This book may classify every name, so the unknown group is forced: strip
+  // one name's class and it must still be drawn, under its own heading.
+  const unk = ROWS.find((r) => r.isHeld && r.cov);
+  if (unk) {
+    const keepCov = unk.cov;
+    unk.cov = null;
+    HS.group = true;
+    paintHoldings();
+    if (holdOrder().length !== heldN || !holdBox().includes('Class unknown'))
+      bad.push('holdings grouped: a name with no class was dropped, not grouped as unknown');
+    unk.cov = keepCov;
+  }
+  HS.group = false;
+  // Absent sorts last, whichever way the column is turned.
+  for (const dir of [-1, 1]) {
+    HS.sort = {k: 'period', dir};
+    paintHoldings();
+    const pp = periodPct(HS.p);
+    const vals = holdOrder().map((s) => pp.get(s));
+    const firstNull = vals.findIndex((v) => v == null);
+    if (firstNull >= 0 && vals.slice(firstNull).some((v) => v != null))
+      bad.push('holdings: sorted by period (dir ' + dir + '), a blank sits above a figure');
+  }
+  HS.sort = {k: 'weight', dir: -1};
+  // Negative control: the period cell is the payload's figure, so moving the
+  // payload has to move the cell. A column that printed a cached or recomputed
+  // number would pass every scan above and fail here.
+  let periodMoved = 'skipped';
+  const attr = (PERF.attribution || {})[HS.p] || [];
+  const a0 = attr.find((a) => a.pct != null && ROWSYM.has(a.symbol));
+  if (a0) {
+    paintHoldings();
+    const was = holdRow(a0.symbol);
+    const keep = a0.pct;
+    a0.pct = keep + 17.3;
+    paintHoldings();
+    const now = holdRow(a0.symbol);
+    a0.pct = keep;
+    periodMoved = was === now ? 'no' : 'yes';
+    if (was === now) bad.push('holdings: moving ' + a0.symbol + "'s attribution pct "
+      + 'left its row unchanged - the period column is not reading the payload');
+  }
+  // A hidden column leaves the header and every row, not just the header.
+  HS.hide.add('irr');
+  paintHoldings();
+  if (holdBox().includes('data-hk="irr"')) bad.push('holdings: hiding IRR left its header');
+  HS.hide.delete('irr');
+  paintHoldings();
+  if (heldN && !holdBox().includes('data-hk="irr"')) bad.push('holdings: IRR did not come back');
+  // Position detail with the relative line on, both ways, and its risk line.
+  const firstHeld = ROWS.find((r) => r.isHeld);
+  for (const rel of ['book', 'bench']) {
+    if (!firstHeld) break;
+    state.rel = rel;
+    select(firstHeld.sym);
+    scan('thesis vs ' + rel, document.querySelector('#thesis').innerHTML);
+    const lb = document.querySelector('#livebar').innerHTML || '';
+    for (const t of junk) if (lb.includes(t)) bad.push('livebar vs ' + rel + ': printed "' + t + '"');
+  }
+  state.rel = null;
+  // The relative line: rebased to 100 against the book, and nothing at all
+  // against a benchmark the build marked absent - even with a series left
+  // lying in the payload, because "absent" is the authority, not the array.
+  let relOk = 'skipped';
+  const relBars = firstHeld ? barsFor(firstHeld) : null;
+  if (relBars && relBars.length > 1 && CURVE.n) {
+    const book = relSeries(relBars, 'book');
+    if (!book.length || Math.abs(book[0].value - 100) > 1e-9)
+      bad.push('relative line vs book: ' + (book.length ? 'starts at ' + book[0].value
+        : 'empty') + ', not 100');
+    const keepAbs = BENCH.absent, keepIdx = BENCH.index;
+    BENCH.absent = 'smoke';
+    BENCH.index = BENCH.index || CURVE.index;
+    if (relSeries(relBars, 'bench').length) bad.push('relative line: drew vs ACWI with the benchmark marked absent');
+    if (!relWhy('bench')) bad.push('relative line: an absent benchmark gives no reason');
+    BENCH.absent = keepAbs; BENCH.index = keepIdx;
+    relOk = 'yes';
+  }
+  for (const r of ROWS.filter((x) => x.isHeld)) {
+    select(r.sym);
+    const th = document.querySelector('#thesis').innerHTML || '';
+    if (!th.includes('of book risk') && !th.includes('not estimated'))
+      bad.push('thesis ' + r.sym + ': no book-risk line, neither a figure nor "not estimated"');
+  }
   globalThis.__smoke = {rows: ROWS.length, tiles: drawn, bad: bad,
                         parity: PARITY.checked, moved: moved, flagged: flagged,
-                        linked: linked, needs: needs};
+                        linked: linked, needs: needs, held: heldN,
+                        holdPainted: holdPainted, periodMoved: periodMoved,
+                        relOk: relOk};
 })();`;
 
 try {
@@ -236,5 +343,7 @@ if (s.bad.length) {
 console.log(`SMOKE OK  ${path} · ${s.rows} rows painted, ${s.tiles} treemap `
   + `tiles drawn, ${s.parity} fields at parity with Python, look-through `
   + `moved under a perturbed fund: ${s.moved}, trigger flag followed a pushed `
-  + `price: ${s.flagged}, ${s.linked} flags link to their position, home paints all 7 periods with ${s.needs} needs-you lines matching alert_counts, jump box `
+  + `price: ${s.flagged}, ${s.linked} flags link to their position, home paints all 7 periods with ${s.needs} needs-you lines matching alert_counts, `
+  + `holdings paints ${s.held} names in ${s.holdPainted} period/grouping states, `
+  + `period cell followed a moved attribution: ${s.periodMoved}, relative line rebased and gated: ${s.relOk}, jump box `
   + `reaches every name, no runtime errors`);

@@ -160,6 +160,7 @@ function paintThesis(r) {
            ? `<dt>Annualised</dt><dd style="color:var(--muted)">${esc(rr.note)}</dd>`
            : ''; })()}
     <dt>Weight</dt><dd>${h.weight.toFixed(1)}%</dd>
+    ${riskRow(h.sym)}
     <dt>Off 52w high</dt><dd>${pct(h.off_high, 1)}</dd>
     <dt>Bucket</dt><dd>${esc(h.bucket || '—')}</dd></dl></div>`);
 
@@ -172,6 +173,25 @@ function paintThesis(r) {
       <div class="d">${esc(a.detail)}</div></span></div>`).join('')}</div>`);
 
   $('#thesis').innerHTML = out.join('');
+}
+
+/* This name's share of the book's risk, as performance.risk computed it:
+   weight times its covariance with the covered book, over the variance. A name
+   the estimate left out - too few unbroken days, or no variance to share -
+   says "not estimated" and why. Never 0%: a name nobody measured is not a
+   name that carries no risk. */
+function riskRow(sym) {
+  const R = PERF.risk || {};
+  const c = (R.contribution || []).find((x) => x.symbol === sym);
+  const x = (R.excluded || []).find((e) => e.symbol === sym);
+  const dd = c && c.rc_pct != null
+    ? `${num(c.rc_pct, 1)}% <span style="color:var(--muted)">of book risk · ${
+        num(c.weight_pct, 1)}% of the weight measured · ${num(c.vol_pct, 1)}% vol, ${
+        R.window_days}d</span>${atBuild('risk is estimated from the daily closes '
+          + 'at build, and a live tick does not restate it')}`
+    : `<span style="color:var(--muted)">not estimated${x
+        ? ` — only ${x.n_obs} unbroken days of prices` : ''}</span>`;
+  return `<dt>Share of risk</dt><dd>${dd}</dd>`;
 }
 
 /* The board's figures against today's. Nothing is reconciled and nothing is
@@ -346,6 +366,42 @@ function paintBehaviour(r) {
 /* ----------------------------------------------------------------- chart */
 
 let chart = null, candles = null, lines = [], mas = {}, chartKey = null, chartLen = 0;
+let relLine = null;
+
+/* The name against the book or against ACWI, as one line: price over the
+   index, both rebased to 100 on the first bar of the window where both exist.
+   Above 100 the name has done better over what is on screen; below, worse.
+
+   Presentation of two series the payload already carries, not a new figure -
+   the same rebasing Home does to start its shadow level with the book. Each
+   bar is matched to the index on the last curve date at or before it, so a
+   day the curve skipped borrows the day before rather than inventing one, and
+   a bar after the build's last curve date is read against that date. */
+function relSeries(slice, which) {
+  const B = which === 'bench' ? (BENCH.absent ? null : BENCH.index) : CURVE.index;
+  if (!B || !CURVE.n) return [];
+  const out = [];
+  let j = 0, p0 = null, b0 = null;
+  for (const bar of slice) {
+    while (j + 1 < CURVE.n && CURVE.date[j + 1] <= bar[0]) j++;
+    if (CURVE.date[j] > bar[0]) continue;
+    const bi = B[j];
+    if (bi == null || !(bi > 0) || !(bar[4] > 0)) continue;
+    if (p0 == null) { p0 = bar[4]; b0 = bi; }
+    out.push({time: bar[0], value: 100 * (bar[4] / p0) / (bi / b0)});
+  }
+  return out;
+}
+
+// Why a relative line cannot be drawn, or null when it can. Written onto the
+// button itself, so an option that does nothing says so before it is pressed.
+function relWhy(which) {
+  if (!CURVE.n) return 'the build carries no book curve to measure against';
+  if (which === 'bench' && (BENCH.absent || !BENCH.index))
+    return 'the build carries no ACWI series' + (BENCH.absent
+      ? ' (' + String(BENCH.absent) + ')' : '');
+  return null;
+}
 
 /* Simple moving average over closes, as a rolling sum - one pass, no window
    re-summing, so 500 bars costs 500 additions rather than 25,000.
@@ -411,6 +467,11 @@ function themeOpts() {
     // hue at all, which is the strongest colour-blind separation available and
     // costs nothing.
     ma:cssVar('--ink-2','#52514e'),
+    // The relative line is a comparison, not a price, so it gets no hue either
+    // and its own scale on the left: an index at 100 drawn on a price axis
+    // would sit wherever 100 happens to fall in the listing's currency.
+    rel:cssVar('--muted','#6f6d67'),
+    leftPriceScale:{borderColor:cssVar('--axis','#c3c2b7')},
   };
 }
 
@@ -511,7 +572,8 @@ function paintChart(r) {
   // live one would stop a day short of the price it is supposed to be averaging.
   const bars = barsFor(r);
   if (!bars || !bars.length) {
-    if (chart) { chart.remove(); chart = null; candles = null; lines = []; mas = {}; chartKey = null; }
+    if (chart) { chart.remove(); chart = null; candles = null; lines = []; mas = {};
+      relLine = null; chartKey = null; }
     box.innerHTML = '';
     miss.style.display = 'flex';
     miss.textContent = `No price history for ${r.label}. Yahoo returned nothing for ` +
@@ -552,6 +614,9 @@ function paintChart(r) {
       lineStyle:LightweightCharts.LineStyle.Solid}, maOpts));
     mas[200] = chart.addLineSeries(Object.assign({lineWidth:2, title:'MA200',
       lineStyle:LightweightCharts.LineStyle.Dashed}, maOpts));
+    relLine = chart.addLineSeries({priceScaleId:'left', color:T.rel, lineWidth:2,
+      lineStyle:LightweightCharts.LineStyle.Dotted, priceLineVisible:false,
+      crosshairMarkerVisible:false, lastValueVisible:true});
   }
 
   // Slice by DATE, not by row count. Bars are trading days - about 252 a year -
@@ -569,7 +634,8 @@ function paintChart(r) {
   // moving price was unusable exactly while the price was moving. Same symbol,
   // same range, same overlays: keep their view and let only the last candle
   // move. Anything they changed themselves still gets a fresh fit.
-  const viewKey = [r.sym, state.days, ibars ? 'i' : 'd', state.ma[50], state.ma[200]].join('|');
+  const viewKey = [r.sym, state.days, ibars ? 'i' : 'd', state.ma[50], state.ma[200],
+    state.rel || ''].join('|');
   let keep = viewKey === chartKey ? chart.timeScale().getVisibleLogicalRange() : null;
   const drawn = ibars ? ibars.bars.length : slice.length;
   // A new five-minute bar arriving while the reader is looking at the right
@@ -595,6 +661,24 @@ function paintChart(r) {
     // flat step per session. Off while intraday bars are drawn.
     mas[p].setData(state.ma[p] && !ibars ? sma(bars, p).filter((pt) => pt.time >= edge) : []);
   }
+
+  // The relative line reads daily closes against a daily index, so it is off
+  // while intraday bars are drawn, the same as the averages.
+  for (const n of document.querySelectorAll('#ranges .rbtn[data-rel]')) {
+    const why = relWhy(n.getAttribute('data-rel'));
+    if (why) n.setAttribute('disabled', ''); else n.removeAttribute('disabled');
+    n.setAttribute('title', why ? 'Not available: ' + why
+      : n.getAttribute('data-rel') === 'bench'
+        ? 'Price relative to ACWI, rebased to 100 at the left edge'
+        : 'Price relative to this book, rebased to 100 at the left edge');
+  }
+  const relOn = state.rel && !relWhy(state.rel) ? state.rel : null;
+  const rel = relOn && !ibars ? relSeries(slice, relOn) : [];
+  if (relLine) {
+    relLine.applyOptions({title: relOn === 'bench' ? 'vs ACWI' : 'vs book'});
+    relLine.setData(rel);
+  }
+  chart.applyOptions({leftPriceScale: {visible: rel.length > 0}});
 
   lines.forEach((l) => { try { candles.removePriceLine(l); } catch (e) {} });
   lines = [];
@@ -631,6 +715,16 @@ function paintChart(r) {
       ? `Last candle ${tail[0]}, still forming · ${
           LIVE && LIVE.at ? LIVE.at.toTimeString().slice(0, 5) : 'live'}`
       : `Last candle ${tail[0]}, as at the build`;
+    // What the dotted line is measured against, and what is inside it. A
+    // price in dollars over a euro index carries the dollar's move too.
+    if (state.rel) {
+      const vs = state.rel === 'bench' ? 'ACWI' : 'the book';
+      note.textContent += relWhy(state.rel) ? ` · no line vs ${vs}: ${relWhy(state.rel)}`
+        : ibars ? ` · the line vs ${vs} is daily, off on intraday candles`
+        : !rel.length ? ` · no overlap with ${vs} in this window`
+        : ` · dotted: vs ${vs}, 100 at ${rel[0].time}` + (r.ccy && r.ccy !== 'EUR'
+          ? `; ${r.ccy} price against a EUR index, so the currency move is in it` : '');
+    }
   }
 
   if (keep) chart.timeScale().setVisibleLogicalRange(keep);

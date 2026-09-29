@@ -112,5 +112,5 @@ function buildRows() {
 buildRows();
 
 let state = {sym: ROWS.length ? ROWS[0].sym : null, view:'home',
-             filter:'all', q:'', days:365, ma:{50:true, 200:true}};
+             filter:'all', q:'', days:365, ma:{50:true, 200:true}, rel:null};
 

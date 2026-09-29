@@ -11,6 +11,8 @@ function palAll() {
   const out = [
     {kind: 'View', label: 'Home', sub: 'performance, what needs you, what is next',
       go: () => { sheetOpen(false); setView('home'); }},
+    {kind: 'View', label: 'Holdings', sub: 'every held name in one sortable table',
+      go: () => { sheetOpen(false); setView('holdings'); }},
     {kind: 'View', label: 'Allocation', sub: 'treemap, concentration, sector and geography',
       go: () => { sheetOpen(false); setView('overview'); }},
     {kind: 'View', label: 'Positions', sub: 'rail, chart and thesis', go: () => {
@@ -129,8 +131,9 @@ try {
     if (typing || e.ctrlKey || e.metaKey || e.altKey || palIsOpen()) return;
     if (e.key === '/') { e.preventDefault(); palOpen(true); return; }
     if (e.key === '1') { sheetOpen(false); setView('home'); return; }
-    if (e.key === '2') { sheetOpen(false); setView('positions'); return; }
-    if (e.key === '3') { sheetOpen(false); setView('overview'); return; }
+    if (e.key === '2') { sheetOpen(false); setView('holdings'); return; }
+    if (e.key === '3') { sheetOpen(false); setView('positions'); return; }
+    if (e.key === '4') { sheetOpen(false); setView('overview'); return; }
     if (e.key === 'd' || e.key === 'D') { sheetOpen(!SHEET); return; }
   });
 } catch (e) {}

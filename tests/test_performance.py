@@ -205,6 +205,31 @@ def test_attribution_sums_to_the_book_change_less_flows():
         assert sum(r["eur"] for r in rows) == pytest.approx(expected, abs=0.02)
 
 
+def test_attribution_pct_is_the_names_own_price_return():
+    # Two holdings of the same name bought on different days: the EUR figure
+    # depends on units and timing, the percentage must not.
+    closes = wave(30)
+    history = {"AAA": series(closes)}
+    small = curve_of([lot(ISIN_A, 1, 100, "2025-01-01")], history)
+    large = curve_of([lot(ISIN_A, 7, 700, "2025-01-01")], history)
+    for period in ("1W", "ALL"):
+        b = P.base_index(small["dates"], period)
+        want = (closes[-1] / closes[b] - 1) * 100
+        ps = P.attribution(small, period)[0]["pct"]
+        pl = P.attribution(large, period)[0]["pct"]
+        assert ps == pytest.approx(want, abs=0.01)
+        assert ps == pl
+
+
+def test_attribution_pct_is_none_when_the_window_predates_the_listing():
+    c = _risk_book()
+    rows = {r["symbol"]: r for r in P.attribution(c, "ALL")}
+    # CCC has no bar on the window's first day: no return, not a flat 0%.
+    assert rows["CCC"]["pct"] is None
+    assert rows["CCC"]["eur"] is not None
+    assert rows["AAA"]["pct"] is not None
+
+
 def _risk_book(extra_b=0.0, n=120):
     a = wave(n, 0.02)
     b = [x * (1 + extra_b * math.sin(i)) for i, x in enumerate(wave(n, 0.015, 2.0, 50))]
@@ -238,6 +263,10 @@ def test_perturbing_one_price_moves_every_derived_figure():
     am = {r["symbol"]: r["eur"] for r in P.attribution(moved, "1M")}
     assert ab["BBB"] != am["BBB"]
     assert ab["AAA"] == am["AAA"]           # the untouched name does not move
+    pb = {r["symbol"]: r["pct"] for r in P.attribution(base, "1M")}
+    pm = {r["symbol"]: r["pct"] for r in P.attribution(moved, "1M")}
+    assert pb["BBB"] != pm["BBB"]
+    assert pb["AAA"] == pm["AAA"]
     tb = P.twr_index(P.daily_returns(base["value"], base["flow"]))
     tm = P.twr_index(P.daily_returns(moved["value"], moved["flow"]))
     assert tb[-1] != tm[-1]
