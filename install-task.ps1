@@ -71,11 +71,23 @@ if ($RefreshMinutes -lt 0) {
   throw "-RefreshMinutes ($RefreshMinutes) cannot be negative. Use 0 for a single daily refresh."
 }
 
+# Windowless when this machine has the launcher. Under an Interactive logon
+# powershell.exe gets a console window that flashes on every run (-WindowStyle
+# Hidden only hides it after it has appeared). ~/.claude/ops/bin/hidden.exe
+# starts it with no window AND passes the exit code through, so
+# Get-ScheduledTaskInfo still shows a failed run as failed.
+# `conhost.exe --headless` is NOT a substitute: it records every exit as 0.
+# Without the launcher, fall back to a visible window rather than a silent lie.
+$hidden = Join-Path $env:USERPROFILE ".claude\ops\bin\hidden.exe"
 function New-CockpitAction([string] $CockpitArg) {
-  New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$here\run.ps1`" $CockpitArg" `
-    -WorkingDirectory $here
+  $ps = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$here\run.ps1`" $CockpitArg"
+  if (Test-Path $hidden) {
+    New-ScheduledTaskAction -Execute $hidden -Argument $ps -WorkingDirectory $here
+  } else {
+    New-ScheduledTaskAction -Execute "powershell.exe" `
+      -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$here\run.ps1`" $CockpitArg" `
+      -WorkingDirectory $here
+  }
 }
 
 # --- the daily full run ----------------------------------------------------
