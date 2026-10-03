@@ -26,6 +26,9 @@ $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $logDir = Join-Path $here "state"
 $log = Join-Path $logDir "run.log"
+# state/ is gitignored, so a fresh clone or worktree has none, and the first
+# Add-Content below would throw before anything ran.
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
 if (-not $CockpitArgs -or $CockpitArgs.Count -eq 0) { $CockpitArgs = @("run") }
 
